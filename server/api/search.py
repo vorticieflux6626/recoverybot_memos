@@ -312,6 +312,123 @@ async def get_enhanced_stats():
         )
 
 
+@router.post("/enhanced/stream")
+async def streaming_enhanced_search(request: SearchRequest):
+    """
+    Execute ENHANCED agentic search with real-time SSE progress updates.
+
+    Combines the research-backed enhanced reasoning patterns with streaming:
+    - Pre-Act planning events
+    - Self-reflection progress
+    - Contradiction detection alerts
+    - Parallel search batch events
+
+    See /enhanced endpoint for full feature description.
+    See /stream endpoint for SSE event format.
+    """
+    import uuid
+
+    request_id = str(uuid.uuid4())
+    logger.info(f"Enhanced streaming search request [{request_id}]: {request.query[:50]}...")
+
+    # Create event emitter for this search
+    event_manager = get_event_manager()
+    emitter = event_manager.create_emitter(request_id)
+
+    async def generate_events():
+        """Generator for SSE events"""
+        queue = emitter.subscribe()
+
+        try:
+            # Start the enhanced search in a background task
+            search_task = asyncio.create_task(
+                _execute_enhanced_streaming_search(request, request_id, emitter)
+            )
+
+            # Stream events until search completes
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=90.0)
+
+                    if event is None:  # End of stream signal
+                        break
+
+                    yield event.to_sse()
+
+                    # If this is the final event, break
+                    if event.event_type in [EventType.SEARCH_COMPLETED, EventType.SEARCH_FAILED]:
+                        break
+
+                except asyncio.TimeoutError:
+                    # Send keepalive
+                    yield ": keepalive\n\n"
+
+            # Wait for search to finish
+            await search_task
+
+        except asyncio.CancelledError:
+            logger.info(f"[{request_id}] Enhanced stream cancelled by client")
+        except Exception as e:
+            logger.error(f"[{request_id}] Enhanced stream error: {e}")
+            yield f"event: error\ndata: {{\"error\": \"{str(e)}\"}}\n\n"
+        finally:
+            emitter.unsubscribe(queue)
+            event_manager.remove_emitter(request_id)
+
+    return StreamingResponse(
+        generate_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "X-Request-Id": request_id,
+            "X-Enhanced": "true"  # Marker for enhanced endpoint
+        }
+    )
+
+
+async def _execute_enhanced_streaming_search(
+    request: SearchRequest,
+    request_id: str,
+    emitter
+):
+    """Execute enhanced search while emitting progress events"""
+    from agentic import events
+
+    try:
+        orchestrator = await get_enhanced_orchestrator()
+
+        # Emit start event with enhanced marker
+        await emitter.emit(events.search_started(
+            request_id=request_id,
+            query=request.query,
+            max_iterations=request.max_iterations,
+            enhanced=True
+        ))
+
+        # Execute the enhanced search
+        response = await orchestrator.search(request)
+
+        # Emit completion event with enhanced stats
+        await emitter.emit(events.search_completed(
+            request_id=request_id,
+            response=response,
+            enhanced=True
+        ))
+
+        await emitter.emit(None)  # Signal end of stream
+
+    except Exception as e:
+        logger.error(f"[{request_id}] Enhanced streaming search failed: {e}", exc_info=True)
+        await emitter.emit(events.search_failed(
+            request_id=request_id,
+            error=str(e),
+            enhanced=True
+        ))
+        await emitter.emit(None)
+
+
 @router.post("/stream")
 async def streaming_agentic_search(request: SearchRequest):
     """

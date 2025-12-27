@@ -101,6 +101,9 @@ class SearchEvent:
     # Additional metadata
     data: Optional[Dict[str, Any]] = None
 
+    # Enhanced search marker
+    enhanced: bool = False
+
     def to_sse(self) -> str:
         """Convert to Server-Sent Event format"""
         event_data = {
@@ -140,6 +143,8 @@ class SearchEvent:
             event_data["content_length"] = self.content_length
         if self.data:
             event_data["data"] = self.data
+        if self.enhanced:
+            event_data["enhanced"] = self.enhanced
 
         return f"event: {self.event_type.value}\ndata: {json.dumps(event_data)}\n\n"
 
@@ -169,17 +174,20 @@ class EventEmitter:
         self._max_history = 100
         self._closed = False
 
-    async def emit(self, event: SearchEvent):
-        """Emit an event to all subscribers"""
+    async def emit(self, event: Optional[SearchEvent]):
+        """Emit an event to all subscribers. Pass None to signal end of stream."""
         if self._closed:
             return
 
-        # Store in history
-        self._event_history.append(event)
-        if len(self._event_history) > self._max_history:
-            self._event_history = self._event_history[-self._max_history:]
-
-        logger.debug(f"[{self.request_id}] Emitting: {event.event_type.value}")
+        # Handle None as end-of-stream signal
+        if event is None:
+            logger.debug(f"[{self.request_id}] Emitting: END_OF_STREAM (None)")
+        else:
+            # Store in history
+            self._event_history.append(event)
+            if len(self._event_history) > self._max_history:
+                self._event_history = self._event_history[-self._max_history:]
+            logger.debug(f"[{self.request_id}] Emitting: {event.event_type.value}")
 
         # Broadcast to all subscribers
         dead_queues = []
@@ -289,14 +297,16 @@ def get_event_manager() -> EventManager:
 
 
 # Helper functions for creating common events
-def search_started(request_id: str, query: str, max_iterations: int) -> SearchEvent:
+def search_started(request_id: str, query: str, max_iterations: int, enhanced: bool = False, **kwargs) -> SearchEvent:
+    mode = "ENHANCED search" if enhanced else "search"
     return SearchEvent(
         event_type=EventType.SEARCH_STARTED,
         request_id=request_id,
-        message=f"Starting search for: {query[:50]}...",
+        message=f"Starting {mode} for: {query[:50]}...",
         query=query,
         max_iterations=max_iterations,
-        progress_percent=0
+        progress_percent=0,
+        enhanced=enhanced
     )
 
 
@@ -466,24 +476,40 @@ def synthesis_complete(request_id: str, answer_length: int, confidence: float) -
     )
 
 
-def search_completed(request_id: str, sources_count: int, execution_time_ms: int) -> SearchEvent:
+def search_completed(
+    request_id: str,
+    sources_count: int = 0,
+    execution_time_ms: int = 0,
+    response = None,
+    enhanced: bool = False,
+    **kwargs
+) -> SearchEvent:
+    # Extract from response if provided
+    if response:
+        sources_count = len(response.data.sources) if response.data and response.data.sources else sources_count
+        execution_time_ms = response.meta.execution_time_ms if response.meta else execution_time_ms
+
+    mode = "ENHANCED search" if enhanced else "Search"
     return SearchEvent(
         event_type=EventType.SEARCH_COMPLETED,
         request_id=request_id,
-        message=f"Search complete: {sources_count} sources in {execution_time_ms}ms",
+        message=f"{mode} complete: {sources_count} sources in {execution_time_ms}ms",
         sources_count=sources_count,
         progress_percent=100,
-        data={"execution_time_ms": execution_time_ms}
+        data={"execution_time_ms": execution_time_ms, "enhanced": enhanced},
+        enhanced=enhanced
     )
 
 
-def search_failed(request_id: str, error: str) -> SearchEvent:
+def search_failed(request_id: str, error: str, enhanced: bool = False, **kwargs) -> SearchEvent:
+    mode = "ENHANCED search" if enhanced else "Search"
     return SearchEvent(
         event_type=EventType.SEARCH_FAILED,
         request_id=request_id,
-        message=f"Search failed: {error}",
+        message=f"{mode} failed: {error}",
         progress_percent=100,
-        data={"error": error}
+        data={"error": error, "enhanced": enhanced},
+        enhanced=enhanced
     )
 
 
