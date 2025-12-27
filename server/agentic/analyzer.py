@@ -584,10 +584,25 @@ Return ONLY the JSON object. /no_think"""
                 response.raise_for_status()
                 result = response.json().get("response", "")
 
-            # Parse JSON response
-            json_match = re.search(r'\{.*\}', result, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
+            # Parse JSON response - use more robust extraction
+            # Find the outermost balanced braces
+            result_stripped = result.strip()
+            start_idx = result_stripped.find('{')
+            if start_idx != -1:
+                # Find matching closing brace
+                brace_count = 0
+                end_idx = start_idx
+                for i, char in enumerate(result_stripped[start_idx:], start_idx):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end_idx = i + 1
+                            break
+
+                json_str = result_stripped[start_idx:end_idx]
+                data = json.loads(json_str)
 
                 # Extract answered/unanswered questions
                 answered = []
@@ -617,6 +632,9 @@ Return ONLY the JSON object. /no_think"""
                            f"gaps={len(result['information_gaps'])}, new_queries={len(result['suggested_queries'])}")
 
                 return result
+            else:
+                logger.warning(f"No JSON found in coverage evaluation response")
+                raise ValueError("No JSON object found in response")
 
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse coverage evaluation JSON: {e}")
