@@ -1,0 +1,51 @@
+# Python
+**/__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and temp files
+logs/*.log*
+*.log
+/tmp/
+
+# Database and cache
+*.db
+cache/
+*.sqlite3
+
+# Environment and secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Large model files (download separately)
+models/
+EmotiVoice/
+OpenVoice/
+fish-speech/
+
+# Server runtime files
+server/memos_server.pid
+server/cache/
+
+# Test artifacts
+server/test_*.py
+!server/test_endpoint.sh
+!server/test_tts.sh
