@@ -8,11 +8,9 @@ Implements multi-agent search with ReAct pattern:
 - Verifier: Cross-checks facts and validates claims
 - Synthesizer: Combines results into coherent answers
 
-Performance optimizations (Phase 1-2):
-- TTL-based KV cache pinning (Continuum-inspired)
-- Prompt template registry for cache hits
-- Artifact-based agent communication
-- Performance metrics tracking
+Performance optimizations:
+- Phase 1-2: TTL-based KV cache pinning, prompt registry, artifacts, metrics
+- Phase 4: Three-tier memory architecture (MemOS MemCube pattern)
 
 This module is isolated from core memOS services and can be
 enabled/disabled independently.
@@ -60,6 +58,21 @@ from .metrics import (
     PhaseTimer,
     get_performance_metrics
 )
+from .kv_cache_service import (
+    KVCacheService,
+    CacheBackend,
+    CacheState,
+    get_kv_cache_service,
+    warm_system_prompts
+)
+from .memory_tiers import (
+    MemoryTierManager,
+    MemoryTier,
+    ContentType,
+    PlaintextStorage,
+    get_memory_tier_manager,
+    initialize_memory_tiers
+)
 from . import events
 
 __all__ = [
@@ -100,6 +113,19 @@ __all__ = [
     "QueryMetrics",
     "PhaseTimer",
     "get_performance_metrics",
+    # Phase 4: KV Cache Service
+    "KVCacheService",
+    "CacheBackend",
+    "CacheState",
+    "get_kv_cache_service",
+    "warm_system_prompts",
+    # Phase 4: Memory Tiers
+    "MemoryTierManager",
+    "MemoryTier",
+    "ContentType",
+    "PlaintextStorage",
+    "get_memory_tier_manager",
+    "initialize_memory_tiers",
 ]
 
-__version__ = "0.2.0"  # Updated for Phase 1-2 optimizations
+__version__ = "0.3.0"  # Updated for Phase 4 - Three-tier memory

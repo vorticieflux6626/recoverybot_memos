@@ -813,3 +813,358 @@ async def search_health():
                 "error": str(e)
             }
         )
+
+
+# ========================================
+# PHASE 4: MEMORY TIER ENDPOINTS
+# ========================================
+
+@router.get("/memory/tiers/stats")
+async def get_memory_tier_stats():
+    """
+    Get comprehensive memory tier statistics.
+
+    Returns information about cold/warm tier usage, hit rates,
+    promotions, and demotions.
+
+    Phase 4 Optimization: Three-tier memory architecture (MemOS MemCube).
+    """
+    try:
+        from agentic.memory_tiers import get_memory_tier_manager
+        manager = get_memory_tier_manager()
+        stats = manager.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "version": "1.0.0",
+                "description": "Three-tier memory statistics"
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Memory tier stats failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get memory tier stats: {str(e)}"
+        )
+
+
+@router.get("/memory/kv-cache/stats")
+async def get_kv_cache_stats():
+    """
+    Get KV cache service statistics.
+
+    Returns information about cached prefixes, warm entries,
+    hit rates, and warm times.
+
+    Phase 4 Optimization: KV cache service for activation memory.
+    """
+    try:
+        from agentic.kv_cache_service import get_kv_cache_service
+        service = get_kv_cache_service()
+        stats = service.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "version": "1.0.0",
+                "description": "KV cache service statistics"
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"KV cache stats failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get KV cache stats: {str(e)}"
+        )
+
+
+@router.get("/memory/kv-cache/warm")
+async def get_warm_entries():
+    """
+    Get list of currently warm (cached) entries.
+
+    Returns details about entries in the activation memory tier.
+    """
+    try:
+        from agentic.kv_cache_service import get_kv_cache_service
+        service = get_kv_cache_service()
+        entries = service.get_warm_entries()
+
+        return {
+            "success": True,
+            "data": {
+                "entries": entries,
+                "count": len(entries)
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get warm entries failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get warm entries: {str(e)}"
+        )
+
+
+@router.post("/memory/kv-cache/warm")
+async def warm_prefix(
+    prefix: str,
+    model: Optional[str] = None,
+    content_id: Optional[str] = None
+):
+    """
+    Manually warm a prefix in the KV cache.
+
+    This precomputes the KV cache for the given prefix,
+    reducing TTFT on subsequent use.
+
+    Args:
+        prefix: The text prefix to warm
+        model: Optional model to use (defaults to llama3.2:3b)
+        content_id: Optional custom ID for this cache entry
+    """
+    try:
+        from agentic.kv_cache_service import get_kv_cache_service
+        service = get_kv_cache_service()
+
+        cache_id = await service.warm_prefix(
+            prefix=prefix,
+            model=model,
+            content_id=content_id
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "cache_id": cache_id,
+                "status": "warm"
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Warm prefix failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to warm prefix: {str(e)}"
+        )
+
+
+@router.post("/memory/tiers/store")
+async def store_in_memory_tier(
+    content_id: str,
+    content: str,
+    content_type: str = "context_chunk",
+    promote: bool = False
+):
+    """
+    Store content in the memory tier system.
+
+    Content starts in cold tier (plaintext storage).
+    Set promote=True to immediately warm the KV cache.
+
+    Args:
+        content_id: Unique identifier for the content
+        content: The text content to store
+        content_type: Type of content (system_prompt, context_chunk, etc.)
+        promote: Whether to immediately promote to warm tier
+    """
+    try:
+        from agentic.memory_tiers import (
+            get_memory_tier_manager,
+            ContentType,
+            MemoryTier
+        )
+
+        manager = get_memory_tier_manager()
+
+        # Parse content type
+        try:
+            ctype = ContentType(content_type)
+        except ValueError:
+            ctype = ContentType.CONTEXT_CHUNK
+
+        entry = await manager.store(
+            content_id=content_id,
+            content=content,
+            content_type=ctype,
+            initial_tier=MemoryTier.WARM if promote else MemoryTier.COLD
+        )
+
+        return {
+            "success": True,
+            "data": entry.to_dict(),
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Store in memory tier failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to store content: {str(e)}"
+        )
+
+
+@router.get("/memory/tiers/{content_id}")
+async def get_from_memory_tier(content_id: str):
+    """
+    Retrieve content from the memory tier system.
+
+    Checks warm tier first, falls back to cold tier.
+    Tracks access for automatic promotion.
+    """
+    try:
+        from agentic.memory_tiers import get_memory_tier_manager
+
+        manager = get_memory_tier_manager()
+        result = await manager.get_context(content_id)
+
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Content not found: {content_id}"
+            )
+
+        return {
+            "success": True,
+            "data": result,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get from memory tier failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get content: {str(e)}"
+        )
+
+
+@router.post("/memory/tiers/{content_id}/promote")
+async def promote_to_warm(content_id: str):
+    """
+    Manually promote content from cold to warm tier.
+
+    This precomputes the KV cache for the content.
+    """
+    try:
+        from agentic.memory_tiers import get_memory_tier_manager
+
+        manager = get_memory_tier_manager()
+        success = await manager.promote_to_warm(content_id)
+
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Content not found or already warm: {content_id}"
+            )
+
+        return {
+            "success": True,
+            "data": {
+                "content_id": content_id,
+                "status": "promoted to warm"
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Promote to warm failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to promote content: {str(e)}"
+        )
+
+
+@router.post("/memory/tiers/{content_id}/demote")
+async def demote_to_cold(content_id: str):
+    """
+    Demote content from warm back to cold tier.
+
+    This marks the KV cache as evicted.
+    """
+    try:
+        from agentic.memory_tiers import get_memory_tier_manager
+
+        manager = get_memory_tier_manager()
+        success = await manager.demote_to_cold(content_id)
+
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Content not found or not warm: {content_id}"
+            )
+
+        return {
+            "success": True,
+            "data": {
+                "content_id": content_id,
+                "status": "demoted to cold"
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Demote to cold failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to demote content: {str(e)}"
+        )
+
+
+@router.post("/memory/initialize")
+async def initialize_memory_system():
+    """
+    Initialize the memory tier system and warm system prompts.
+
+    This should be called at server startup to pre-warm
+    commonly used prompts.
+    """
+    try:
+        from agentic.memory_tiers import initialize_memory_tiers
+
+        manager = await initialize_memory_tiers()
+        stats = manager.get_stats()
+
+        return {
+            "success": True,
+            "data": {
+                "status": "initialized",
+                "stats": stats
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Initialize memory system failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to initialize memory system: {str(e)}"
+        )

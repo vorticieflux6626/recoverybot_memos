@@ -327,6 +327,9 @@ systemctl restart ollama  # or: pkill ollama && ollama serve
 | Phase 2 | Artifact-based communication | Reduces agent token transfer |
 | Phase 2 | Performance metrics tracking | Real-time TTFT/cache/token monitoring |
 | Phase 3 | TTL-based cache pinning | Prevents KV eviction during 3-90s tool calls |
+| Phase 4 | KV cache service | Unified interface for cache warming |
+| Phase 4 | Three-tier memory (MemOS) | Cold→warm auto-promotion (80-94% TTFT target) |
+| Phase 4 | System prompt pre-warming | Near-zero TTFT for common prompts |
 
 **Key Files:**
 - `agentic/synthesizer.py` - Chain-of-Draft prompting, validated sampling parameters
@@ -337,6 +340,8 @@ systemctl restart ollama  # or: pkill ollama && ollama serve
 - `agentic/artifacts.py` - Filesystem-based artifact store for token reduction
 - `agentic/metrics.py` - Performance metrics tracking (TTFT, cache hits, tokens)
 - `agentic/scratchpad.py` - Enhanced with public/private spaces, KV cache refs
+- `agentic/kv_cache_service.py` - Phase 4: Unified KV cache interface for Ollama/vLLM
+- `agentic/memory_tiers.py` - Phase 4: Three-tier memory (cold/warm/hot) architecture
 - `agentic/OPTIMIZATION_ANALYSIS.md` - Test results and bottleneck analysis
 - `agentic/KV_CACHE_IMPLEMENTATION_PLAN.md` - Full 4-phase optimization roadmap
 - `setup_ollama_optimization.sh` - Ollama environment configuration
@@ -349,9 +354,19 @@ systemctl restart ollama  # or: pkill ollama && ollama serve
 - `DELETE /api/v1/search/cache` - Clear all caches
 - `DELETE /api/v1/search/artifacts/{session_id}` - Clean up session artifacts
 
+**Phase 4 Memory Tier API Endpoints:**
+- `GET /api/v1/search/memory/tiers/stats` - View three-tier memory statistics
+- `GET /api/v1/search/memory/kv-cache/stats` - View KV cache service stats
+- `GET /api/v1/search/memory/kv-cache/warm` - List warm cache entries
+- `POST /api/v1/search/memory/kv-cache/warm` - Warm a prefix in KV cache
+- `POST /api/v1/search/memory/tiers/store` - Store content in memory tiers
+- `GET /api/v1/search/memory/tiers/{content_id}` - Retrieve content
+- `POST /api/v1/search/memory/tiers/{content_id}/promote` - Promote cold→warm
+- `POST /api/v1/search/memory/tiers/{content_id}/demote` - Demote warm→cold
+- `POST /api/v1/search/memory/initialize` - Initialize and warm system prompts
+
 **Future Optimizations (See KV_CACHE_IMPLEMENTATION_PLAN.md):**
-- Phase 3: vLLM migration (40-60% additional TTFT reduction)
-- Phase 4: Full MemOS integration (80-94% TTFT reduction)
+- Phase 3: vLLM migration (40-60% additional TTFT reduction) - skipped for now
 
 ### Design Rationale
 
