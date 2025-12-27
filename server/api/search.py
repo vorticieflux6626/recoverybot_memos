@@ -41,6 +41,7 @@ router = APIRouter(prefix="/api/v1/search", tags=["Search"])
 
 # Global orchestrator instances (initialized on first use)
 _orchestrator: Optional[AgenticOrchestrator] = None
+_graph_orchestrator = None  # GraphEnhancedOrchestrator
 _multi_orchestrator: Optional[MultiAgentOrchestrator] = None
 
 
@@ -57,6 +58,22 @@ async def get_orchestrator() -> AgenticOrchestrator:
         await _orchestrator.initialize()
         logger.info("Agentic search orchestrator initialized")
     return _orchestrator
+
+
+async def get_graph_orchestrator():
+    """Get or create the graph-enhanced orchestrator instance"""
+    global _graph_orchestrator
+    if _graph_orchestrator is None:
+        import os
+        from agentic.orchestrator_graph_enhanced import GraphEnhancedOrchestrator
+        _graph_orchestrator = GraphEnhancedOrchestrator(
+            ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            mcp_url=os.getenv("MCP_URL", "http://localhost:7777"),
+            brave_api_key=os.getenv("BRAVE_API_KEY")
+        )
+        await _graph_orchestrator.initialize()
+        logger.info("Graph-enhanced orchestrator initialized")
+    return _graph_orchestrator
 
 
 @router.post("/agentic", response_model=SearchResponse)
@@ -108,6 +125,81 @@ async def agentic_search(request: SearchRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Search failed: {str(e)}"
+        )
+
+
+@router.post("/graph-enhanced", response_model=SearchResponse)
+async def graph_enhanced_search(request: SearchRequest):
+    """
+    Execute GRAPH-ENHANCED agentic search with KV cache optimization.
+
+    This endpoint uses the graph-based KV cache system inspired by:
+    - KVFlow (NeurIPS 2025): Agent Step Graph for workflow-aware cache eviction
+    - ROG (2025): Chain-style reasoning with intermediate answer caching
+    - LbMAS (2025): Blackboard architecture for multi-agent coordination
+
+    Key optimizations:
+    - Steps-to-execution (STE) based cache eviction priority
+    - Proactive prefetching for likely next agents
+    - Mission decomposition caching (reuse query decompositions)
+    - Sub-query result caching (ROG-style intermediate answers)
+    - Semantic finding deduplication
+
+    Expected improvements over standard agentic search:
+    - 50-80% reduction in inference latency for repeated patterns
+    - 80%+ cache hit rate for similar workflows
+    - Intelligent eviction based on workflow position
+
+    Args:
+        request: Same as /agentic endpoint
+
+    Returns:
+        SearchResponse with additional graph cache metadata in search_trace
+    """
+    logger.info(f"Graph-enhanced search request: {request.query[:50]}...")
+
+    try:
+        orchestrator = await get_graph_orchestrator()
+        response = await orchestrator.search(request)
+        return response
+
+    except Exception as e:
+        logger.error(f"Graph-enhanced search failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Graph-enhanced search failed: {str(e)}"
+        )
+
+
+@router.get("/graph-enhanced/stats")
+async def get_graph_enhanced_stats():
+    """
+    Get comprehensive statistics from the graph-enhanced orchestrator.
+
+    Returns stats on:
+    - Total searches and cache hits
+    - Mission decomposition reuse count
+    - Sub-query cache reuse count
+    - Agent Step Graph transition probabilities
+    - Scratchpad cache hit rates
+    """
+    try:
+        orchestrator = await get_graph_orchestrator()
+        stats = orchestrator.get_graph_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get graph stats failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get graph stats: {str(e)}"
         )
 
 
