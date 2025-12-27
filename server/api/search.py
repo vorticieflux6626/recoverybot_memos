@@ -42,6 +42,7 @@ router = APIRouter(prefix="/api/v1/search", tags=["Search"])
 # Global orchestrator instances (initialized on first use)
 _orchestrator: Optional[AgenticOrchestrator] = None
 _graph_orchestrator = None  # GraphEnhancedOrchestrator
+_enhanced_orchestrator = None  # EnhancedAgenticOrchestrator
 _multi_orchestrator: Optional[MultiAgentOrchestrator] = None
 
 
@@ -74,6 +75,27 @@ async def get_graph_orchestrator():
         await _graph_orchestrator.initialize()
         logger.info("Graph-enhanced orchestrator initialized")
     return _graph_orchestrator
+
+
+async def get_enhanced_orchestrator():
+    """Get or create the enhanced agentic orchestrator instance"""
+    global _enhanced_orchestrator
+    if _enhanced_orchestrator is None:
+        import os
+        from agentic.orchestrator_enhanced import EnhancedAgenticOrchestrator
+        _enhanced_orchestrator = EnhancedAgenticOrchestrator(
+            ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            mcp_url=os.getenv("MCP_URL", "http://localhost:7777"),
+            brave_api_key=os.getenv("BRAVE_API_KEY"),
+            enable_reflection=True,
+            enable_pre_act=True,
+            enable_stuck_detection=True,
+            enable_contradiction_detection=True,
+            max_reflection_iterations=2
+        )
+        await _enhanced_orchestrator.initialize()
+        logger.info("Enhanced agentic orchestrator initialized")
+    return _enhanced_orchestrator
 
 
 @router.post("/agentic", response_model=SearchResponse)
@@ -200,6 +222,93 @@ async def get_graph_enhanced_stats():
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get graph stats: {str(e)}"
+        )
+
+
+@router.post("/enhanced", response_model=SearchResponse)
+async def enhanced_agentic_search(request: SearchRequest):
+    """
+    Execute ENHANCED agentic search with research-backed improvements.
+
+    This endpoint implements cutting-edge patterns from 2025 research:
+
+    1. **Pre-Act Planning** (arXiv 2505.09970): Creates multi-step execution
+       plans BEFORE acting, enabling parallel execution and 70% accuracy
+       improvement over standard ReAct.
+
+    2. **Self-Reflection Loop**: After synthesis, the system critiques its
+       own output and refines if quality is insufficient.
+
+    3. **Stuck State Detection**: Detects when the agent is in a loop and
+       attempts recovery strategies (broaden, narrow, rephrase, simplify).
+
+    4. **Parallel Search Execution**: Executes independent searches
+       concurrently for faster results.
+
+    5. **Contradiction Detection**: Surfaces conflicting information from
+       different sources rather than arbitrarily choosing.
+
+    Expected improvements over /agentic:
+    - Higher confidence scores through multi-signal calibration
+    - Better synthesis quality via reflection
+    - Faster execution via parallel search
+    - More transparent results with contradiction surfacing
+
+    Args:
+        request: SearchRequest with query and options
+
+    Returns:
+        SearchResponse with enhanced search results
+    """
+    try:
+        orchestrator = await get_enhanced_orchestrator()
+        response = await orchestrator.search(request)
+        return response
+
+    except Exception as e:
+        logger.error(f"Enhanced search failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Enhanced search failed: {str(e)}"
+        )
+
+
+@router.get("/enhanced/stats")
+async def get_enhanced_stats():
+    """
+    Get statistics from the enhanced agentic orchestrator.
+
+    Returns stats on:
+    - Pre-Act plans created
+    - Reflections triggered
+    - Stuck state recoveries
+    - Parallel batches executed
+    - Contradictions surfaced
+    - Average quality improvement
+    """
+    try:
+        orchestrator = await get_enhanced_orchestrator()
+        stats = orchestrator.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "features_enabled": {
+                    "pre_act": orchestrator.enable_pre_act,
+                    "reflection": orchestrator.enable_reflection,
+                    "stuck_detection": orchestrator.enable_stuck_detection,
+                    "contradiction_detection": orchestrator.enable_contradiction_detection
+                }
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get enhanced stats failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get enhanced stats: {str(e)}"
         )
 
 
