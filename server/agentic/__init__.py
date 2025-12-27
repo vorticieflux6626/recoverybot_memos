@@ -114,6 +114,14 @@ from .reasoning_dag import (
     VerificationResult,
     create_reasoning_dag
 )
+from .thought_library import (
+    ThoughtLibrary,
+    ThoughtTemplate,
+    TemplateCategory,
+    InstantiatedThought,
+    create_thought_library,
+    get_thought_library
+)
 from . import events
 
 __all__ = [
@@ -203,6 +211,13 @@ __all__ = [
     "NodeStatus",
     "VerificationResult",
     "create_reasoning_dag",
+    # Buffer of Thoughts (Phase 4 Enhancement)
+    "ThoughtLibrary",
+    "ThoughtTemplate",
+    "TemplateCategory",
+    "InstantiatedThought",
+    "create_thought_library",
+    "get_thought_library",
 ]
 
-__version__ = "0.6.0"  # Updated for DAG-Based Reasoning (Phase 3)
+__version__ = "0.7.0"  # Updated for Buffer of Thoughts (Phase 4)
