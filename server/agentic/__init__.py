@@ -106,6 +106,14 @@ from .entity_tracker import (
     VerbFrame,
     create_entity_tracker
 )
+from .reasoning_dag import (
+    ReasoningDAG,
+    ReasoningNode,
+    NodeType,
+    NodeStatus,
+    VerificationResult,
+    create_reasoning_dag
+)
 from . import events
 
 __all__ = [
@@ -188,6 +196,13 @@ __all__ = [
     "EntityRelation",
     "VerbFrame",
     "create_entity_tracker",
+    # DAG-Based Reasoning (Phase 3 Enhancement)
+    "ReasoningDAG",
+    "ReasoningNode",
+    "NodeType",
+    "NodeStatus",
+    "VerificationResult",
+    "create_reasoning_dag",
 ]
 
-__version__ = "0.5.0"  # Updated for GSW-style Entity Tracking (Phase 2)
+__version__ = "0.6.0"  # Updated for DAG-Based Reasoning (Phase 3)
