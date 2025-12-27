@@ -211,6 +211,241 @@ class AgenticScratchpad(BaseModel):
     # Content Hash Registry - for deduplication
     content_hashes: Dict[str, str] = Field(default_factory=dict)  # hash -> source_url
 
+    # === AIME-STYLE TASK HIERARCHY (Phase 1 Enhancement) ===
+    # Integrates with DynamicPlanner for hierarchical progress tracking
+
+    # Hierarchical task tree (AIME Progress Management)
+    task_hierarchy: List[Dict[str, Any]] = Field(default_factory=list)
+
+    # Task status tracking (id -> status)
+    task_statuses: Dict[str, str] = Field(default_factory=dict)
+
+    # Current tactical action being executed
+    current_action: Optional[Dict[str, Any]] = None
+
+    # Execution history for planner feedback
+    execution_history: List[Dict[str, Any]] = Field(default_factory=list)
+
+    # Forward-falling questions (GSW concept - anticipated future states)
+    pending_questions_gsw: List[str] = Field(default_factory=list)
+
+    # ========================================
+    # AIME-STYLE TASK HIERARCHY METHODS
+    # ========================================
+
+    def set_task_hierarchy(self, tasks: List[Dict[str, Any]]) -> None:
+        """
+        Set the hierarchical task tree from DynamicPlanner.
+
+        Args:
+            tasks: List of task dictionaries with structure:
+                {
+                    "id": "t1",
+                    "description": "Research topic X",
+                    "status": "pending",
+                    "subtasks": [...],
+                    "artifacts": [],
+                    "completion_criteria": "..."
+                }
+        """
+        self.task_hierarchy = tasks
+
+        # Extract all task statuses into flat dict for quick lookup
+        def extract_statuses(task_list: List[Dict], statuses: Dict[str, str]):
+            for task in task_list:
+                statuses[task.get("id", "")] = task.get("status", "pending")
+                if task.get("subtasks"):
+                    extract_statuses(task["subtasks"], statuses)
+
+        self.task_statuses = {}
+        extract_statuses(tasks, self.task_statuses)
+        self._touch()
+        logger.debug(f"Set task hierarchy with {len(self.task_statuses)} tasks")
+
+    def set_current_action(self, action: Optional[Dict[str, Any]]) -> None:
+        """
+        Set the tactical action currently being executed.
+
+        Args:
+            action: TacticalAction as dict with structure:
+                {
+                    "action_type": "search",
+                    "task_id": "t1",
+                    "description": "Search for X",
+                    "inputs": {"query": "..."},
+                    "required_tools": ["web_search"]
+                }
+        """
+        self.current_action = action
+        if action and action.get("task_id"):
+            self.task_statuses[action["task_id"]] = "in_progress"
+        self._touch()
+
+    def update_task_status(
+        self,
+        task_id: str,
+        status: str,
+        message: str = "",
+        artifacts: Optional[List[str]] = None
+    ) -> bool:
+        """
+        Update the status of a task in the hierarchy.
+
+        Args:
+            task_id: ID of the task to update
+            status: New status (pending, in_progress, completed, failed, blocked, skipped)
+            message: Optional status message
+            artifacts: Optional list of artifact IDs produced
+
+        Returns:
+            True if task was found and updated, False otherwise
+        """
+        def update_in_tree(task_list: List[Dict]) -> bool:
+            for task in task_list:
+                if task.get("id") == task_id:
+                    task["status"] = status
+                    if message:
+                        task["notes"] = message
+                    if artifacts:
+                        task.setdefault("artifacts", []).extend(artifacts)
+                    return True
+                if task.get("subtasks"):
+                    if update_in_tree(task["subtasks"]):
+                        return True
+            return False
+
+        found = update_in_tree(self.task_hierarchy)
+        if found:
+            self.task_statuses[task_id] = status
+            self._touch()
+            logger.debug(f"Updated task {task_id} status to {status}")
+        return found
+
+    def record_execution(
+        self,
+        task_id: str,
+        action_type: str,
+        success: bool,
+        output: Any,
+        duration_ms: int = 0,
+        artifacts: Optional[List[str]] = None
+    ) -> None:
+        """
+        Record an execution result for planner feedback.
+
+        Args:
+            task_id: ID of the executed task
+            action_type: Type of action (search, scrape, analyze, etc.)
+            success: Whether execution succeeded
+            output: Output/result from execution
+            duration_ms: Execution time in milliseconds
+            artifacts: Optional artifact IDs produced
+        """
+        execution_record = {
+            "task_id": task_id,
+            "action_type": action_type,
+            "success": success,
+            "output": output,
+            "duration_ms": duration_ms,
+            "artifacts": artifacts or [],
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        self.execution_history.append(execution_record)
+
+        # Update task status based on success
+        new_status = "completed" if success else "failed"
+        self.update_task_status(task_id, new_status, artifacts=artifacts)
+
+        # Clear current action if it matches
+        if self.current_action and self.current_action.get("task_id") == task_id:
+            self.current_action = None
+
+        self._touch()
+
+    def get_task_progress(self) -> Dict[str, Any]:
+        """
+        Get progress summary for the task hierarchy.
+
+        Returns:
+            Dict with completion stats and status breakdown
+        """
+        total = len(self.task_statuses)
+        if total == 0:
+            return {"total": 0, "progress": 0.0, "by_status": {}}
+
+        by_status = {}
+        for status in self.task_statuses.values():
+            by_status[status] = by_status.get(status, 0) + 1
+
+        completed = by_status.get("completed", 0)
+        failed = by_status.get("failed", 0)
+        skipped = by_status.get("skipped", 0)
+
+        # Progress = (completed + skipped) / total
+        progress = (completed + skipped) / total if total > 0 else 0.0
+
+        return {
+            "total": total,
+            "progress": progress,
+            "completed": completed,
+            "failed": failed,
+            "by_status": by_status,
+            "current_action": self.current_action
+        }
+
+    def get_task_markdown(self) -> str:
+        """
+        Render the task hierarchy as markdown for context injection.
+
+        Returns:
+            Markdown formatted task tree
+        """
+        def render_task(task: Dict, indent: int = 0) -> List[str]:
+            prefix = "  " * indent
+            status = task.get("status", "pending")
+            emoji = {
+                "pending": "○",
+                "in_progress": "▶",
+                "completed": "✓",
+                "failed": "✗",
+                "blocked": "⊘",
+                "skipped": "–"
+            }.get(status, "?")
+
+            lines = [f"{prefix}{emoji} [{task.get('id', '?')}] {task.get('description', 'Unknown')}"]
+
+            if task.get("notes"):
+                lines.append(f"{prefix}    Note: {task['notes']}")
+
+            if task.get("artifacts"):
+                lines.append(f"{prefix}    Artifacts: {', '.join(task['artifacts'])}")
+
+            for subtask in task.get("subtasks", []):
+                lines.extend(render_task(subtask, indent + 1))
+
+            return lines
+
+        if not self.task_hierarchy:
+            return "No tasks defined"
+
+        lines = ["=== TASK HIERARCHY ==="]
+        for task in self.task_hierarchy:
+            lines.extend(render_task(task))
+
+        # Add progress summary
+        progress = self.get_task_progress()
+        lines.append("")
+        lines.append(f"Progress: {progress['progress']:.0%} ({progress['completed']}/{progress['total']} completed)")
+
+        if self.current_action:
+            lines.append(f"Current: {self.current_action.get('description', 'Unknown action')}")
+
+        return "\n".join(lines)
+
+    def get_execution_history(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent execution history for planner context"""
+        return self.execution_history[-limit:]
+
     @classmethod
     def create(cls, query: str, request_id: Optional[str] = None, user_id: Optional[str] = None) -> "AgenticScratchpad":
         """Factory method to create a new scratchpad for a search"""

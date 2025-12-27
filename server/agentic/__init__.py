@@ -73,6 +73,27 @@ from .memory_tiers import (
     get_memory_tier_manager,
     initialize_memory_tiers
 )
+from .dynamic_planner import (
+    DynamicPlanner,
+    TaskNode,
+    TaskStatus,
+    ActionType,
+    TacticalAction,
+    ExecutionResult,
+    PlannerOutput
+)
+from .progress_tools import (
+    ProgressReporter,
+    ProgressAggregator,
+    ProgressStatus,
+    ProgressUpdate,
+    ProgressTool,
+    PROGRESS_TOOL_PROMPT
+)
+from .orchestrator_dynamic import (
+    DynamicOrchestrator,
+    create_dynamic_orchestrator
+)
 from . import events
 
 __all__ = [
@@ -126,6 +147,24 @@ __all__ = [
     "PlaintextStorage",
     "get_memory_tier_manager",
     "initialize_memory_tiers",
+    # AIME-Style Dynamic Planning (Phase 1 Enhancement)
+    "DynamicPlanner",
+    "TaskNode",
+    "TaskStatus",
+    "ActionType",
+    "TacticalAction",
+    "ExecutionResult",
+    "PlannerOutput",
+    # Progress Tools
+    "ProgressReporter",
+    "ProgressAggregator",
+    "ProgressStatus",
+    "ProgressUpdate",
+    "ProgressTool",
+    "PROGRESS_TOOL_PROMPT",
+    # Dynamic Orchestrator
+    "DynamicOrchestrator",
+    "create_dynamic_orchestrator",
 ]
 
-__version__ = "0.3.0"  # Updated for Phase 4 - Three-tier memory
+__version__ = "0.4.0"  # Updated for AIME-style Dynamic Planning

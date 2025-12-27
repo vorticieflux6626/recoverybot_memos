@@ -67,6 +67,14 @@ class EventType(str, Enum):
     # Progress percentage
     PROGRESS_UPDATE = "progress_update"
 
+    # AIME-style dynamic planning events
+    PLANNING = "planning"  # Task decomposition/planning phase
+    AGENT_START = "agent_start"  # Agent starting execution
+    AGENT_COMPLETE = "agent_complete"  # Agent finished execution
+    PROGRESS = "progress"  # Task progress update
+    COMPLETE = "complete"  # Overall completion
+    ERROR = "error"  # Error occurred
+
 
 @dataclass
 class SearchEvent:

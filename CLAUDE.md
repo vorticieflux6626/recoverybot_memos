@@ -15,6 +15,60 @@ memOS is evolving to become the **central intelligence layer** for the Recovery 
 ### Core Architecture Principle
 memOS serves as the **Single Source of Truth (SSOT)** for user context, memory, and intelligent data retrieval. All context augmentation flows through memOS before reaching the primary LLM.
 
+## Current Status (2025-12-27)
+
+### Next-Gen Enhancement Plan (December 2025)
+
+Comprehensive research into cutting-edge agentic AI frameworks has produced a detailed enhancement roadmap:
+
+**Research Sources:**
+| Framework | Innovation | Expected Impact |
+|-----------|------------|-----------------|
+| **AIME** (ByteDance) | Dynamic Planner, Actor Factory, Progress Management | 77.6% GAIA benchmark |
+| **GSW** (Hippocampal Memory) | Actor-centric episodic memory, entity tracking | 51% token reduction |
+| **DAG-Math/DoT** | Graph-structured reasoning | Perfect reasoning rate |
+| **Graph of Thoughts** | Multi-path exploration with convergence | 200-300% over ToT |
+| **Buffer of Thoughts** | Reusable thought-template library | 8B model surpasses 70B |
+
+**Implementation Status:**
+| Phase | Component | Status |
+|-------|-----------|--------|
+| **Phase 1** | AIME-Style Dynamic Planning | ✅ **COMPLETE** |
+| Phase 2 | GSW Entity Tracker | Pending |
+| Phase 3 | Reasoning DAG | Pending |
+| Phase 4 | Thought Template Library | Pending |
+| Phase 5 | Actor Factory | Pending |
+
+**Documentation**: `agentic/ENHANCEMENT_IMPLEMENTATION_PLAN.md`
+
+#### ✅ Phase 1: AIME-Style Dynamic Planning (Completed 2025-12-27)
+
+Implemented dual strategic/tactical planning based on AIME (ByteDance) research:
+
+**New Components:**
+- **DynamicPlanner** (`agentic/dynamic_planner.py`): Dual-output planning with hierarchical TaskNode structure
+- **Progress Tools** (`agentic/progress_tools.py`): ProgressReporter, ProgressAggregator for agent progress reporting
+- **DynamicOrchestrator** (`agentic/orchestrator_dynamic.py`): Full integration with iterative replanning
+
+**Key Features:**
+- Dual outputs: Strategic task hierarchy + Tactical next action per iteration
+- Formula: `(L_{t+1}, g_{t+1}) = LLM(goal, L_t, H_t)` where L=task list, g=action, H=history
+- Hierarchical TaskNode with dependencies, completion criteria, and artifacts
+- Real-time progress tracking via ProgressReporter
+- Scratchpad integration for shared working memory
+
+**Test Results:**
+```
+python test_dynamic_orchestrator.py --full
+  dynamic_planner: PASS (16.2s decomposition, 30.2s replan)
+  scratchpad: PASS (Task hierarchy + progress tracking)
+  progress_tools: PASS (Async events + aggregation)
+  orchestrator: PASS (23s end-to-end execution)
+Passed: 4/4
+```
+
+**Module Version**: `agentic/__init__.py` → v0.4.0
+
 ## Current Status (2025-12-26)
 
 ### ✅ Completed Components
