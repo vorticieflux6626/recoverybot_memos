@@ -1168,3 +1168,251 @@ async def initialize_memory_system():
             status_code=500,
             detail=f"Failed to initialize memory system: {str(e)}"
         )
+
+
+# =============================================================================
+# Graph-Based Cache Endpoints (KVFlow + ROG inspired)
+# =============================================================================
+
+@router.get("/graph/stats")
+async def get_graph_cache_stats():
+    """
+    Get comprehensive statistics from the graph-based cache system.
+
+    Returns statistics from:
+    - Agent Step Graph: Workflow-aware cache management
+    - Scratchpad Cache: Intermediate answer caching (ROG-style)
+    - Workflow tracking: Active workflows and transitions
+    """
+    try:
+        from agentic.graph_cache_integration import get_graph_cache_integration
+
+        integration = get_graph_cache_integration()
+        stats = integration.get_comprehensive_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get graph cache stats failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get graph cache stats: {str(e)}"
+        )
+
+
+@router.get("/graph/agent-step-graph")
+async def get_agent_step_graph_stats():
+    """
+    Get Agent Step Graph statistics including transition probabilities.
+
+    The Agent Step Graph tracks:
+    - Agent transitions and their probabilities
+    - Steps-to-execution (STE) values for cache eviction
+    - Agent execution statistics (duration, token count)
+    """
+    try:
+        from agentic.agent_step_graph import get_agent_step_graph
+
+        graph = get_agent_step_graph()
+        stats = graph.get_graph_stats()
+
+        # Add visualization
+        stats['visualization'] = graph.visualize_graph()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get agent step graph failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get agent step graph: {str(e)}"
+        )
+
+
+@router.get("/graph/scratchpad-cache")
+async def get_scratchpad_cache_stats():
+    """
+    Get Scratchpad Cache statistics.
+
+    The Scratchpad Cache tracks:
+    - Finding cache: Deduplicated scraped content
+    - Sub-query cache: Intermediate reasoning results (ROG-style)
+    - Mission cache: Query decomposition patterns
+    """
+    try:
+        from agentic.scratchpad_cache import get_scratchpad_cache
+
+        cache = get_scratchpad_cache()
+        stats = cache.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get scratchpad cache stats failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get scratchpad cache stats: {str(e)}"
+        )
+
+
+@router.get("/graph/eviction-candidates")
+async def get_eviction_candidates(memory_pressure: float = Query(0.8, ge=0.0, le=1.0)):
+    """
+    Get agents whose KV cache should be evicted based on steps-to-execution.
+
+    Args:
+        memory_pressure: Current memory pressure level (0.0-1.0)
+
+    Returns:
+        List of agent types that are candidates for cache eviction
+    """
+    try:
+        from agentic.graph_cache_integration import get_graph_cache_integration
+
+        integration = get_graph_cache_integration()
+        candidates = integration.get_eviction_candidates(memory_pressure)
+
+        return {
+            "success": True,
+            "data": {
+                "memory_pressure": memory_pressure,
+                "eviction_candidates": [c.value for c in candidates],
+                "candidate_count": len(candidates)
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get eviction candidates failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get eviction candidates: {str(e)}"
+        )
+
+
+@router.delete("/graph/scratchpad-cache")
+async def clear_scratchpad_cache():
+    """
+    Clear all scratchpad caches (finding, sub-query, and mission caches).
+    """
+    try:
+        from agentic.scratchpad_cache import get_scratchpad_cache
+
+        cache = get_scratchpad_cache()
+        cache.clear_all()
+
+        return {
+            "success": True,
+            "data": {
+                "status": "cleared",
+                "message": "All scratchpad caches cleared"
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Clear scratchpad cache failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to clear scratchpad cache: {str(e)}"
+        )
+
+
+@router.post("/graph/initialize")
+async def initialize_graph_cache():
+    """
+    Initialize the graph-based cache system.
+
+    This should be called at server startup to:
+    1. Load cached data from SQLite
+    2. Initialize agent step graph
+    3. Pre-warm high-priority prompt templates
+    """
+    try:
+        from agentic.graph_cache_integration import initialize_graph_cache as init_graph
+
+        import os
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+        integration = await init_graph(ollama_url)
+        stats = integration.get_comprehensive_stats()
+
+        return {
+            "success": True,
+            "data": {
+                "status": "initialized",
+                "stats": stats
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Initialize graph cache failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to initialize graph cache: {str(e)}"
+        )
+
+
+@router.get("/graph/prefix-estimate")
+async def estimate_prefix_reuse(
+    agent_type: str = Query(..., description="Agent type (analyzer, planner, etc.)"),
+    scratchpad_size: int = Query(0, ge=0, description="Number of items in scratchpad")
+):
+    """
+    Estimate KV cache reuse potential for a prompt configuration.
+
+    Useful for understanding cache efficiency before sending requests.
+    """
+    try:
+        from agentic.prefix_optimized_prompts import estimate_prefix_reuse as estimate
+
+        valid_agents = ['analyzer', 'planner', 'searcher', 'scraper', 'verifier', 'synthesizer']
+        if agent_type.lower() not in valid_agents:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid agent type. Must be one of: {valid_agents}"
+            )
+
+        estimate_data = estimate(agent_type.lower(), scratchpad_size)
+
+        return {
+            "success": True,
+            "data": estimate_data,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Estimate prefix reuse failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to estimate prefix reuse: {str(e)}"
+        )

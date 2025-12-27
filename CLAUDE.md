@@ -134,6 +134,26 @@ GET  /api/tts/models/status              - Check which models are loaded
     - `agentic/SCRATCHPAD_INTEGRATION.md` - Integration documentation
     - `agentic/orchestrator.py` - Integrated with scratchpad lifecycle
 
+- **Graph-Based KV Cache System** (NEW - December 2025):
+  - Based on cutting-edge research: KVFlow (NeurIPS 2025), ROG (2025), LbMAS (2025)
+  - Features:
+    - **Agent Step Graph**: DAG representing workflow dependencies with steps-to-execution (STE) for eviction priority
+    - **Proactive Prefetching**: Loads KV cache for likely next agents during current agent execution
+    - **Scratchpad Cache**: ROG-style intermediate answer caching + semantic finding deduplication
+    - **Mission Decomposition Cache**: Reuses query decomposition patterns for similar queries
+    - **Prefix-Optimized Prompts**: Hierarchical prompt structure (system→role→scratchpad→task) for maximum cache reuse
+  - Key files:
+    - `agentic/agent_step_graph.py` - Workflow-aware cache eviction (KVFlow-inspired)
+    - `agentic/scratchpad_cache.py` - Intermediate caching (ROG-inspired)
+    - `agentic/prefix_optimized_prompts.py` - Prompt templates for cache hits
+    - `agentic/graph_cache_integration.py` - Integration wrapper for orchestrator
+  - API Endpoints:
+    - `GET /api/v1/search/graph/stats` - Comprehensive cache statistics
+    - `GET /api/v1/search/graph/agent-step-graph` - Agent transition probabilities
+    - `GET /api/v1/search/graph/scratchpad-cache` - Finding/subquery cache stats
+    - `GET /api/v1/search/graph/eviction-candidates` - STE-based eviction candidates
+    - `POST /api/v1/search/graph/initialize` - Initialize graph cache system
+
 #### 2. VL Screenshot Scraper (NEW - December 2025)
 - **Vision-Language Web Scraping**: Uses VL models (qwen3-vl, llama3.2-vision) to extract data from JS-rendered pages
 - **Playwright Integration**: Lightweight screenshot capture with scroll-and-capture for lazy loading
