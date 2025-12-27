@@ -94,6 +94,18 @@ from .orchestrator_dynamic import (
     DynamicOrchestrator,
     create_dynamic_orchestrator
 )
+from .entity_tracker import (
+    EntityTracker,
+    EntityState,
+    EntityType,
+    RoleType,
+    RelationType,
+    RoleAssignment,
+    EntityEvent,
+    EntityRelation,
+    VerbFrame,
+    create_entity_tracker
+)
 from . import events
 
 __all__ = [
@@ -165,6 +177,17 @@ __all__ = [
     # Dynamic Orchestrator
     "DynamicOrchestrator",
     "create_dynamic_orchestrator",
+    # GSW-Style Entity Tracking (Phase 2 Enhancement)
+    "EntityTracker",
+    "EntityState",
+    "EntityType",
+    "RoleType",
+    "RelationType",
+    "RoleAssignment",
+    "EntityEvent",
+    "EntityRelation",
+    "VerbFrame",
+    "create_entity_tracker",
 ]
 
-__version__ = "0.4.0"  # Updated for AIME-style Dynamic Planning
+__version__ = "0.5.0"  # Updated for GSW-style Entity Tracking (Phase 2)
