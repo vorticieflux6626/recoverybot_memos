@@ -148,6 +148,31 @@ GET  /api/tts/models/status              - Check which models are loaded
     - `agentic/prefix_optimized_prompts.py` - Prompt templates for cache hits
     - `agentic/graph_cache_integration.py` - Integration wrapper for orchestrator
 
+- **DeepSeek-R1 Query Classification** (NEW - December 2025):
+  - Initial query classification using DeepSeek-R1 14B Q8 thinking model
+  - Chain-of-Draft prompting for 50-80% reduction in thinking tokens
+  - Query Categories:
+    - `research`: Information gathering, learning about topics
+    - `problem_solving`: Debugging, troubleshooting, finding solutions
+    - `factual`: Direct questions with verifiable answers
+    - `creative`: Open-ended brainstorming, ideation
+    - `technical`: Code, engineering, scientific analysis
+    - `comparative`: Evaluating options, comparing alternatives
+    - `how_to`: Step-by-step guidance, tutorials
+  - Pipeline Routing:
+    - `direct_answer`: Simple LLM response, no search needed
+    - `web_search`: Basic web search + synthesis
+    - `agentic_search`: Full multi-agent pipeline
+    - `code_assistant`: Technical/code analysis mode
+  - API Endpoint: `POST /api/v1/search/classify`
+  - Key file: `agentic/query_classifier.py`
+
+- **Generalized System Prompts** (NEW - December 2025):
+  - Converted from recovery-focused to general research/problem-solving
+  - Updated CORE_SYSTEM_PREFIX for broad applicability
+  - Updated agent suffixes (ANALYZER, SYNTHESIZER, VERIFIER)
+  - Removed domain-specific constraints for flexibility
+
 - **Enhanced Reasoning Patterns** (NEW - December 2025):
   - Research-backed improvements from 2025 agentic AI literature
   - **Performance Improvements** (vs baseline):
