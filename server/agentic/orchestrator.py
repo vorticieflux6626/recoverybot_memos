@@ -640,8 +640,15 @@ class AgenticOrchestrator:
                 }
             })
 
-            # Calculate confidence
-            confidence_score = self.verifier.calculate_overall_confidence(state.verified_claims)
+            # Calculate confidence with multiple signals
+            scraped_count = len(scraped_content) if scraped_content else 0
+            confidence_score = self.verifier.calculate_overall_confidence(
+                state.verified_claims,
+                source_count=len(state.raw_results),
+                unique_domains=len(state.unique_domains),
+                synthesis_length=len(synthesis),
+                scraped_sources=scraped_count
+            )
             confidence_level = self.synthesizer.determine_confidence_level(
                 state.verified_claims,
                 len(state.raw_results)
@@ -654,7 +661,11 @@ class AgenticOrchestrator:
                 verified_ratio = sum(1 for v in state.verified_claims if v.verified) / len(state.verified_claims)
                 verification_status = "verified" if verified_ratio >= 0.7 else "partial"
             else:
-                verification_status = "unverified"
+                # Even without explicit verification, consider it partial if we have good coverage
+                if scraped_count >= 3 and len(state.unique_domains) >= 3:
+                    verification_status = "partial"
+                else:
+                    verification_status = "unverified"
 
             # Build response
             execution_time_ms = int((time.time() - start_time) * 1000)
@@ -1237,10 +1248,19 @@ class AgenticOrchestrator:
             # Mark scratchpad as complete
             scratchpad.mark_complete(f"Synthesized {len(state.raw_results)} sources from {len(state.unique_domains)} domains")
 
+            # Calculate intermediate confidence for event
+            interim_scraped_count = len(scraped_content) if scraped_content else 0
+            interim_confidence = self.verifier.calculate_overall_confidence(
+                state.verified_claims,
+                source_count=len(state.raw_results),
+                unique_domains=len(state.unique_domains),
+                synthesis_length=len(synthesis),
+                scraped_sources=interim_scraped_count
+            )
             await emitter.emit(events.synthesis_complete(
                 request_id,
                 len(synthesis),
-                self.verifier.calculate_overall_confidence(state.verified_claims)
+                interim_confidence
             ))
 
             # Get final scratchpad status
@@ -1260,8 +1280,15 @@ class AgenticOrchestrator:
                 }
             })
 
-            # Calculate final metrics
-            confidence_score = self.verifier.calculate_overall_confidence(state.verified_claims)
+            # Calculate final metrics with multiple signals
+            scraped_count = len(scraped_content) if scraped_content else 0
+            confidence_score = self.verifier.calculate_overall_confidence(
+                state.verified_claims,
+                source_count=len(state.raw_results),
+                unique_domains=len(state.unique_domains),
+                synthesis_length=len(synthesis),
+                scraped_sources=scraped_count
+            )
             confidence_level = self.synthesizer.determine_confidence_level(
                 state.verified_claims, len(state.raw_results)
             )
@@ -1272,7 +1299,11 @@ class AgenticOrchestrator:
                 verified_ratio = sum(1 for v in state.verified_claims if v.verified) / len(state.verified_claims)
                 verification_status = "verified" if verified_ratio >= 0.7 else "partial"
             else:
-                verification_status = "unverified"
+                # Even without explicit verification, consider it partial if we have good coverage
+                if scraped_count >= 3 and len(state.unique_domains) >= 3:
+                    verification_status = "partial"
+                else:
+                    verification_status = "unverified"
 
             execution_time_ms = int((time.time() - start_time) * 1000)
 

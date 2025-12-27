@@ -239,16 +239,76 @@ JSON:"""
 
     def calculate_overall_confidence(
         self,
-        verification_results: List[VerificationResult]
+        verification_results: List[VerificationResult],
+        source_count: int = 0,
+        unique_domains: int = 0,
+        synthesis_length: int = 0,
+        scraped_sources: int = 0
     ) -> float:
-        """Calculate overall confidence score from individual verifications"""
-        if not verification_results:
-            return 0.5
+        """
+        Calculate overall confidence score using multiple signals.
 
-        verified_count = sum(1 for r in verification_results if r.verified)
-        avg_confidence = sum(r.confidence for r in verification_results) / len(verification_results)
+        Confidence is calculated from:
+        - Verification results (if available): 40% weight
+        - Source diversity (unique domains): 25% weight
+        - Content depth (scraped sources): 20% weight
+        - Synthesis quality (length): 15% weight
 
-        # Weight by verification rate and average confidence
-        verification_rate = verified_count / len(verification_results)
+        This ensures meaningful confidence even when claim extraction
+        doesn't find verifiable statements.
+        """
+        scores = []
+        weights = []
 
-        return (verification_rate * 0.6 + avg_confidence * 0.4)
+        # 1. Verification score (40% weight when available)
+        if verification_results:
+            verified_count = sum(1 for r in verification_results if r.verified)
+            avg_confidence = sum(r.confidence for r in verification_results) / len(verification_results)
+            verification_rate = verified_count / len(verification_results)
+            verification_score = (verification_rate * 0.6 + avg_confidence * 0.4)
+            scores.append(verification_score)
+            weights.append(0.40)
+
+        # 2. Source diversity score (25% weight)
+        # More unique domains = higher confidence
+        if unique_domains > 0 or source_count > 0:
+            domains = unique_domains if unique_domains > 0 else source_count
+            # Scale: 1 domain = 0.2, 5 domains = 0.7, 10+ domains = 1.0
+            diversity_score = min(1.0, 0.2 + (domains - 1) * 0.09)
+            scores.append(diversity_score)
+            weights.append(0.25)
+
+        # 3. Content depth score (20% weight)
+        # Successfully scraped sources indicate thorough research
+        if scraped_sources > 0 or source_count > 0:
+            scraped = scraped_sources if scraped_sources > 0 else min(source_count, 5)
+            # Scale: 1 source = 0.3, 3 sources = 0.7, 5+ sources = 1.0
+            depth_score = min(1.0, 0.3 + (scraped - 1) * 0.175)
+            scores.append(depth_score)
+            weights.append(0.20)
+
+        # 4. Synthesis quality score (15% weight)
+        # Longer, more detailed synthesis = higher confidence
+        if synthesis_length > 0:
+            # Scale: 500 chars = 0.3, 2000 chars = 0.7, 4000+ chars = 1.0
+            quality_score = min(1.0, 0.3 + (synthesis_length / 4000) * 0.7)
+            scores.append(quality_score)
+            weights.append(0.15)
+
+        # Calculate weighted average
+        if not scores:
+            return 0.5  # Default when no signals available
+
+        # Normalize weights to sum to 1.0
+        total_weight = sum(weights)
+        normalized_weights = [w / total_weight for w in weights]
+
+        confidence = sum(s * w for s, w in zip(scores, normalized_weights))
+
+        logger.debug(
+            f"Confidence calculation: scores={[f'{s:.2f}' for s in scores]}, "
+            f"weights={[f'{w:.2f}' for w in normalized_weights]}, "
+            f"final={confidence:.2f}"
+        )
+
+        return round(confidence, 2)
