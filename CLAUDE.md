@@ -107,7 +107,7 @@ GET  /api/tts/models/status              - Check which models are loaded
 - **SSE Streaming**: Real-time progress events for Android client integration
 - **Search Modes**: Fixed, Adaptive, and Exhaustive search strategies
 - **Context Window**: 32K tokens for large content synthesis
-- **Confidence Scoring**: Automatic confidence level calculation
+- **Confidence Scoring**: Multi-signal confidence calculation using verification (40%), source diversity (25%), content depth (20%), and synthesis quality (15%)
 - **Post-Scrape Content Coverage Evaluation** (NEW - December 2025):
   - Evaluates scraped content against decomposed questions using qwen3:8b
   - Identifies specific information gaps (e.g., missing costs, requirements, contact info)
