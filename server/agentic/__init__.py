@@ -8,6 +8,12 @@ Implements multi-agent search with ReAct pattern:
 - Verifier: Cross-checks facts and validates claims
 - Synthesizer: Combines results into coherent answers
 
+Performance optimizations (Phase 1-2):
+- TTL-based KV cache pinning (Continuum-inspired)
+- Prompt template registry for cache hits
+- Artifact-based agent communication
+- Performance metrics tracking
+
 This module is isolated from core memOS services and can be
 enabled/disabled independently.
 """
@@ -28,9 +34,36 @@ from .events import (
     EventManager,
     get_event_manager
 )
+from .ttl_cache_manager import (
+    TTLCacheManager,
+    ToolType,
+    ToolCallContext,
+    get_ttl_cache_manager
+)
+from .prompts import (
+    build_prompt,
+    get_system_prompt,
+    get_template,
+    CHAIN_OF_DRAFT_INSTRUCTION
+)
+from .artifacts import (
+    ArtifactStore,
+    ArtifactType,
+    get_artifact_store,
+    store_search_results,
+    store_scraped_content,
+    store_synthesis
+)
+from .metrics import (
+    PerformanceMetrics,
+    QueryMetrics,
+    PhaseTimer,
+    get_performance_metrics
+)
 from . import events
 
 __all__ = [
+    # Core orchestration
     "AgenticOrchestrator",
     "SearchRequest",
     "SearchResponse",
@@ -38,12 +71,35 @@ __all__ = [
     "VerificationResult",
     "AgentAction",
     "SearchState",
+    # Events
     "EventType",
     "SearchEvent",
     "EventEmitter",
     "EventManager",
     "get_event_manager",
-    "events"
+    "events",
+    # TTL Cache Management
+    "TTLCacheManager",
+    "ToolType",
+    "ToolCallContext",
+    "get_ttl_cache_manager",
+    # Prompt Registry
+    "build_prompt",
+    "get_system_prompt",
+    "get_template",
+    "CHAIN_OF_DRAFT_INSTRUCTION",
+    # Artifact Store
+    "ArtifactStore",
+    "ArtifactType",
+    "get_artifact_store",
+    "store_search_results",
+    "store_scraped_content",
+    "store_synthesis",
+    # Performance Metrics
+    "PerformanceMetrics",
+    "QueryMetrics",
+    "PhaseTimer",
+    "get_performance_metrics",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"  # Updated for Phase 1-2 optimizations

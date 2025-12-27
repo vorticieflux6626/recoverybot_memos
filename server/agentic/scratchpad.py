@@ -149,6 +149,14 @@ class AgenticScratchpad(BaseModel):
 
     This is the central "blackboard" that all agents read from and write to,
     enabling coordinated multi-agent search with explicit task tracking.
+
+    Enhanced with:
+    - Public/Private space distinction (LbMAS pattern)
+    - KV cache reference tracking
+    - Content hash deduplication
+    - Artifact references
+
+    Ref: KV_CACHE_IMPLEMENTATION_PLAN.md Phase 2.2
     """
 
     # Identity
@@ -185,6 +193,23 @@ class AgenticScratchpad(BaseModel):
     is_complete: bool = False
     completion_reason: str = ""
     overall_confidence: float = 0.0
+
+    # === ENHANCED BLACKBOARD FEATURES (Phase 2.2) ===
+
+    # Public space - shared across all agents (key-value store)
+    public_space: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+    # Private spaces - per-agent private state
+    private_spaces: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+    # KV Cache References - track cached content for reuse
+    kv_cache_refs: Dict[str, str] = Field(default_factory=dict)  # content_hash -> cache_id
+
+    # Artifact References - lightweight references to stored artifacts
+    artifact_refs: List[str] = Field(default_factory=list)
+
+    # Content Hash Registry - for deduplication
+    content_hashes: Dict[str, str] = Field(default_factory=dict)  # hash -> source_url
 
     @classmethod
     def create(cls, query: str, request_id: Optional[str] = None, user_id: Optional[str] = None) -> "AgenticScratchpad":
@@ -627,6 +652,131 @@ class AgenticScratchpad(BaseModel):
                 context_parts.append(f"  {i}. {action['type']}: {action.get('details', {})}")
 
         return "\n".join(context_parts)
+
+    # ========================================
+    # ENHANCED BLACKBOARD FEATURES (Phase 2.2)
+    # ========================================
+
+    def write_public(
+        self,
+        agent_id: str,
+        key: str,
+        value: Any,
+        ttl_minutes: int = 30
+    ) -> None:
+        """
+        Write to shared public space with provenance tracking.
+
+        All agents can read from public space. Use for sharing
+        intermediate results, discovered patterns, or coordination signals.
+        """
+        self.public_space[key] = {
+            "value": value,
+            "author": agent_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "ttl_minutes": ttl_minutes
+        }
+        self._touch()
+
+    def read_public(self, key: str) -> Optional[Any]:
+        """Read from public space, checking TTL"""
+        entry = self.public_space.get(key)
+        if not entry:
+            return None
+
+        # Check TTL
+        timestamp = datetime.fromisoformat(entry["timestamp"])
+        ttl_minutes = entry.get("ttl_minutes", 30)
+        if (datetime.now(timezone.utc) - timestamp).total_seconds() > ttl_minutes * 60:
+            del self.public_space[key]
+            return None
+
+        return entry.get("value")
+
+    def write_private(
+        self,
+        agent_id: str,
+        key: str,
+        value: Any
+    ) -> None:
+        """
+        Write to agent's private space.
+
+        Only the owning agent can read from its private space.
+        Use for agent-specific state, scratch calculations, etc.
+        """
+        if agent_id not in self.private_spaces:
+            self.private_spaces[agent_id] = {}
+        self.private_spaces[agent_id][key] = value
+        self._touch()
+
+    def read_private(self, agent_id: str, key: str) -> Optional[Any]:
+        """Read from agent's private space"""
+        return self.private_spaces.get(agent_id, {}).get(key)
+
+    def get_agent_context(self, agent_id: str) -> Dict[str, Any]:
+        """
+        Build complete context for an agent including:
+        - All public space
+        - Agent's private space
+        - Recent findings
+        - Search history
+        """
+        return {
+            "public": {k: v["value"] for k, v in self.public_space.items()},
+            "private": self.private_spaces.get(agent_id, {}),
+            "findings": list(self.findings.values())[-20:],
+            "search_history": self.queries_executed[-10:],
+            "urls_scraped": self.urls_scraped[-10:],
+            "next_actions": self.peek_next_actions(3)
+        }
+
+    # ========================================
+    # KV CACHE REFERENCE MANAGEMENT
+    # ========================================
+
+    def register_kv_cache(self, content_hash: str, cache_id: str) -> None:
+        """
+        Track KV cache reference for content reuse.
+
+        When content is cached by TTLCacheManager, register the reference
+        here so other agents can reuse the cached KV state.
+        """
+        self.kv_cache_refs[content_hash] = cache_id
+        self._touch()
+
+    def get_kv_cache_id(self, content_hash: str) -> Optional[str]:
+        """Retrieve cached KV state ID if available"""
+        return self.kv_cache_refs.get(content_hash)
+
+    def register_content_hash(self, content_hash: str, source_url: str) -> bool:
+        """
+        Register content hash for deduplication.
+
+        Returns True if this is new content, False if already seen.
+        """
+        if content_hash in self.content_hashes:
+            return False
+        self.content_hashes[content_hash] = source_url
+        return True
+
+    def has_content(self, content_hash: str) -> bool:
+        """Check if content has already been processed"""
+        return content_hash in self.content_hashes
+
+    # ========================================
+    # ARTIFACT REFERENCE MANAGEMENT
+    # ========================================
+
+    def add_artifact_ref(self, artifact_id: str) -> None:
+        """Add reference to stored artifact"""
+        if artifact_id not in self.artifact_refs:
+            self.artifact_refs.append(artifact_id)
+            self._touch()
+
+    def get_artifact_refs(self, limit: int = 10) -> List[str]:
+        """Get recent artifact references"""
+        return self.artifact_refs[-limit:]
 
     # ========================================
     # INTERNAL HELPERS

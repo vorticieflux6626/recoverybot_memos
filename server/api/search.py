@@ -596,6 +596,104 @@ async def get_ttl_stats():
         )
 
 
+@router.get("/metrics")
+async def get_performance_metrics_endpoint():
+    """
+    Get performance metrics for the agentic search pipeline.
+
+    Returns comprehensive statistics including:
+    - Query response times (TTFT, total, synthesis)
+    - Cache hit rates
+    - Token usage and savings
+    - Tool latencies
+    - Recent query history
+
+    Phase 2 Optimization: Performance metrics tracking.
+    """
+    try:
+        from agentic.metrics import get_performance_metrics
+        metrics = get_performance_metrics()
+        summary = metrics.get_summary()
+
+        return {
+            "success": True,
+            "data": summary,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "version": "1.0.0",
+                "description": "Agentic search performance metrics"
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Performance metrics failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get performance metrics: {str(e)}"
+        )
+
+
+@router.get("/artifacts/stats")
+async def get_artifacts_stats():
+    """
+    Get artifact store statistics.
+
+    Returns information about stored artifacts used for
+    reducing token transfer between agents.
+
+    Phase 2.3 Optimization: Artifact-based communication.
+    """
+    try:
+        from agentic.artifacts import get_artifact_store
+        store = get_artifact_store()
+        stats = store.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "version": "1.0.0",
+                "description": "Artifact store statistics"
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Artifacts stats failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get artifacts stats: {str(e)}"
+        )
+
+
+@router.delete("/artifacts/{session_id}")
+async def cleanup_session_artifacts(session_id: str):
+    """
+    Clean up artifacts for a specific session.
+
+    Use this to free up disk space after a search session is complete.
+    """
+    try:
+        from agentic.artifacts import get_artifact_store
+        store = get_artifact_store()
+        store.cleanup_session(session_id)
+
+        return {
+            "success": True,
+            "data": {"session_id": session_id, "status": "cleaned"},
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Artifact cleanup failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to cleanup artifacts: {str(e)}"
+        )
+
+
 async def get_multi_orchestrator() -> MultiAgentOrchestrator:
     """Get or create the multi-agent orchestrator instance"""
     global _multi_orchestrator, _orchestrator
