@@ -37,7 +37,7 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 2** | GSW Entity Tracker | ✅ **COMPLETE** |
 | **Phase 3** | Reasoning DAG | ✅ **COMPLETE** |
 | **Phase 4** | Thought Template Library | ✅ **COMPLETE** |
-| Phase 5 | Actor Factory | Pending |
+| **Phase 5** | Actor Factory | ✅ **COMPLETE** |
 
 **Documentation**: `agentic/ENHANCEMENT_IMPLEMENTATION_PLAN.md`
 
@@ -139,6 +139,48 @@ Passed: 9/9
 ```
 
 **Module Version**: `agentic/__init__.py` → v0.7.0
+
+#### ✅ Phase 5: Actor Factory (Completed 2025-12-27)
+
+Implemented AIME-style dynamic agent specialization with tool bundles:
+
+**New Components:**
+- **ActorFactory** (`agentic/actor_factory.py`): Create purpose-built agents on demand
+- **DynamicActor**: Agent with LLM, toolkit, persona, and memory context
+- **ToolBundle**: Pre-packaged tool collections for functional completeness
+- **ActorPersona**: Customized role and expertise for each agent
+
+**Key Features:**
+- **8 Default Tool Bundles**: web_research, vision_extraction, verification, synthesis, analysis, code_analysis, memory_ops, quick_response
+- **7 Model Capabilities**: text_generation, long_context, reasoning, vision, code, embedding, fast
+- **Dynamic Assembly**: Actors created per-subtask, not pre-defined
+- **Task Analysis**: Automatic requirement detection from task descriptions
+- **Capability Matching**: Select optimal model based on bundle requirements
+- **Persona Generation**: Role, expertise, and constraints from task context
+
+**AIME Formula**: A_t = {LLM_t, T_t, P_t, M_t}
+- LLM_t: Cognitive engine (model selection based on capabilities)
+- T_t: Toolkit (selected tool bundles, not individual tools)
+- P_t: Persona (customized system prompt)
+- M_t: Memory (relevant context from scratchpad)
+
+**Test Results:**
+```
+python test_actor_factory.py --full
+  imports: PASS (Module v0.8.0)
+  default_bundles: PASS (8 bundles, 4 tools per bundle)
+  task_analysis: PASS (8 task types detected)
+  bundle_selection: PASS (Automatic selection)
+  capability_matching: PASS (Model requirements)
+  persona_generation: PASS (Role, expertise, constraints)
+  actor_creation_sync: PASS (Prompt composition)
+  tool_registration: PASS (Custom tools/bundles)
+  llm_actor_creation: PASS (Full actor with tools)
+  actor_serialization: PASS (Dict export, stats)
+Passed: 10/10
+```
+
+**Module Version**: `agentic/__init__.py` → v0.8.0
 
 #### ✅ Phase 2: GSW-Style Entity Tracking (Completed 2025-12-27)
 

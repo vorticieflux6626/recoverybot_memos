@@ -122,6 +122,17 @@ from .thought_library import (
     create_thought_library,
     get_thought_library
 )
+from .actor_factory import (
+    ActorFactory,
+    DynamicActor,
+    ActorPersona,
+    ToolBundle,
+    Tool,
+    ToolCategory,
+    ModelCapability,
+    create_actor_factory,
+    get_actor_factory
+)
 from . import events
 
 __all__ = [
@@ -218,6 +229,16 @@ __all__ = [
     "InstantiatedThought",
     "create_thought_library",
     "get_thought_library",
+    # Actor Factory (Phase 5 Enhancement)
+    "ActorFactory",
+    "DynamicActor",
+    "ActorPersona",
+    "ToolBundle",
+    "Tool",
+    "ToolCategory",
+    "ModelCapability",
+    "create_actor_factory",
+    "get_actor_factory",
 ]
 
-__version__ = "0.7.0"  # Updated for Buffer of Thoughts (Phase 4)
+__version__ = "0.8.0"  # Updated for Actor Factory (Phase 5)
