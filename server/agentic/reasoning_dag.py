@@ -286,7 +286,8 @@ Respond with JSON:
         confidence: float = 0.5,
         source_url: Optional[str] = None,
         source_title: Optional[str] = None,
-        reasoning: str = ""
+        reasoning: str = "",
+        metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Add a new node to the DAG.
@@ -299,6 +300,7 @@ Respond with JSON:
             source_url: Source URL if evidence node
             source_title: Source title if evidence node
             reasoning: Why this node was created
+            metadata: Additional metadata for the node
 
         Returns:
             ID of the created node
@@ -310,7 +312,8 @@ Respond with JSON:
             confidence=confidence,
             source_url=source_url,
             source_title=source_title,
-            reasoning=reasoning
+            reasoning=reasoning,
+            metadata=metadata or {}
         )
 
         self.nodes[node.id] = node
