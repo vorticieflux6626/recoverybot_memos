@@ -41,6 +41,9 @@ from .content_cache import get_content_cache
 from .ttl_cache_manager import (
     get_ttl_cache_manager, ToolType, ToolCallContext
 )
+from .query_classifier import (
+    QueryClassifier, QueryClassification, RecommendedPipeline, QueryCategory
+)
 from . import events
 from .events import EventEmitter, EventType, SearchEvent
 
@@ -76,6 +79,9 @@ class AgenticOrchestrator:
         self.ollama_url = ollama_url
         self.mcp_url = mcp_url
 
+        # Initialize query classifier (DeepSeek-R1 based)
+        self.classifier = QueryClassifier(ollama_url=ollama_url)
+
         # Initialize agents
         self.analyzer = QueryAnalyzer(ollama_url=ollama_url)
         self.planner = PlannerAgent(ollama_url=ollama_url, mcp_url=mcp_url)
@@ -110,6 +116,121 @@ class AgenticOrchestrator:
         await self.synthesizer.check_mcp_available()
 
         logger.info(f"Orchestrator initialized. MCP available: {mcp_available}")
+
+    async def classify_query(
+        self,
+        query: str,
+        context: Optional[Dict[str, Any]] = None
+    ) -> QueryClassification:
+        """
+        Classify a query to determine optimal processing pipeline.
+
+        Uses DeepSeek-R1 14B with Chain-of-Draft prompting for efficient
+        classification with reasoning capabilities.
+
+        Args:
+            query: User's query text
+            context: Optional context dictionary
+
+        Returns:
+            QueryClassification with category, capabilities, and pipeline recommendation
+        """
+        return await self.classifier.classify(query, context)
+
+    async def route_by_classification(
+        self,
+        request: SearchRequest,
+        classification: QueryClassification
+    ) -> SearchResponse:
+        """
+        Route a request based on its classification.
+
+        Args:
+            request: The search request
+            classification: Result from classify_query
+
+        Returns:
+            SearchResponse from the appropriate pipeline
+        """
+        logger.info(
+            f"Routing query: category={classification.category.value}, "
+            f"pipeline={classification.recommended_pipeline.value}"
+        )
+
+        if classification.recommended_pipeline == RecommendedPipeline.DIRECT_ANSWER:
+            # Skip search, use synthesizer directly
+            return await self._direct_answer(request, classification)
+
+        elif classification.recommended_pipeline == RecommendedPipeline.CODE_ASSISTANT:
+            # Technical/code mode (same as agentic for now, but can be extended)
+            return await self.search(request)
+
+        elif classification.recommended_pipeline == RecommendedPipeline.WEB_SEARCH:
+            # Standard web search
+            return await self.search(request)
+
+        else:  # AGENTIC_SEARCH
+            # Full multi-agent pipeline
+            return await self.search(request)
+
+    async def _direct_answer(
+        self,
+        request: SearchRequest,
+        classification: QueryClassification
+    ) -> SearchResponse:
+        """
+        Generate a direct answer without web search.
+
+        Used for queries that don't require external information.
+        """
+        start_time = time.time()
+        request_id = str(uuid.uuid4())
+
+        logger.info(f"[{request_id}] Direct answer mode (no search needed)")
+
+        try:
+            # Use synthesizer to generate answer from model knowledge
+            synthesis = await self.synthesizer.synthesize(
+                request.query,
+                [],  # No search results
+                None,
+                request.context
+            )
+
+            execution_time_ms = int((time.time() - start_time) * 1000)
+
+            return SearchResponse(
+                success=True,
+                data=SearchResultData(
+                    synthesized_context=synthesis,
+                    sources=[],
+                    search_queries=[],
+                    confidence_score=classification.use_thinking_model and 0.8 or 0.7,
+                    confidence_level=ConfidenceLevel.MEDIUM,
+                    verification_status="model_knowledge",
+                    search_trace=[{
+                        "step": "classify",
+                        "category": classification.category.value,
+                        "pipeline": classification.recommended_pipeline.value,
+                        "reasoning": classification.reasoning
+                    }, {
+                        "step": "direct_answer",
+                        "reason": "No web search needed per classification"
+                    }]
+                ),
+                meta=SearchMeta(
+                    request_id=request_id,
+                    iterations=0,
+                    queries_executed=0,
+                    sources_consulted=0,
+                    execution_time_ms=execution_time_ms,
+                    cache_hit=False
+                )
+            )
+        except Exception as e:
+            logger.error(f"[{request_id}] Direct answer failed: {e}")
+            # Fallback to regular search
+            return await self.search(request)
 
     async def search(self, request: SearchRequest) -> SearchResponse:
         """

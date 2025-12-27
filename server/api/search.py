@@ -34,8 +34,35 @@ from agentic.events import (
     EventType,
     SearchEvent
 )
+from agentic.query_classifier import (
+    QueryClassifier,
+    QueryClassification,
+    QueryCategory,
+    RecommendedPipeline,
+    QueryComplexity
+)
+from pydantic import BaseModel
 
 logger = logging.getLogger("api.search")
+
+
+# Request/Response models for classification
+class ClassifyRequest(BaseModel):
+    """Request model for query classification"""
+    query: str
+    context: Optional[dict] = None
+
+
+class ClassifyResponse(BaseModel):
+    """Response model for query classification"""
+    success: bool
+    category: str
+    capabilities: list[str]
+    complexity: str
+    urgency: str
+    use_thinking_model: bool
+    recommended_pipeline: str
+    reasoning: str
 
 router = APIRouter(prefix="/api/v1/search", tags=["Search"])
 
@@ -96,6 +123,76 @@ async def get_enhanced_orchestrator():
         await _enhanced_orchestrator.initialize()
         logger.info("Enhanced agentic orchestrator initialized")
     return _enhanced_orchestrator
+
+
+# Global classifier instance
+_classifier: Optional[QueryClassifier] = None
+
+
+async def get_classifier() -> QueryClassifier:
+    """Get or create the query classifier instance"""
+    global _classifier
+    if _classifier is None:
+        import os
+        _classifier = QueryClassifier(
+            ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        )
+        logger.info("Query classifier initialized (DeepSeek-R1 based)")
+    return _classifier
+
+
+@router.post("/classify", response_model=ClassifyResponse)
+async def classify_query(request: ClassifyRequest):
+    """
+    Classify a query to determine optimal processing pipeline.
+
+    Uses DeepSeek-R1 14B with Chain-of-Draft prompting for efficient
+    classification with reasoning capabilities.
+
+    Query Categories:
+    - research: Information gathering, learning about topics
+    - problem_solving: Debugging, troubleshooting, solutions
+    - factual: Direct questions with verifiable answers
+    - creative: Open-ended brainstorming, ideation
+    - technical: Code, engineering, scientific analysis
+    - comparative: Evaluating options, comparing alternatives
+    - how_to: Step-by-step guidance, tutorials
+
+    Recommended Pipelines:
+    - direct_answer: Simple LLM response, no search needed
+    - web_search: Basic web search + synthesis
+    - agentic_search: Full multi-agent pipeline
+    - code_assistant: Technical/code analysis mode
+
+    Args:
+        request: ClassifyRequest with query and optional context
+
+    Returns:
+        ClassifyResponse with category, capabilities, and pipeline recommendation
+    """
+    logger.info(f"Classification request: {request.query[:50]}...")
+
+    try:
+        classifier = await get_classifier()
+        result = await classifier.classify(request.query, request.context)
+
+        return ClassifyResponse(
+            success=True,
+            category=result.category.value,
+            capabilities=result.capabilities,
+            complexity=result.complexity.value,
+            urgency=result.urgency,
+            use_thinking_model=result.use_thinking_model,
+            recommended_pipeline=result.recommended_pipeline.value,
+            reasoning=result.reasoning
+        )
+
+    except Exception as e:
+        logger.error(f"Classification failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Classification failed: {str(e)}"
+        )
 
 
 @router.post("/agentic", response_model=SearchResponse)
