@@ -323,6 +323,9 @@ systemctl restart ollama  # or: pkill ollama && ollama serve
 | Phase 2 | Content hash cache | 30% hit rate on similar queries |
 | Phase 2 | Query result cache | 99.9% speedup on identical queries |
 | Phase 2 | Semantic query cache | 98.5% speedup for similar queries (0.88+ similarity) |
+| Phase 2 | Prompt template registry | Maximizes KV cache prefix hits |
+| Phase 2 | Artifact-based communication | Reduces agent token transfer |
+| Phase 2 | Performance metrics tracking | Real-time TTFT/cache/token monitoring |
 | Phase 3 | TTL-based cache pinning | Prevents KV eviction during 3-90s tool calls |
 
 **Key Files:**
@@ -330,14 +333,21 @@ systemctl restart ollama  # or: pkill ollama && ollama serve
 - `agentic/analyzer.py` - Coverage evaluation optimization
 - `agentic/content_cache.py` - SQLite-backed content and query cache
 - `agentic/ttl_cache_manager.py` - Continuum-inspired TTL-based KV cache pinning
+- `agentic/prompts.py` - Centralized prompt registry for KV cache hits
+- `agentic/artifacts.py` - Filesystem-based artifact store for token reduction
+- `agentic/metrics.py` - Performance metrics tracking (TTFT, cache hits, tokens)
+- `agentic/scratchpad.py` - Enhanced with public/private spaces, KV cache refs
 - `agentic/OPTIMIZATION_ANALYSIS.md` - Test results and bottleneck analysis
 - `agentic/KV_CACHE_IMPLEMENTATION_PLAN.md` - Full 4-phase optimization roadmap
 - `setup_ollama_optimization.sh` - Ollama environment configuration
 
-**Cache API Endpoints:**
-- `GET /api/v1/search/cache/stats` - View cache statistics
+**Cache & Performance API Endpoints:**
+- `GET /api/v1/search/cache/stats` - View content cache statistics
 - `GET /api/v1/search/ttl/stats` - View TTL pinning statistics and tool latencies
+- `GET /api/v1/search/metrics` - View performance metrics (TTFT, tokens, cache hits)
+- `GET /api/v1/search/artifacts/stats` - View artifact store statistics
 - `DELETE /api/v1/search/cache` - Clear all caches
+- `DELETE /api/v1/search/artifacts/{session_id}` - Clean up session artifacts
 
 **Future Optimizations (See KV_CACHE_IMPLEMENTATION_PLAN.md):**
 - Phase 3: vLLM migration (40-60% additional TTFT reduction)
