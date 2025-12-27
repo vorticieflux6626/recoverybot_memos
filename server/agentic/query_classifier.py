@@ -99,14 +99,15 @@ Respond ONLY with valid JSON (no markdown, no explanation):
 {{"category": "research|problem_solving|factual|creative|technical|comparative|how_to", "capabilities": ["web_search", "reasoning", ...], "complexity": "simple|moderate|complex|expert", "urgency": "low|medium|high", "use_thinking_model": true|false, "recommended_pipeline": "direct_answer|web_search|agentic_search|code_assistant", "reasoning": "Brief explanation of classification"}}"""
 
 
-# Default model for classification
-DEFAULT_CLASSIFIER_MODEL = "deepseek-r1:14b-qwen-distill-q8_0"
+# Default model for classification - use a FAST model (not thinking model)
+# Classification is simple JSON output, doesn't need reasoning
+DEFAULT_CLASSIFIER_MODEL = "qwen3:8b"  # Fast 8B model for classification
 
-# Validated parameters for DeepSeek R1 (from optimization research)
-DEEPSEEK_R1_PARAMS = {
-    "temperature": 0.6,      # Prevents repetition
-    "top_p": 0.95,           # Good diversity
-    "num_predict": 512,      # Classification is concise
+# Parameters optimized for fast classification
+CLASSIFIER_PARAMS = {
+    "temperature": 0.2,      # Low temp for consistent classification
+    "top_p": 0.9,            # Focused output
+    "num_predict": 256,      # Classification is very concise
 }
 
 
@@ -148,13 +149,13 @@ class QueryClassifier:
         """Select the best available model for classification"""
         available = await self._get_available_models()
 
-        # Prioritized list of classification models
+        # Prioritized list of FAST classification models
+        # Classification is a simple task - use fast models, not thinking models
         preferred_models = [
-            "deepseek-r1:14b-qwen-distill-q8_0",
-            "deepseek-r1:14b",
-            "deepseek-r1:8b",
-            "qwen3:8b",
-            "llama3.2:3b",
+            "qwen3:8b",           # Fast 8B model - good balance
+            "gemma3:4b",          # Very fast 4B model
+            "llama3.2:3b",        # Lightweight fallback
+            "qwen3:4b",           # Another fast option
         ]
 
         for model in preferred_models:
@@ -203,7 +204,7 @@ class QueryClassifier:
                         "model": model,
                         "prompt": prompt,
                         "stream": False,
-                        **DEEPSEEK_R1_PARAMS
+                        **CLASSIFIER_PARAMS
                     },
                     timeout=aiohttp.ClientTimeout(total=60)
                 ) as resp:
