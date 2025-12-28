@@ -231,6 +231,15 @@ from .bge_m3_hybrid import (
     get_hybrid_retriever,
     create_hybrid_retriever
 )
+from .hyde import (
+    HyDEExpander,
+    HyDEConfig,
+    HyDEMode,
+    DocumentType as HyDEDocumentType,
+    HyDEResult,
+    get_hyde_expander,
+    create_hyde_expander
+)
 from . import events
 
 __all__ = [
@@ -425,6 +434,14 @@ __all__ = [
     "BM25Index",
     "get_hybrid_retriever",
     "create_hybrid_retriever",
+    # HyDE Query Expansion (December 2025)
+    "HyDEExpander",
+    "HyDEConfig",
+    "HyDEMode",
+    "HyDEDocumentType",
+    "HyDEResult",
+    "get_hyde_expander",
+    "create_hyde_expander",
 ]
 
-__version__ = "0.17.0"  # BGE-M3 hybrid retrieval with dense + sparse (BM25)
+__version__ = "0.18.0"  # HyDE query expansion with hypothetical document embeddings

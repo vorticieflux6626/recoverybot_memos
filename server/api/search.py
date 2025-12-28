@@ -3523,3 +3523,253 @@ async def clear_hybrid_index():
     except Exception as e:
         logger.error(f"Failed to clear hybrid index: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# HyDE (Hypothetical Document Embeddings) Endpoints
+# =============================================================================
+
+from agentic.hyde import (
+    HyDEExpander,
+    HyDEConfig,
+    HyDEMode,
+    DocumentType,
+    HyDEResult,
+    get_hyde_expander,
+    create_hyde_expander
+)
+
+# Global HyDE expander instance
+_hyde_expander: Optional[HyDEExpander] = None
+
+
+async def get_hyde_expander_instance() -> HyDEExpander:
+    """Get or create the global HyDE expander instance."""
+    global _hyde_expander
+    if _hyde_expander is None:
+        _hyde_expander = await create_hyde_expander()
+    return _hyde_expander
+
+
+class HyDEExpandRequest(BaseModel):
+    """Request for HyDE query expansion."""
+    query: str
+    mode: str = "single"  # single, multi
+    num_hypotheticals: int = 1
+    document_type: str = "passage"  # answer, passage, explanation, summary, technical
+    include_query_embedding: bool = True
+
+
+class HyDESearchRequest(BaseModel):
+    """Request for HyDE-enhanced search."""
+    query: str
+    top_k: int = 10
+    mode: str = "single"
+    num_hypotheticals: int = 1
+    use_hybrid: bool = True  # Combine with hybrid retrieval
+
+
+@router.get("/hyde/stats")
+async def get_hyde_stats():
+    """Get HyDE expander statistics."""
+    try:
+        expander = await get_hyde_expander_instance()
+        stats = expander.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to get HyDE stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hyde/expand")
+async def expand_with_hyde(request: HyDEExpandRequest):
+    """
+    Expand a query using HyDE (Hypothetical Document Embeddings).
+
+    Generates hypothetical documents that would answer the query,
+    then creates a fused embedding for improved retrieval.
+    """
+    try:
+        expander = await get_hyde_expander_instance()
+
+        # Map mode string to enum
+        mode_map = {
+            "single": HyDEMode.SINGLE,
+            "multi": HyDEMode.MULTI,
+            "contrastive": HyDEMode.CONTRASTIVE
+        }
+        mode = mode_map.get(request.mode, HyDEMode.SINGLE)
+
+        # Map document type
+        type_map = {
+            "answer": DocumentType.ANSWER,
+            "passage": DocumentType.PASSAGE,
+            "explanation": DocumentType.EXPLANATION,
+            "summary": DocumentType.SUMMARY,
+            "technical": DocumentType.TECHNICAL
+        }
+        doc_type = type_map.get(request.document_type, DocumentType.PASSAGE)
+
+        # Update config
+        expander.config.document_type = doc_type
+
+        result = await expander.expand(
+            query=request.query,
+            mode=mode,
+            num_hypotheticals=request.num_hypotheticals,
+            include_query_embedding=request.include_query_embedding
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "query": result.original_query,
+                "hypothetical_documents": result.hypothetical_documents,
+                "generation_time_ms": result.generation_time_ms,
+                "embedding_time_ms": result.embedding_time_ms,
+                "fused_embedding_norm": float(np.linalg.norm(result.fused_embedding)),
+                "metadata": result.metadata
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"HyDE expansion failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hyde/search")
+async def search_with_hyde(request: HyDESearchRequest):
+    """
+    Search using HyDE-expanded query.
+
+    Combines HyDE expansion with hybrid retrieval for best results.
+    """
+    try:
+        expander = await get_hyde_expander_instance()
+
+        # Map mode
+        mode_map = {
+            "single": HyDEMode.SINGLE,
+            "multi": HyDEMode.MULTI
+        }
+        mode = mode_map.get(request.mode, HyDEMode.SINGLE)
+
+        # First expand the query with HyDE
+        hyde_result = await expander.expand(
+            query=request.query,
+            mode=mode,
+            num_hypotheticals=request.num_hypotheticals
+        )
+
+        # If hybrid search is enabled and we have documents indexed
+        if request.use_hybrid:
+            retriever = await get_hybrid_retriever_instance()
+
+            if retriever.documents:
+                # Use the fused embedding for search
+                fused_emb = hyde_result.fused_embedding
+                query_norm = np.linalg.norm(fused_emb)
+
+                # Compute scores against indexed documents
+                results = []
+                for doc_id, doc in retriever.documents.items():
+                    dense_score = 0.0
+                    if doc.dense_embedding is not None:
+                        doc_norm = np.linalg.norm(doc.dense_embedding)
+                        if query_norm > 0 and doc_norm > 0:
+                            dense_score = float(
+                                np.dot(fused_emb, doc.dense_embedding) /
+                                (query_norm * doc_norm)
+                            )
+
+                    # Also get BM25 score using original query
+                    sparse_results = retriever.bm25_index.search(request.query, 100)
+                    sparse_scores = {d: s for d, s in sparse_results}
+                    max_sparse = max(sparse_scores.values()) if sparse_scores else 1
+                    sparse_score = sparse_scores.get(doc_id, 0) / max_sparse if max_sparse > 0 else 0
+
+                    # Combine scores
+                    combined = 0.6 * dense_score + 0.4 * sparse_score
+
+                    results.append({
+                        "doc_id": doc_id,
+                        "content": doc.content[:500] + "..." if len(doc.content) > 500 else doc.content,
+                        "dense_score": round(dense_score, 4),
+                        "sparse_score": round(sparse_score, 4),
+                        "combined_score": round(combined, 4),
+                        "metadata": doc.metadata
+                    })
+
+                # Sort by combined score
+                results.sort(key=lambda x: x["combined_score"], reverse=True)
+                results = results[:request.top_k]
+
+                return {
+                    "success": True,
+                    "data": {
+                        "query": request.query,
+                        "hypothetical_documents": hyde_result.hypothetical_documents,
+                        "results": results,
+                        "total_results": len(results),
+                        "hyde_generation_time_ms": hyde_result.generation_time_ms,
+                        "hyde_embedding_time_ms": hyde_result.embedding_time_ms
+                    },
+                    "meta": {
+                        "timestamp": datetime.now().isoformat()
+                    }
+                }
+
+        # If no hybrid or no documents, return just the HyDE result
+        return {
+            "success": True,
+            "data": {
+                "query": request.query,
+                "hypothetical_documents": hyde_result.hypothetical_documents,
+                "results": [],
+                "total_results": 0,
+                "message": "No documents indexed for search",
+                "hyde_generation_time_ms": hyde_result.generation_time_ms,
+                "hyde_embedding_time_ms": hyde_result.embedding_time_ms
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"HyDE search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/hyde/cache")
+async def clear_hyde_cache():
+    """Clear HyDE expansion cache."""
+    try:
+        expander = await get_hyde_expander_instance()
+        cache_size = len(expander._cache)
+        expander._cache.clear()
+
+        return {
+            "success": True,
+            "data": {
+                "cleared_entries": cache_size,
+                "message": "HyDE cache cleared"
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to clear HyDE cache: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
