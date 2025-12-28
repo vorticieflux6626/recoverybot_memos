@@ -3999,3 +3999,372 @@ async def evaluate_search_with_ragas(request: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Search RAGAS evaluation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# UNIFIED CHAT GATEWAY - Server-side routing and agentic activation
+# =============================================================================
+
+class ChatGatewayRequest(BaseModel):
+    """Request model for the unified chat gateway"""
+    query: str
+    user_id: Optional[str] = None
+    conversation_history: Optional[List[Dict[str, str]]] = None
+    force_agentic: bool = False  # Force agentic search even if classifier says otherwise
+    model: str = "qwen3:8b"  # LLM model for direct responses
+
+
+class ChatGatewayResponse(BaseModel):
+    """Response model for chat gateway"""
+    success: bool
+    pipeline_used: str  # direct_answer, web_search, agentic_search
+    response: str
+    sources: Optional[List[Dict]] = None
+    confidence_score: Optional[float] = None
+    classification: Optional[Dict] = None
+
+
+@router.post("/gateway/stream")
+async def chat_gateway_stream(request: ChatGatewayRequest):
+    """
+    Unified Chat Gateway with Server-Side Routing.
+
+    This endpoint is the single entry point for all chat queries. It:
+    1. Classifies the query using DeepSeek-R1 to determine optimal pipeline
+    2. Routes to the appropriate handler (direct, web_search, or agentic)
+    3. Streams SSE events for EVERY processing step for rich UI feedback
+
+    Classification determines:
+    - direct_answer: Query can be answered from LLM knowledge alone
+    - web_search: Simple web search sufficient
+    - agentic_search: Full multi-agent pipeline needed
+    - code_assistant: Technical/code analysis mode
+
+    SSE Events emitted:
+    - classifying_query: Query classification started
+    - query_classified: Classification complete with pipeline recommendation
+    - pipeline_routed: Pipeline selection confirmed
+    - [All agentic events if agentic pipeline selected]
+    - gateway_complete: Final response ready
+
+    Args:
+        request: ChatGatewayRequest with query and options
+
+    Returns:
+        StreamingResponse with SSE events
+    """
+    import uuid
+    import httpx
+    import os
+
+    request_id = str(uuid.uuid4())
+    logger.info(f"[{request_id}] Chat gateway request: {request.query[:50]}...")
+
+    # Create event emitter
+    event_manager = get_event_manager()
+    emitter = event_manager.create_emitter(request_id)
+
+    async def generate_events():
+        """Generator for SSE events"""
+        queue = emitter.subscribe()
+
+        try:
+            # Start the gateway processing in background
+            gateway_task = asyncio.create_task(
+                _execute_chat_gateway(request, request_id, emitter)
+            )
+
+            # Stream events
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=120.0)
+
+                    if event is None:
+                        break
+
+                    yield event.to_sse()
+
+                    # Check for terminal events
+                    if event.event_type in [
+                        EventType.SEARCH_COMPLETED,
+                        EventType.SEARCH_FAILED,
+                        "gateway_complete",
+                        "gateway_error"
+                    ]:
+                        break
+
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+
+            await gateway_task
+
+        except asyncio.CancelledError:
+            logger.info(f"[{request_id}] Gateway stream cancelled")
+        except Exception as e:
+            logger.error(f"[{request_id}] Gateway stream error: {e}")
+            yield f"event: gateway_error\ndata: {{\"error\": \"{str(e)}\"}}\n\n"
+        finally:
+            emitter.unsubscribe(queue)
+            event_manager.remove_emitter(request_id)
+
+    return StreamingResponse(
+        generate_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Request-Id": request_id,
+            "X-Gateway": "true"
+        }
+    )
+
+
+async def _execute_chat_gateway(
+    request: ChatGatewayRequest,
+    request_id: str,
+    emitter
+):
+    """Execute the chat gateway logic with classification and routing."""
+    import httpx
+    import os
+    from agentic import events
+    from agentic.events import AgentGraphState
+
+    try:
+        # Initialize graph state for visualization
+        graph_state = AgentGraphState()
+
+        # ===== STEP 1: CLASSIFY THE QUERY =====
+        await emitter.emit(events.classifying_query(request_id, request.query))
+
+        classifier = await get_classifier()
+        classification = await classifier.classify(
+            request.query,
+            {"conversation_history": request.conversation_history} if request.conversation_history else None
+        )
+
+        # Emit classification result
+        await emitter.emit(events.query_classified(
+            request_id=request_id,
+            category=classification.category.value,
+            pipeline=classification.recommended_pipeline.value,
+            complexity=classification.complexity.value,
+            capabilities=classification.capabilities
+        ))
+
+        logger.info(f"[{request_id}] Classification: category={classification.category.value}, "
+                   f"pipeline={classification.recommended_pipeline.value}, "
+                   f"complexity={classification.complexity.value}")
+
+        # ===== STEP 2: DETERMINE PIPELINE =====
+        pipeline = classification.recommended_pipeline.value
+
+        # Override if force_agentic is set
+        if request.force_agentic:
+            pipeline = "agentic_search"
+            logger.info(f"[{request_id}] Force agentic override applied")
+
+        # Emit pipeline routing decision
+        await emitter.emit(events.pipeline_routed(
+            request_id=request_id,
+            pipeline=pipeline,
+            reason=classification.reasoning
+        ))
+
+        # ===== STEP 3: EXECUTE APPROPRIATE PIPELINE =====
+
+        if pipeline == "direct_answer":
+            # Direct LLM response without search
+            await _execute_direct_answer(request, request_id, emitter, graph_state)
+
+        elif pipeline == "web_search":
+            # Simple web search + synthesis
+            await _execute_simple_search(request, request_id, emitter, graph_state)
+
+        elif pipeline in ["agentic_search", "code_assistant"]:
+            # Full agentic pipeline
+            await _execute_agentic_pipeline(request, request_id, emitter, graph_state, classification)
+
+        else:
+            # Default to agentic for unknown
+            logger.warning(f"[{request_id}] Unknown pipeline '{pipeline}', defaulting to agentic")
+            await _execute_agentic_pipeline(request, request_id, emitter, graph_state, classification)
+
+    except Exception as e:
+        logger.error(f"[{request_id}] Gateway execution failed: {e}", exc_info=True)
+        await emitter.emit(SearchEvent(
+            event_type=EventType.SEARCH_FAILED,
+            request_id=request_id,
+            message=f"Gateway error: {str(e)}",
+            progress_percent=0,
+            data={"error": str(e), "gateway_error": True}
+        ))
+    finally:
+        await emitter.emit(None)  # Signal end of stream
+
+
+async def _execute_direct_answer(
+    request: ChatGatewayRequest,
+    request_id: str,
+    emitter,
+    graph_state
+):
+    """Execute direct LLM answer without web search."""
+    import httpx
+    import os
+
+    await emitter.emit(SearchEvent(
+        event_type=EventType.SYNTHESIZING,
+        request_id=request_id,
+        message="Generating response from knowledge...",
+        progress_percent=50,
+        data={"model": request.model, "pipeline": "direct_answer"}
+    ))
+
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+    # Build messages
+    messages = []
+    if request.conversation_history:
+        for msg in request.conversation_history:
+            messages.append(msg)
+    messages.append({"role": "user", "content": request.query})
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(
+            f"{ollama_url}/api/chat",
+            json={
+                "model": request.model,
+                "messages": messages,
+                "stream": False
+            }
+        )
+        response.raise_for_status()
+        result = response.json()
+
+    answer = result.get("message", {}).get("content", "")
+
+    # Emit completion
+    await emitter.emit(SearchEvent(
+        event_type=EventType.SEARCH_COMPLETED,
+        request_id=request_id,
+        message="Response generated",
+        progress_percent=100,
+        data={
+            "gateway_complete": True,
+            "pipeline_used": "direct_answer",
+            "response": {"synthesized_context": answer},
+            "sources": [],
+            "confidence_score": 0.9,
+            "classification": {
+                "category": "direct",
+                "pipeline": "direct_answer"
+            }
+        }
+    ))
+
+
+async def _execute_simple_search(
+    request: ChatGatewayRequest,
+    request_id: str,
+    emitter,
+    graph_state
+):
+    """Execute simple web search with synthesis."""
+    from agentic import events
+
+    await emitter.emit(SearchEvent(
+        event_type=EventType.SEARCHING,
+        request_id=request_id,
+        message="Searching the web...",
+        progress_percent=30,
+        query=request.query,
+        data={"pipeline": "web_search"}
+    ))
+
+    # Use the orchestrator's simple search + synthesis
+    orchestrator = await get_orchestrator()
+
+    search_request = SearchRequest(
+        query=request.query,
+        user_id=request.user_id,
+        search_mode=SearchMode.FIXED,
+        max_iterations=2,
+        min_sources=2,
+        max_sources=5,
+        verification_level=VerificationLevel.NONE,
+        cache_results=True
+    )
+
+    response = await orchestrator.search(search_request)
+
+    await emitter.emit(SearchEvent(
+        event_type=EventType.SEARCH_COMPLETED,
+        request_id=request_id,
+        message="Search complete",
+        progress_percent=100,
+        data={
+            "gateway_complete": True,
+            "pipeline_used": "web_search",
+            "response": {"synthesized_context": response.data.synthesized_context if response.data else ""},
+            "sources": [s.model_dump() if hasattr(s, 'model_dump') else s for s in (response.data.sources or [])] if response.data else [],
+            "confidence_score": response.data.confidence_score if response.data else 0.5,
+            "classification": {
+                "category": "search",
+                "pipeline": "web_search"
+            }
+        }
+    ))
+
+
+async def _execute_agentic_pipeline(
+    request: ChatGatewayRequest,
+    request_id: str,
+    emitter,
+    graph_state,
+    classification
+):
+    """Execute full agentic search pipeline."""
+    from agentic import events
+
+    # The enhanced orchestrator already emits detailed SSE events
+    orchestrator = await get_enhanced_orchestrator()
+
+    search_request = SearchRequest(
+        query=request.query,
+        user_id=request.user_id,
+        search_mode=SearchMode.ADAPTIVE,
+        analyze_query=True,
+        max_iterations=10,
+        min_sources=5,
+        max_sources=25,
+        verification_level=VerificationLevel.STANDARD,
+        cache_results=True
+    )
+
+    # The orchestrator's search_with_events method already emits to the emitter
+    # We need to use the event-aware search method
+    response = await orchestrator.search(search_request)
+
+    # Emit final gateway completion
+    await emitter.emit(SearchEvent(
+        event_type=EventType.SEARCH_COMPLETED,
+        request_id=request_id,
+        message="Agentic search complete",
+        progress_percent=100,
+        data={
+            "gateway_complete": True,
+            "pipeline_used": "agentic_search",
+            "response": {"synthesized_context": response.data.synthesized_context if response.data else ""},
+            "sources": [s.model_dump() if hasattr(s, 'model_dump') else s for s in (response.data.sources or [])] if response.data else [],
+            "confidence_score": response.data.confidence_score if response.data else 0.0,
+            "search_queries": response.data.search_queries if response.data else [],
+            "classification": {
+                "category": classification.category.value,
+                "pipeline": classification.recommended_pipeline.value,
+                "complexity": classification.complexity.value,
+                "reasoning": classification.reasoning
+            }
+        }
+    ))
