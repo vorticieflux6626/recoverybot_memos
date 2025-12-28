@@ -1471,3 +1471,83 @@ When mixing embeddings from different models:
 - **MRL** (NeurIPS 2022): Matryoshka Representation Learning
 - **Procrustes Alignment** (arXiv:2510.13406): Cross-model embedding alignment
 - **PCA-RAG** (arXiv:2504.08386): 28.6x index reduction with moderate accuracy loss
+
+### Mixed-Precision Embedding System (December 2025)
+
+Implements precision-stratified embedding retrieval based on the "bounding hyperspace" hypothesis:
+- Higher-precision embeddings (fp16) serve as semantic reference frames
+- Lower-precision embeddings (int8/binary) for efficient coarse retrieval
+- Semantic residuals capture what's lost in quantization
+
+**Key Components:**
+- **MixedPrecisionEmbeddingService** (`agentic/mixed_precision_embeddings.py`)
+- **Three-Tier Indexing**: Binary (32x compression) → Int8 (4x) → FP16 (full quality)
+- **Semantic Residual Manager**: Precision-guided operations
+- **Anchor Embeddings**: Category-specific semantic reference frames
+
+**Three-Stage Search Pipeline:**
+```
+User Query
+    |
+    v
+[Qwen3-Embedding (4096-dim fp16)]
+    |
+    +---> [Binary Index] ---> Top-500 (Hamming distance)
+    |            |
+    |            v
+    +---> [Int8 Index] ----> Top-50 (cosine similarity)
+    |            |
+    |            v
+    +---> [FP16 Store] ----> Top-10 (high-precision)
+                 |
+                 v
+          Retrieved Documents
+```
+
+**Compression Ratios:**
+| Precision | Compression | Accuracy | Memory/doc (4096d) |
+|-----------|-------------|----------|-------------------|
+| Binary | 32x | ~92.5% | 512 bytes |
+| Int8 | 4x | 95-99% | 4 KB |
+| FP16 | 1x | 100% | 8 KB |
+
+**MRL Hierarchical Search:**
+Exploits Matryoshka Representation Learning for progressive refinement:
+- Stage 1: 64 dimensions (coarse semantics, fast filtering)
+- Stage 2: 256 dimensions (balanced precision)
+- Stage 3: 1024 dimensions (fine-grained ranking)
+- Stage 4: 4096 dimensions (full precision final)
+
+**Semantic Operations:**
+```python
+# Semantic arithmetic (Word2Vec-style analogies)
+result = service.semantic_arithmetic(
+    base=homeless_shelter_emb,
+    add=addiction_recovery_emb,
+    subtract=basic_housing_emb
+)
+# Result: embedding closer to "recovery center"
+
+# Anchor-guided interpolation
+result = service.guided_interpolation(
+    emb_a, emb_b,
+    alpha=0.5,
+    anchor_category="fanuc_errors"  # Validates semantic validity
+)
+```
+
+**API Endpoints:**
+- `GET /api/v1/search/mixed-precision/stats` - Service statistics
+- `POST /api/v1/search/mixed-precision/index` - Index at all precision levels
+- `POST /api/v1/search/mixed-precision/search` - Three-stage search
+- `POST /api/v1/search/mixed-precision/mrl-search` - MRL hierarchical search
+- `POST /api/v1/search/mixed-precision/anchor` - Create category anchor
+- `POST /api/v1/search/mixed-precision/semantic-arithmetic` - Vector arithmetic
+
+**Research Basis:**
+- ResQ: Mixed-Precision Quantization with Low-Rank Residuals (arXiv 2024)
+- R2Q: Residual Refinement Quantization (arXiv 2025)
+- Binary and Scalar Embedding Quantization (HuggingFace 2024)
+- 4bit-Quantization in Vector-Embedding for RAG (arXiv 2025)
+
+**Module Version**: `agentic/__init__.py` → v0.16.0

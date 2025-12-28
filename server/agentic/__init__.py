@@ -208,6 +208,14 @@ from .entity_enhanced_retrieval import (
     entity_enhanced_retrieve,
     get_entity_enhanced_retriever
 )
+from .mixed_precision_embeddings import (
+    MixedPrecisionEmbeddingService,
+    PrecisionLevel,
+    QuantizedEmbedding,
+    SearchResult as MixedPrecisionSearchResult,
+    RetrievalStats,
+    get_mixed_precision_service
+)
 from . import events
 
 __all__ = [
@@ -381,6 +389,13 @@ __all__ = [
     "EnhancedRetrievalResult",
     "entity_enhanced_retrieve",
     "get_entity_enhanced_retriever",
+    # Mixed-Precision Embeddings (December 2025)
+    "MixedPrecisionEmbeddingService",
+    "PrecisionLevel",
+    "QuantizedEmbedding",
+    "MixedPrecisionSearchResult",
+    "RetrievalStats",
+    "get_mixed_precision_service",
 ]
 
-__version__ = "0.15.0"  # Entity-enhanced retrieval with master embedding aggregation
+__version__ = "0.16.0"  # Mixed-precision embeddings with three-tier retrieval

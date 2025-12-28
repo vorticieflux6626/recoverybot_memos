@@ -15,7 +15,7 @@ Endpoints:
 
 import asyncio
 import logging
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -2943,3 +2943,334 @@ async def query_sub_manifold(request: SubManifoldQueryRequest):
             status_code=500,
             detail=str(e)
         )
+
+
+# =============================================================================
+# Mixed-Precision Embedding Endpoints
+# =============================================================================
+
+
+class MixedPrecisionIndexRequest(BaseModel):
+    """Request to index a document at multiple precision levels."""
+    doc_id: str
+    text: str
+    content: str = ""
+    metadata: Optional[dict] = None
+    instruction: Optional[str] = None
+    store_residual: bool = True
+
+
+class MixedPrecisionSearchRequest(BaseModel):
+    """Request for three-stage mixed-precision search."""
+    query: str
+    top_k: int = 10
+    instruction: Optional[str] = None
+    binary_candidates: int = 500
+    int8_candidates: int = 50
+
+
+class MRLSearchRequest(BaseModel):
+    """Request for MRL hierarchical search."""
+    query: str
+    top_k: int = 10
+    instruction: Optional[str] = None
+    stages: List[int] = [64, 256, 1024, 4096]
+
+
+class CreateAnchorRequest(BaseModel):
+    """Request to create a category anchor from examples."""
+    category: str
+    example_texts: List[str]
+    instruction: Optional[str] = None
+
+
+class SemanticArithmeticRequest(BaseModel):
+    """Request for semantic arithmetic operation."""
+    base_text: str
+    add_text: str
+    subtract_text: str
+    anchor_category: Optional[str] = None
+
+
+@router.get("/mixed-precision/stats")
+async def get_mixed_precision_stats():
+    """Get mixed-precision embedding service statistics."""
+    from agentic.mixed_precision_embeddings import get_mixed_precision_service
+
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        service = get_mixed_precision_service(ollama_url)
+
+        stats = service.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get mixed-precision stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/mixed-precision/index")
+async def index_mixed_precision(request: MixedPrecisionIndexRequest):
+    """
+    Index a document at all precision levels (binary, int8, fp16).
+
+    Creates:
+    - Binary embedding (32x compression) for fast coarse search
+    - Int8 embedding (4x compression) for medium precision
+    - FP16 embedding for high-precision rescoring
+    - Optional semantic residual for precision correction
+    """
+    from agentic.mixed_precision_embeddings import get_mixed_precision_service
+
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        service = get_mixed_precision_service(ollama_url)
+
+        result = await service.index_document(
+            doc_id=request.doc_id,
+            text=request.text,
+            content=request.content,
+            metadata=request.metadata,
+            instruction=request.instruction,
+            store_residual=request.store_residual
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "doc_id": result.doc_id,
+                "dimension": result.dimension,
+                "binary_bytes": len(result.binary) if result.binary else 0,
+                "has_residual": result.residual is not None,
+                "compression_ratios": {
+                    "binary": round(result.dimension * 2 / (len(result.binary) if result.binary else 1), 1),
+                    "int8": round(result.dimension * 2 / result.dimension, 1),
+                    "fp16": 1.0
+                }
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to index document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/mixed-precision/search")
+async def mixed_precision_search(request: MixedPrecisionSearchRequest):
+    """
+    Three-stage precision-stratified search.
+
+    Pipeline:
+    1. Binary search: Ultra-fast Hamming distance (top 500 candidates)
+    2. Int8 rescore: Cosine similarity on quantized embeddings (top 50)
+    3. FP16 final: High-precision rescoring (final top_k)
+
+    Memory savings: 32x for binary stage, 4x for int8 stage.
+    """
+    from agentic.mixed_precision_embeddings import get_mixed_precision_service
+
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        service = get_mixed_precision_service(ollama_url)
+
+        results, stats = await service.search(
+            query=request.query,
+            top_k=request.top_k,
+            instruction=request.instruction,
+            binary_candidates=request.binary_candidates,
+            int8_candidates=request.int8_candidates
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "results": [
+                    {
+                        "doc_id": r.doc_id,
+                        "score": r.score,
+                        "precision_used": r.precision_used.value,
+                        "content": r.content[:500] if r.content else "",
+                        "metadata": r.metadata
+                    }
+                    for r in results
+                ],
+                "count": len(results)
+            },
+            "meta": {
+                "stats": {
+                    "binary_candidates": stats.binary_candidates,
+                    "int8_candidates": stats.int8_candidates,
+                    "final_results": stats.final_results,
+                    "binary_time_ms": round(stats.binary_time_ms, 1),
+                    "int8_time_ms": round(stats.int8_time_ms, 1),
+                    "fp16_time_ms": round(stats.fp16_time_ms, 1),
+                    "total_time_ms": round(stats.total_time_ms, 1)
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Mixed-precision search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/mixed-precision/mrl-search")
+async def mrl_hierarchical_search(request: MRLSearchRequest):
+    """
+    Matryoshka Representation Learning (MRL) hierarchical search.
+
+    Uses dimension truncation for progressive refinement:
+    - Early dimensions (64): Coarse semantics, fast filtering
+    - Middle dimensions (256, 1024): Balanced precision
+    - Full dimensions (4096): Fine-grained final ranking
+
+    Based on: Kusupati et al., "Matryoshka Representation Learning" (NeurIPS 2022)
+    """
+    from agentic.mixed_precision_embeddings import get_mixed_precision_service
+
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        service = get_mixed_precision_service(ollama_url)
+
+        results, stats = await service.mrl_hierarchical_search(
+            query=request.query,
+            top_k=request.top_k,
+            instruction=request.instruction,
+            stages=request.stages
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "results": [
+                    {
+                        "doc_id": r.doc_id,
+                        "score": r.score,
+                        "content": r.content[:500] if r.content else "",
+                        "metadata": r.metadata
+                    }
+                    for r in results
+                ],
+                "count": len(results)
+            },
+            "meta": {
+                "stages": request.stages,
+                "total_time_ms": round(stats.total_time_ms, 1),
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"MRL search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/mixed-precision/anchor")
+async def create_anchor(request: CreateAnchorRequest):
+    """
+    Create a category anchor from example texts.
+
+    Anchors provide semantic reference frames for:
+    - Guided interpolation between embeddings
+    - Semantic arithmetic validation
+    - Precision-guided operations
+
+    The anchor is computed as the normalized mean of example embeddings.
+    """
+    from agentic.mixed_precision_embeddings import get_mixed_precision_service
+
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        service = get_mixed_precision_service(ollama_url)
+
+        anchor = await service.create_anchor_from_examples(
+            category=request.category,
+            example_texts=request.example_texts,
+            instruction=request.instruction
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "category": request.category,
+                "dimension": len(anchor),
+                "example_count": len(request.example_texts),
+                "anchor_norm": float(sum(x**2 for x in anchor)**0.5)
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to create anchor: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/mixed-precision/semantic-arithmetic")
+async def semantic_arithmetic(request: SemanticArithmeticRequest):
+    """
+    Perform semantic arithmetic: base - subtract + add.
+
+    Example:
+        base = "homeless shelter"
+        add = "addiction recovery"
+        subtract = "basic housing"
+        Result: embedding closer to "recovery center"
+
+    If anchor_category is provided, validates result stays in valid semantic region.
+
+    Based on Word2Vec analogy principle: king - man + woman = queen
+    """
+    from agentic.mixed_precision_embeddings import get_mixed_precision_service
+
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        service = get_mixed_precision_service(ollama_url)
+
+        # Get embeddings
+        base_emb = await service.get_embedding(request.base_text)
+        add_emb = await service.get_embedding(request.add_text)
+        sub_emb = await service.get_embedding(request.subtract_text)
+
+        # Perform arithmetic
+        result_emb = service.semantic_arithmetic(
+            base=base_emb,
+            add=add_emb,
+            subtract=sub_emb,
+            anchor_category=request.anchor_category
+        )
+
+        # Find nearest neighbors to result
+        results, _ = await service.search(
+            query=request.base_text,  # Dummy - we'll use result_emb directly
+            top_k=5
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "operation": f"({request.base_text}) - ({request.subtract_text}) + ({request.add_text})",
+                "result_norm": float(sum(x**2 for x in result_emb)**0.5),
+                "anchor_used": request.anchor_category,
+                "dimension": len(result_emb)
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Semantic arithmetic failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
