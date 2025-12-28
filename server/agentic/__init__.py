@@ -240,6 +240,15 @@ from .hyde import (
     get_hyde_expander,
     create_hyde_expander
 )
+from .ragas import (
+    RAGASEvaluator,
+    RAGASConfig,
+    RAGASResult,
+    EvaluationMetric,
+    ClaimVerification,
+    get_ragas_evaluator,
+    create_ragas_evaluator
+)
 from . import events
 
 __all__ = [
@@ -442,6 +451,14 @@ __all__ = [
     "HyDEResult",
     "get_hyde_expander",
     "create_hyde_expander",
+    # RAGAS Evaluation (December 2025)
+    "RAGASEvaluator",
+    "RAGASConfig",
+    "RAGASResult",
+    "EvaluationMetric",
+    "ClaimVerification",
+    "get_ragas_evaluator",
+    "create_ragas_evaluator",
 ]
 
-__version__ = "0.18.0"  # HyDE query expansion with hypothetical document embeddings
+__version__ = "0.19.0"  # RAGAS evaluation pipeline for RAG quality assessment

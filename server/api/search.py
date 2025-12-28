@@ -3773,3 +3773,229 @@ async def clear_hyde_cache():
     except Exception as e:
         logger.error(f"Failed to clear HyDE cache: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# RAGAS Evaluation Endpoints
+# =============================================================================
+
+from agentic.ragas import (
+    RAGASEvaluator,
+    RAGASConfig,
+    RAGASResult,
+    EvaluationMetric,
+    get_ragas_evaluator,
+    create_ragas_evaluator
+)
+
+# Global RAGAS evaluator instance
+_ragas_evaluator: Optional[RAGASEvaluator] = None
+
+
+async def get_ragas_evaluator_instance() -> RAGASEvaluator:
+    """Get or create the global RAGAS evaluator instance."""
+    global _ragas_evaluator
+    if _ragas_evaluator is None:
+        _ragas_evaluator = await create_ragas_evaluator()
+    return _ragas_evaluator
+
+
+class RAGASEvaluateRequest(BaseModel):
+    """Request for RAGAS evaluation."""
+    question: str
+    answer: str
+    contexts: List[str]
+    metrics: Optional[List[str]] = None  # faithfulness, answer_relevancy, context_relevancy, context_precision
+
+
+class RAGASBatchEvaluateRequest(BaseModel):
+    """Request for batch RAGAS evaluation."""
+    samples: List[Dict[str, Any]]  # [{"question": str, "answer": str, "contexts": list}]
+
+
+@router.get("/ragas/stats")
+async def get_ragas_stats():
+    """Get RAGAS evaluation statistics."""
+    try:
+        evaluator = await get_ragas_evaluator_instance()
+        stats = evaluator.get_aggregate_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to get RAGAS stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ragas/evaluate")
+async def evaluate_with_ragas(request: RAGASEvaluateRequest):
+    """
+    Evaluate a RAG response using RAGAS metrics.
+
+    Metrics:
+    - faithfulness: Are claims in answer supported by context?
+    - answer_relevancy: Does answer address the question?
+    - context_relevancy: Is retrieved context relevant?
+    - context_precision: Is relevant context ranked higher?
+    """
+    try:
+        evaluator = await get_ragas_evaluator_instance()
+
+        # Map metric strings to enums
+        metrics = None
+        if request.metrics:
+            metric_map = {
+                "faithfulness": EvaluationMetric.FAITHFULNESS,
+                "answer_relevancy": EvaluationMetric.ANSWER_RELEVANCY,
+                "context_relevancy": EvaluationMetric.CONTEXT_RELEVANCY,
+                "context_precision": EvaluationMetric.CONTEXT_PRECISION
+            }
+            metrics = [metric_map[m] for m in request.metrics if m in metric_map]
+
+        result = await evaluator.evaluate(
+            question=request.question,
+            answer=request.answer,
+            contexts=request.contexts,
+            metrics=metrics
+        )
+
+        return {
+            "success": True,
+            "data": result.to_dict(),
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"RAGAS evaluation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ragas/batch-evaluate")
+async def batch_evaluate_with_ragas(request: RAGASBatchEvaluateRequest):
+    """
+    Evaluate multiple RAG responses using RAGAS.
+
+    Returns individual scores and aggregate statistics.
+    """
+    try:
+        evaluator = await get_ragas_evaluator_instance()
+
+        results = []
+        for sample in request.samples:
+            result = await evaluator.evaluate(
+                question=sample["question"],
+                answer=sample["answer"],
+                contexts=sample.get("contexts", [])
+            )
+            results.append({
+                "question": sample["question"][:100],
+                "scores": result.to_dict()["scores"]
+            })
+
+        # Get aggregate stats
+        stats = evaluator.get_aggregate_stats()
+
+        return {
+            "success": True,
+            "data": {
+                "results": results,
+                "aggregate": stats
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat(),
+                "samples_evaluated": len(results)
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"RAGAS batch evaluation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/ragas/history")
+async def clear_ragas_history():
+    """Clear RAGAS evaluation history."""
+    try:
+        evaluator = await get_ragas_evaluator_instance()
+        history_size = len(evaluator._history)
+        evaluator.clear_history()
+
+        return {
+            "success": True,
+            "data": {
+                "cleared_evaluations": history_size,
+                "message": "RAGAS history cleared"
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to clear RAGAS history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ragas/evaluate-search")
+async def evaluate_search_with_ragas(request: Dict[str, Any]):
+    """
+    Evaluate a search response from the agentic search pipeline.
+
+    Expects the standard search response format with synthesized_context and sources.
+    """
+    try:
+        evaluator = await get_ragas_evaluator_instance()
+
+        # Extract from search response format
+        question = request.get("query", "")
+        answer = request.get("synthesized_context", "")
+        sources = request.get("sources", [])
+
+        # Extract context from sources
+        contexts = []
+        for source in sources:
+            if isinstance(source, dict):
+                content = source.get("snippet", "") or source.get("content", "")
+                if content:
+                    contexts.append(content)
+            elif isinstance(source, str):
+                contexts.append(source)
+
+        if not contexts:
+            return {
+                "success": False,
+                "error": "No contexts found in search response",
+                "meta": {"timestamp": datetime.now().isoformat()}
+            }
+
+        result = await evaluator.evaluate(
+            question=question,
+            answer=answer,
+            contexts=contexts
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "evaluation": result.to_dict(),
+                "input_summary": {
+                    "question_length": len(question),
+                    "answer_length": len(answer),
+                    "num_contexts": len(contexts)
+                }
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Search RAGAS evaluation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
