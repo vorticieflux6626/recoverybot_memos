@@ -369,6 +369,28 @@ class ProgressAggregator:
         self._updates: List[ProgressUpdate] = []
         self._task_states: Dict[str, ProgressStatus] = {}
         self._listeners: List[Callable[[ProgressUpdate], Awaitable[None]]] = []
+        self._request_tracking: Dict[str, Dict[str, Any]] = {}
+
+    def start_tracking(self, request_id: str, total_tasks: int) -> None:
+        """Start tracking progress for a request with known number of tasks."""
+        self._request_tracking[request_id] = {
+            "total_tasks": total_tasks,
+            "started_at": datetime.now(timezone.utc),
+            "completed_tasks": 0,
+            "completed": False
+        }
+        logger.debug(f"Started tracking request {request_id} with {total_tasks} tasks")
+
+    def complete_tracking(self, request_id: str) -> None:
+        """Mark tracking complete for a request."""
+        if request_id in self._request_tracking:
+            self._request_tracking[request_id]["completed"] = True
+            self._request_tracking[request_id]["completed_at"] = datetime.now(timezone.utc)
+            logger.debug(f"Completed tracking request {request_id}")
+
+    def get_request_progress(self, request_id: str) -> Optional[Dict[str, Any]]:
+        """Get progress for a specific request."""
+        return self._request_tracking.get(request_id)
 
     def add_listener(self, listener: Callable[[ProgressUpdate], Awaitable[None]]) -> None:
         """Add a listener for progress updates"""

@@ -2,7 +2,7 @@
 Verifier Agent - Fact Checking and Validation
 
 Cross-checks claims against multiple sources and detects conflicts.
-Essential for recovery-related content where accuracy matters.
+Essential for technical content where accuracy matters.
 """
 
 import asyncio

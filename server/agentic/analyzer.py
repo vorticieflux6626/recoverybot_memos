@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import httpx
 
 from .models import QueryAnalysis, SearchPlan
+from .context_limits import get_analyzer_limits, ANALYZER_LIMITS
 
 if TYPE_CHECKING:
     from .entity_tracker import EntityTracker, EntityState
@@ -162,11 +163,11 @@ Respond with a JSON object containing:
 }}
 
 Guidelines:
-- requires_search=true if: asking for facts, current info, services, locations, specific data
+- requires_search=true if: asking for facts, current info, technical details, specific data, troubleshooting
 - requires_search=false if: casual conversation, personal opinion requested, creative writing, simple greeting
-- For recovery/health topics: prioritize SAMHSA, NIH, CDC, Mayo Clinic
-- For local services: search should include location terms
-- For crisis: include crisis hotlines and immediate resources
+- For technical topics: prioritize official documentation, GitHub, Stack Overflow
+- For research: prioritize arxiv, IEEE, ACM, academic sources
+- For engineering: include specifications, standards, and manufacturer docs
 
 THINKING MODEL CLASSIFICATION:
 - requires_thinking_model=TRUE for queries involving:
@@ -351,9 +352,20 @@ Return ONLY the JSON object, no other text."""
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
             if json_match:
                 data = json.loads(json_match.group())
+                # Ensure decomposed_questions is a list of strings
+                decomposed = data.get("decomposed_questions", [query])
+                if isinstance(decomposed, str):
+                    # If LLM returned a string, wrap it in a list
+                    decomposed = [decomposed]
+                elif not isinstance(decomposed, list):
+                    decomposed = [query]
+                # Ensure each element is a string
+                decomposed = [str(q) for q in decomposed if q]
+                if not decomposed:
+                    decomposed = [query]
                 return SearchPlan(
                     original_query=query,
-                    decomposed_questions=data.get("decomposed_questions", [query]),
+                    decomposed_questions=decomposed,
                     search_phases=data.get("search_phases", []),
                     priority_order=data.get("priority_order", [0]),
                     fallback_strategies=data.get("fallback_strategies", []),
@@ -380,7 +392,7 @@ Return ONLY the JSON object, no other text."""
         self,
         query: str,
         search_results: List[Dict[str, Any]],
-        max_urls: int = 8
+        max_urls: int = None  # Will use dynamic default if None
     ) -> List[Dict[str, Any]]:
         """
         Use LLM to evaluate which URLs are worth scraping for the query.
@@ -391,9 +403,13 @@ Return ONLY the JSON object, no other text."""
         if not search_results:
             return []
 
+        # Use dynamic limit based on model context window
+        if max_urls is None:
+            max_urls = ANALYZER_LIMITS["max_urls_to_evaluate"]
+
         # Format search results for LLM evaluation
         results_summary = []
-        for i, result in enumerate(search_results[:15]):  # Evaluate top 15
+        for i, result in enumerate(search_results[:max_urls]):  # Evaluate up to max_urls
             title = result.get("title", "Unknown")
             url = result.get("url", "")
             snippet = result.get("snippet", "")[:200]
@@ -592,7 +608,7 @@ Return ONLY the JSON object. /no_think"""
                         "options": {
                             "temperature": 0.2,
                             "num_predict": 1024,
-                            "num_ctx": 16384  # OPTIMIZATION: Reduced from 32K (sufficient for coverage)
+                            "num_ctx": ANALYZER_LIMITS["num_ctx"]  # Dynamic based on model context window
                         }
                     }
                 )

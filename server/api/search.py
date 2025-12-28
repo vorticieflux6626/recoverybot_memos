@@ -15,6 +15,8 @@ Endpoints:
 
 import asyncio
 import logging
+import os
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
@@ -524,6 +526,567 @@ async def _execute_enhanced_streaming_search(
             enhanced=True
         ))
         await emitter.emit(None)
+
+
+# =============================================================================
+# UNIFIED ORCHESTRATOR ENDPOINTS
+# =============================================================================
+
+_unified_orchestrator = None
+
+
+async def get_unified_orchestrator_instance():
+    """Get or create the unified orchestrator instance."""
+    global _unified_orchestrator
+    if _unified_orchestrator is None:
+        from agentic.orchestrator_unified import create_unified_orchestrator
+        _unified_orchestrator = await create_unified_orchestrator(
+            ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            db_path="/home/sparkone/sdd/Recovery_Bot/memOS/data"
+        )
+        logger.info("Unified orchestrator initialized")
+    return _unified_orchestrator
+
+
+@router.post("/unified", response_model=SearchResponse)
+async def unified_agentic_search(request: SearchRequest):
+    """
+    Execute UNIFIED agentic search integrating ALL advanced features.
+
+    This endpoint uses the UnifiedOrchestrator which combines:
+
+    **Query Enhancement:**
+    - HyDE Query Expansion: Generates hypothetical documents for better retrieval
+    - Entity Tracking: Extracts and tracks entities across sources
+
+    **Search & Retrieval:**
+    - SearXNG/DuckDuckGo/Brave web search (existing)
+    - BGE-M3 Hybrid Re-ranking: Dense + sparse fusion for better precision
+
+    **Quality Assurance:**
+    - CRAG Evaluation (existing): Pre-synthesis quality check
+    - Self-RAG Reflection (existing): Post-synthesis quality check
+    - RAGAS Evaluation: Faithfulness and relevancy scoring
+
+    **Learning:**
+    - ThoughtLibrary: Reuses successful reasoning patterns
+    - ExperienceDistiller (existing): Learns from successful searches
+
+    Expected improvements over /agentic:
+    - 15-20% better confidence scores via RAGAS-blended scoring
+    - Better recall via HyDE query expansion
+    - Better precision via hybrid re-ranking
+    - More consistent entity handling
+
+    Args:
+        request: SearchRequest with query and options
+
+    Returns:
+        SearchResponse with enhanced metadata including:
+        - entities_extracted: Number of entities tracked
+        - hyde_expansion: Whether HyDE was applied
+        - hybrid_reranked: Whether hybrid re-ranking was applied
+        - ragas_faithfulness: RAGAS faithfulness score
+        - ragas_relevancy: RAGAS relevancy score
+        - ragas_overall: RAGAS overall score
+    """
+    try:
+        orchestrator = await get_unified_orchestrator_instance()
+        response = await orchestrator.search(request)
+        return response
+
+    except Exception as e:
+        logger.error(f"Unified search failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unified search failed: {str(e)}"
+        )
+
+
+@router.get("/unified/stats")
+async def get_unified_stats():
+    """
+    Get statistics from the unified agentic orchestrator.
+
+    Returns stats on:
+    - Features enabled (HyDE, hybrid, RAGAS, entity tracking, thought library)
+    - Feature timing statistics (avg/min/max ms per feature)
+    - Thought library templates and categories
+    - Hybrid retriever document count
+    """
+    try:
+        orchestrator = await get_unified_orchestrator_instance()
+        stats = orchestrator.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.now().isoformat(),
+                "version": "0.22.0"
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get unified stats failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get unified stats: {str(e)}"
+        )
+
+
+# ============================================================================
+# UNIVERSAL ORCHESTRATOR - Consolidates ALL orchestrators with feature flags
+# ============================================================================
+
+_universal_orchestrators: Dict[str, Any] = {}  # Preset -> instance cache
+
+
+async def get_universal_orchestrator(preset: str = "balanced") -> Any:
+    """Get or create a universal orchestrator for the given preset."""
+    from agentic import UniversalOrchestrator, OrchestratorPreset
+
+    if preset not in _universal_orchestrators:
+        preset_enum = OrchestratorPreset(preset) if preset in [p.value for p in OrchestratorPreset] else OrchestratorPreset.BALANCED
+        _universal_orchestrators[preset] = UniversalOrchestrator(
+            ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            mcp_url=os.getenv("MCP_URL", "http://localhost:7777"),
+            brave_api_key=os.getenv("BRAVE_API_KEY"),
+            preset=preset_enum,
+            db_path="/home/sparkone/sdd/Recovery_Bot/memOS/data"
+        )
+        await _universal_orchestrators[preset].initialize()
+        logger.info(f"Universal orchestrator initialized with preset: {preset}")
+    return _universal_orchestrators[preset]
+
+
+class UniversalSearchRequest(BaseModel):
+    """Request model for universal search."""
+    query: str
+    user_id: Optional[str] = None
+    context: Optional[dict] = None
+    max_iterations: int = 10
+    search_mode: str = "adaptive"
+    analyze_query: bool = True
+    verification_level: str = "standard"
+    cache_results: bool = True
+    min_sources: int = 5
+    max_sources: int = 25
+    # Universal-specific
+    preset: Optional[str] = None  # minimal, balanced, enhanced, research, full
+    # Feature overrides (optional)
+    enable_hyde: Optional[bool] = None
+    enable_hybrid_reranking: Optional[bool] = None
+    enable_ragas: Optional[bool] = None
+    enable_entity_tracking: Optional[bool] = None
+    enable_thought_library: Optional[bool] = None
+    enable_pre_act_planning: Optional[bool] = None
+    enable_parallel_execution: Optional[bool] = None
+
+
+@router.post("/universal")
+async def universal_search(request: UniversalSearchRequest):
+    """
+    Execute search with the UNIVERSAL orchestrator - consolidates ALL orchestrators.
+
+    The Universal Orchestrator replaces:
+    - /agentic (AgenticOrchestrator)
+    - /enhanced (EnhancedAgenticOrchestrator)
+    - /graph-enhanced (GraphEnhancedOrchestrator)
+    - /unified (UnifiedOrchestrator)
+
+    **Presets:**
+    - `minimal`: Fast basic search, no enhancements
+    - `balanced`: (default) Good quality/speed trade-off with core features
+    - `enhanced`: All quality features (HyDE, hybrid, RAGAS, entities, thought library)
+    - `research`: Thorough exploration with planning and parallel execution
+    - `full`: Everything enabled (expensive but comprehensive)
+
+    **Feature Overrides:**
+    You can override individual features by passing enable_* parameters.
+
+    **Example Request:**
+    ```json
+    {
+      "query": "Compare FastAPI vs Django for REST APIs",
+      "preset": "research",
+      "enable_parallel_execution": true
+    }
+    ```
+
+    Returns:
+        SearchResponse with enhancement_metadata showing which features were used.
+    """
+    try:
+        # Determine preset
+        preset = request.preset or "balanced"
+
+        # Get or create orchestrator
+        from agentic import UniversalOrchestrator, OrchestratorPreset, FeatureConfig
+
+        # Build feature overrides
+        overrides = {}
+        for field in ["enable_hyde", "enable_hybrid_reranking", "enable_ragas",
+                      "enable_entity_tracking", "enable_thought_library",
+                      "enable_pre_act_planning", "enable_parallel_execution"]:
+            value = getattr(request, field, None)
+            if value is not None:
+                overrides[field] = value
+
+        # If overrides provided, create a custom orchestrator
+        if overrides:
+            orchestrator = UniversalOrchestrator(
+                ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+                mcp_url=os.getenv("MCP_URL", "http://localhost:7777"),
+                brave_api_key=os.getenv("BRAVE_API_KEY"),
+                preset=OrchestratorPreset(preset) if preset in [p.value for p in OrchestratorPreset] else OrchestratorPreset.BALANCED,
+                db_path="/home/sparkone/sdd/Recovery_Bot/memOS/data",
+                **overrides
+            )
+            await orchestrator.initialize()
+        else:
+            orchestrator = await get_universal_orchestrator(preset)
+
+        # Convert to SearchRequest
+        search_request = SearchRequest(
+            query=request.query,
+            user_id=request.user_id,
+            context=request.context,
+            max_iterations=request.max_iterations,
+            search_mode=SearchMode(request.search_mode) if request.search_mode else SearchMode.ADAPTIVE,
+            analyze_query=request.analyze_query,
+            verification_level=VerificationLevel(request.verification_level) if request.verification_level else VerificationLevel.STANDARD,
+            cache_results=request.cache_results,
+            min_sources=request.min_sources,
+            max_sources=request.max_sources
+        )
+
+        response = await orchestrator.search(search_request)
+        return response
+
+    except Exception as e:
+        logger.error(f"Universal search failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Universal search failed: {str(e)}"
+        )
+
+
+@router.get("/universal/presets")
+async def get_universal_presets():
+    """
+    Get available presets and their configurations.
+
+    Returns a list of presets with their enabled features, allowing clients
+    to understand the trade-offs between speed and quality.
+    """
+    from agentic import PRESET_CONFIGS, OrchestratorPreset
+
+    presets = {}
+    for preset in OrchestratorPreset:
+        config = PRESET_CONFIGS[preset]
+        enabled_features = [
+            field.replace("enable_", "")
+            for field in dir(config)
+            if field.startswith("enable_") and getattr(config, field)
+        ]
+        presets[preset.value] = {
+            "name": preset.value,
+            "description": {
+                "minimal": "Fast basic search, no enhancements",
+                "balanced": "Good quality/speed trade-off",
+                "enhanced": "All quality features enabled",
+                "research": "Thorough multi-direction exploration",
+                "full": "Everything enabled (expensive)"
+            }.get(preset.value, ""),
+            "enabled_features": enabled_features,
+            "feature_count": len(enabled_features)
+        }
+
+    return {
+        "success": True,
+        "data": {
+            "presets": presets,
+            "default": "balanced",
+            "recommended": {
+                "quick_lookup": "minimal",
+                "general_search": "balanced",
+                "quality_research": "research",
+                "deep_analysis": "full"
+            }
+        },
+        "meta": {
+            "timestamp": datetime.now().isoformat(),
+            "version": "0.24.0"
+        }
+    }
+
+
+@router.get("/universal/stats")
+async def get_universal_stats(preset: str = "balanced"):
+    """
+    Get statistics from a universal orchestrator instance.
+
+    Args:
+        preset: Which preset's stats to return (default: balanced)
+
+    Returns:
+        Statistics including:
+        - features_enabled: List of enabled features
+        - total_searches: Number of searches performed
+        - cache_hits: Number of cache hits
+        - feature_timings: Per-feature timing statistics
+    """
+    try:
+        orchestrator = await get_universal_orchestrator(preset)
+        stats = orchestrator.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.now().isoformat(),
+                "version": "0.24.0",
+                "preset": preset
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get universal stats failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get universal stats: {str(e)}"
+        )
+
+
+@router.post("/universal/stream")
+async def streaming_universal_search(request: UniversalSearchRequest):
+    """
+    Execute UNIVERSAL search with real-time SSE progress updates.
+
+    This is the streaming version of the /universal endpoint with 40+ features
+    and 5 configurable presets.
+
+    **Presets:**
+    - `minimal`: Fast basic search (4 features)
+    - `balanced`: (default) Good quality/speed trade-off (13 features)
+    - `enhanced`: All quality features (23 features)
+    - `research`: Thorough exploration (31 features)
+    - `full`: Everything enabled (38 features)
+
+    **SSE Events emitted:**
+    - search_started: Search has begun
+    - analyzing_query: LLM is analyzing the query
+    - planning_search: Creating search strategy
+    - searching: Executing web searches
+    - scraping_url: Scraping content from a URL
+    - verifying_claims: Cross-checking facts
+    - synthesizing: Combining results
+    - search_completed: Final results
+
+    See /universal endpoint for full feature description.
+    """
+    import uuid
+
+    request_id = str(uuid.uuid4())
+    preset = request.preset or "balanced"
+    logger.info(f"Universal streaming search [{request_id}] (preset={preset}): {request.query[:50]}...")
+
+    # Create event emitter for this search
+    event_manager = get_event_manager()
+    emitter = event_manager.create_emitter(request_id)
+
+    async def generate_events():
+        """Generator for SSE events"""
+        queue = emitter.subscribe()
+
+        try:
+            # Start the universal search in a background task
+            search_task = asyncio.create_task(
+                _execute_universal_streaming_search(request, request_id, emitter)
+            )
+
+            # Stream events until search completes
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=120.0)  # Longer timeout for full preset
+
+                    if event is None:  # End of stream signal
+                        break
+
+                    yield event.to_sse()
+
+                    # If this is the final event, break
+                    if event.event_type in [EventType.SEARCH_COMPLETED, EventType.SEARCH_FAILED]:
+                        break
+
+                except asyncio.TimeoutError:
+                    # Send keepalive
+                    yield ": keepalive\n\n"
+
+            # Wait for search to finish
+            await search_task
+
+        except asyncio.CancelledError:
+            logger.info(f"[{request_id}] Universal stream cancelled by client")
+        except Exception as e:
+            logger.error(f"[{request_id}] Universal stream error: {e}")
+            yield f"event: error\ndata: {{\"error\": \"{str(e)}\"}}\n\n"
+        finally:
+            emitter.unsubscribe(queue)
+            event_manager.remove_emitter(request_id)
+
+    return StreamingResponse(
+        generate_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "X-Request-Id": request_id,
+            "X-Universal": "true",  # Marker for universal endpoint
+            "X-Preset": preset
+        }
+    )
+
+
+async def _execute_universal_streaming_search(
+    request: UniversalSearchRequest,
+    request_id: str,
+    emitter
+):
+    """Execute the Universal orchestrator search with event emission."""
+    from agentic import UniversalOrchestrator, OrchestratorPreset
+    from agentic.events import SearchEvent
+    import time
+
+    preset = request.preset or "balanced"
+
+    try:
+        # Emit search started
+        await emitter.emit(SearchEvent(
+            event_type=EventType.SEARCH_STARTED,
+            request_id=request_id,
+            message=f"Starting universal search (preset={preset})",
+            progress_percent=0,
+            data={"query": request.query, "preset": preset}
+        ))
+
+        # Emit analyzing event
+        await emitter.emit(SearchEvent(
+            event_type=EventType.ANALYZING_QUERY,
+            request_id=request_id,
+            message="Analyzing query with Universal orchestrator",
+            progress_percent=5,
+            data={"query": request.query}
+        ))
+
+        # Build feature overrides
+        overrides = {}
+        for field in ["enable_hyde", "enable_hybrid_reranking", "enable_ragas",
+                      "enable_entity_tracking", "enable_thought_library",
+                      "enable_pre_act_planning", "enable_parallel_execution"]:
+            value = getattr(request, field, None)
+            if value is not None:
+                overrides[field] = value
+
+        # Create or get orchestrator
+        if overrides:
+            orchestrator = UniversalOrchestrator(
+                ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+                mcp_url=os.getenv("MCP_URL", "http://localhost:7777"),
+                brave_api_key=os.getenv("BRAVE_API_KEY"),
+                preset=OrchestratorPreset(preset) if preset in [p.value for p in OrchestratorPreset] else OrchestratorPreset.BALANCED,
+                db_path="/home/sparkone/sdd/Recovery_Bot/memOS/data",
+                **overrides
+            )
+            await orchestrator.initialize()
+        else:
+            orchestrator = await get_universal_orchestrator(preset)
+
+        # Pass the event emitter to the orchestrator so it can emit detailed phase events
+        orchestrator.set_event_emitter(emitter)
+
+        # Emit planning event
+        await emitter.emit(SearchEvent(
+            event_type=EventType.PLANNING_SEARCH,
+            request_id=request_id,
+            message=f"Planning search with {preset} preset",
+            progress_percent=10,
+            data={"preset": preset, "features_enabled": orchestrator.get_stats().get("features_enabled", [])}
+        ))
+
+        # Convert to SearchRequest
+        search_request = SearchRequest(
+            query=request.query,
+            user_id=request.user_id,
+            context=request.context,
+            max_iterations=request.max_iterations,
+            search_mode=SearchMode(request.search_mode) if request.search_mode else SearchMode.ADAPTIVE,
+            analyze_query=request.analyze_query,
+            verification_level=VerificationLevel(request.verification_level) if request.verification_level else VerificationLevel.STANDARD,
+            cache_results=request.cache_results,
+            min_sources=request.min_sources,
+            max_sources=request.max_sources
+        )
+
+        # Emit searching event
+        await emitter.emit(SearchEvent(
+            event_type=EventType.SEARCHING,
+            request_id=request_id,
+            message="Executing universal search pipeline",
+            progress_percent=20,
+            data={"queries": [request.query]}
+        ))
+
+        # Execute search (the orchestrator handles all phases internally)
+        start_time = time.time()
+        response = await orchestrator.search(search_request)
+        execution_time_ms = int((time.time() - start_time) * 1000)
+
+        # Get stats for completion event
+        stats = orchestrator.get_stats()
+        sources_count = len(response.data.sources) if response.data and response.data.sources else 0
+        confidence = response.data.confidence_score if response.data else 0.0
+
+        # Emit synthesizing event
+        await emitter.emit(SearchEvent(
+            event_type=EventType.SYNTHESIZING,
+            request_id=request_id,
+            message="Synthesizing results",
+            progress_percent=90,
+            data={"sources_count": sources_count}
+        ))
+
+        # Emit completion
+        await emitter.emit(SearchEvent(
+            event_type=EventType.SEARCH_COMPLETED,
+            request_id=request_id,
+            message="Universal search completed",
+            progress_percent=100,
+            data={
+                "response": response.dict() if hasattr(response, 'dict') else {
+                    "success": response.success,
+                    "data": response.data.dict() if hasattr(response.data, 'dict') else None,
+                    "meta": response.meta.dict() if hasattr(response.meta, 'dict') else None
+                },
+                "preset": preset,
+                "features_used": stats.get("features_enabled", []),
+                "sources_count": sources_count,
+                "confidence_score": confidence,
+                "execution_time_ms": execution_time_ms
+            }
+        ))
+
+    except Exception as e:
+        logger.error(f"[{request_id}] Universal search failed: {e}", exc_info=True)
+        await emitter.emit(SearchEvent(
+            event_type=EventType.SEARCH_FAILED,
+            request_id=request_id,
+            message=f"Search failed: {str(e)}",
+            progress_percent=0,
+            data={"error": str(e)}
+        ))
 
 
 @router.post("/stream")
@@ -4271,50 +4834,74 @@ async def _execute_simple_search(
     emitter,
     graph_state
 ):
-    """Execute simple web search with synthesis."""
+    """Execute simple web search with synthesis using UniversalOrchestrator (full preset)."""
     from agentic import events
+    import time
+
+    # Use "full" preset for maximum features and detailed SSE events
+    preset = "full"
+    orchestrator = await get_universal_orchestrator(preset)
+
+    # Pass the event emitter to the orchestrator for detailed phase events
+    orchestrator.set_event_emitter(emitter)
+
+    # Initialize and update graph state for visualization
+    search_idx = graph_state.add_node("search", "active")
 
     await emitter.emit(SearchEvent(
         event_type=EventType.SEARCHING,
         request_id=request_id,
-        message="Searching the web...",
+        message=f"Searching the web (universal/{preset})...",
         progress_percent=30,
         query=request.query,
-        data={"pipeline": "web_search"}
+        data={"pipeline": "web_search", "preset": preset},
+        graph_line=graph_state.to_line_simple()
     ))
-
-    # Use the orchestrator's simple search + synthesis
-    orchestrator = await get_orchestrator()
 
     search_request = SearchRequest(
         query=request.query,
         user_id=request.user_id,
-        search_mode=SearchMode.FIXED,
-        max_iterations=2,
-        min_sources=2,
-        max_sources=5,
-        verification_level=VerificationLevel.NONE,
+        search_mode=SearchMode.ADAPTIVE,
+        max_iterations=10,
+        min_sources=5,
+        max_sources=25,
+        verification_level=VerificationLevel.STANDARD,
         cache_results=True
     )
 
+    start_time = time.time()
     response = await orchestrator.search(search_request)
+    execution_time_ms = int((time.time() - start_time) * 1000)
+
+    # Get stats for completion event
+    stats = orchestrator.get_stats()
+    confidence = response.data.confidence_score if response.data else 0.5
+
+    # Mark search complete in graph
+    graph_state.complete_node(search_idx, success=True)
+    complete_idx = graph_state.add_node("complete", "completed")
 
     await emitter.emit(SearchEvent(
         event_type=EventType.SEARCH_COMPLETED,
         request_id=request_id,
-        message="Search complete",
+        message=f"Universal search complete (preset={preset})",
         progress_percent=100,
         data={
             "gateway_complete": True,
-            "pipeline_used": "web_search",
+            "pipeline_used": "universal_search",
+            "preset": preset,
             "response": {"synthesized_context": response.data.synthesized_context if response.data else ""},
             "sources": [s.model_dump() if hasattr(s, 'model_dump') else s for s in (response.data.sources or [])] if response.data else [],
-            "confidence_score": response.data.confidence_score if response.data else 0.5,
+            "confidence_score": confidence,
+            "search_queries": response.data.search_queries if response.data else [],
+            "execution_time_ms": execution_time_ms,
+            "stats": stats,
             "classification": {
                 "category": "search",
                 "pipeline": "web_search"
             }
-        }
+        },
+        graph_line=graph_state.to_line_simple()
     ))
 
 
@@ -4325,12 +4912,32 @@ async def _execute_agentic_pipeline(
     graph_state,
     classification
 ):
-    """Execute full agentic search pipeline."""
+    """Execute full agentic search pipeline using UniversalOrchestrator."""
     from agentic import events
+    import time
 
-    # Use the base orchestrator which has SSE event emission via search_with_events
-    orchestrator = await get_orchestrator()
+    # Use the UniversalOrchestrator with "full" preset for maximum strength
+    # This provides 38 features including HyDE, CRAG, Self-RAG, and experience distillation
+    preset = "full"
+    orchestrator = await get_universal_orchestrator(preset)
 
+    # Pass the event emitter to the orchestrator so it can emit detailed phase events
+    orchestrator.set_event_emitter(emitter)
+
+    # Initialize graph state for visualization
+    plan_idx = graph_state.add_node("plan", "active")
+
+    # Emit planning event
+    await emitter.emit(SearchEvent(
+        event_type=EventType.PLANNING_SEARCH,
+        request_id=request_id,
+        message=f"Planning universal search with {preset} preset",
+        progress_percent=10,
+        data={"preset": preset, "features_enabled": orchestrator.get_stats().get("features_enabled", [])},
+        graph_line=graph_state.to_line_simple()
+    ))
+
+    # Create SearchRequest for the UniversalOrchestrator
     search_request = SearchRequest(
         query=request.query,
         user_id=request.user_id,
@@ -4343,27 +4950,70 @@ async def _execute_agentic_pipeline(
         cache_results=True
     )
 
-    # Use search_with_events which emits all SSE events (search_results, scraping, etc.)
-    response = await orchestrator.search_with_events(search_request, emitter)
+    # Update graph state
+    graph_state.complete_node(plan_idx, success=True)
+    search_idx = graph_state.add_node("search", "active")
+
+    # Emit searching event
+    await emitter.emit(SearchEvent(
+        event_type=EventType.SEARCHING,
+        request_id=request_id,
+        message="Executing universal search pipeline",
+        progress_percent=20,
+        data={"query": request.query},
+        graph_line=graph_state.to_line_simple()
+    ))
+
+    # Execute search using UniversalOrchestrator
+    start_time = time.time()
+    response = await orchestrator.search(search_request)
+    execution_time_ms = int((time.time() - start_time) * 1000)
+
+    # Get stats for completion event
+    stats = orchestrator.get_stats()
+    sources_count = len(response.data.sources) if response.data and response.data.sources else 0
+    confidence = response.data.confidence_score if response.data else 0.0
+
+    # Update graph state for synthesizing
+    graph_state.complete_node(search_idx, success=True)
+    synth_idx = graph_state.add_node("synthesize", "active")
+
+    # Emit synthesizing event
+    await emitter.emit(SearchEvent(
+        event_type=EventType.SYNTHESIZING,
+        request_id=request_id,
+        message="Synthesizing results",
+        progress_percent=90,
+        data={"sources_count": sources_count},
+        graph_line=graph_state.to_line_simple()
+    ))
+
+    # Mark complete
+    graph_state.complete_node(synth_idx, success=True)
+    complete_idx = graph_state.add_node("complete", "completed")
 
     # Emit final gateway completion
     await emitter.emit(SearchEvent(
         event_type=EventType.SEARCH_COMPLETED,
         request_id=request_id,
-        message="Agentic search complete",
+        message=f"Universal search complete (preset={preset})",
         progress_percent=100,
         data={
             "gateway_complete": True,
-            "pipeline_used": "agentic_search",
+            "pipeline_used": "universal_search",
+            "preset": preset,
             "response": {"synthesized_context": response.data.synthesized_context if response.data else ""},
             "sources": [s.model_dump() if hasattr(s, 'model_dump') else s for s in (response.data.sources or [])] if response.data else [],
-            "confidence_score": response.data.confidence_score if response.data else 0.0,
+            "confidence_score": confidence,
             "search_queries": response.data.search_queries if response.data else [],
+            "execution_time_ms": execution_time_ms,
+            "stats": stats,
             "classification": {
                 "category": classification.category.value,
                 "pipeline": classification.recommended_pipeline.value,
                 "complexity": classification.complexity.value,
                 "reasoning": classification.reasoning
             }
-        }
+        },
+        graph_line=graph_state.to_line_simple()
     ))

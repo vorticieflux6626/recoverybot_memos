@@ -261,6 +261,31 @@ from .events import (
     graph_branch_created,
     graph_paths_merged
 )
+from .sufficient_context import (
+    SufficientContextClassifier,
+    PositionalOptimizer,
+    DynamicContextAllocator,
+    SufficiencyResult,
+    ContextSufficiency,
+    PositionalAnalysis,
+    get_sufficient_context_classifier,
+    get_positional_optimizer,
+    get_dynamic_allocator
+)
+from .orchestrator_unified import (
+    UnifiedOrchestrator,
+    get_unified_orchestrator,
+    create_unified_orchestrator
+)
+from .base_pipeline import (
+    BaseSearchPipeline
+)
+from .orchestrator_universal import (
+    UniversalOrchestrator,
+    FeatureConfig,
+    OrchestratorPreset,
+    PRESET_CONFIGS
+)
 
 __all__ = [
     # Core orchestration
@@ -480,6 +505,27 @@ __all__ = [
     "ClaimVerification",
     "get_ragas_evaluator",
     "create_ragas_evaluator",
+    # Sufficient Context & Mitigations (December 2025)
+    "SufficientContextClassifier",
+    "PositionalOptimizer",
+    "DynamicContextAllocator",
+    "SufficiencyResult",
+    "ContextSufficiency",
+    "PositionalAnalysis",
+    "get_sufficient_context_classifier",
+    "get_positional_optimizer",
+    "get_dynamic_allocator",
+    # Unified Orchestrator (December 2025)
+    "UnifiedOrchestrator",
+    "get_unified_orchestrator",
+    "create_unified_orchestrator",
+    # Base Pipeline (December 2025)
+    "BaseSearchPipeline",
+    # Universal Orchestrator (December 2025)
+    "UniversalOrchestrator",
+    "FeatureConfig",
+    "OrchestratorPreset",
+    "PRESET_CONFIGS",
 ]
 
-__version__ = "0.20.0"  # SSE graph visualization for agent traversal
+__version__ = "0.25.0"  # Full feature integration: 40+ features across 15+ phases with TTL pinning, KV cache, memory tiers, vision analysis, reasoning DAG, and dynamic planning

@@ -191,7 +191,7 @@ class AgentStepGraph:
     # --- Prompt Prefixes (Static, cacheable portions) ---
 
     def _get_orchestrator_prefix(self) -> str:
-        return """SYSTEM: You are the Orchestrator Agent in the Recovery Bot agentic search system.
+        return """SYSTEM: You are the Orchestrator Agent in an intelligent agentic search system.
 Your role is to receive user queries and initiate the search workflow.
 
 RESPONSIBILITIES:
@@ -202,18 +202,18 @@ RESPONSIBILITIES:
 OUTPUT FORMAT: JSON with fields: requires_search, complexity, initial_context"""
 
     def _get_analyzer_prefix(self) -> str:
-        return """SYSTEM: You are the Analyzer Agent in the Recovery Bot agentic search system.
+        return """SYSTEM: You are the Analyzer Agent in an intelligent agentic search system.
 Your role is to analyze queries and determine search requirements.
 
 RESPONSIBILITIES:
-- Classify query type (factual, comparative, procedural)
+- Classify query type (factual, comparative, procedural, technical, troubleshooting)
 - Identify key entities and concepts
 - Assess information needs
 
 OUTPUT FORMAT: JSON with fields: query_type, complexity, requires_search, reasoning"""
 
     def _get_planner_prefix(self) -> str:
-        return """SYSTEM: You are the Planner Agent in the Recovery Bot agentic search system.
+        return """SYSTEM: You are the Planner Agent in an intelligent agentic search system.
 Your role is to decompose complex queries into searchable sub-questions.
 
 RESPONSIBILITIES:
@@ -224,7 +224,7 @@ RESPONSIBILITIES:
 OUTPUT FORMAT: JSON with fields: decomposed_questions (list with question, criteria, priority)"""
 
     def _get_searcher_prefix(self) -> str:
-        return """SYSTEM: You are the Searcher Agent in the Recovery Bot agentic search system.
+        return """SYSTEM: You are the Searcher Agent in an intelligent agentic search system.
 Your role is to execute web searches and manage search results.
 
 RESPONSIBILITIES:
@@ -235,7 +235,7 @@ RESPONSIBILITIES:
 OUTPUT FORMAT: JSON with fields: search_queries, url_evaluations, coverage_score"""
 
     def _get_scraper_prefix(self) -> str:
-        return """SYSTEM: You are the Scraper Agent in the Recovery Bot agentic search system.
+        return """SYSTEM: You are the Scraper Agent in an intelligent agentic search system.
 Your role is to extract and process content from web pages.
 
 RESPONSIBILITIES:
@@ -246,7 +246,7 @@ RESPONSIBILITIES:
 OUTPUT FORMAT: JSON with fields: extracted_content, source_url, relevance_score"""
 
     def _get_verifier_prefix(self) -> str:
-        return """SYSTEM: You are the Verifier Agent in the Recovery Bot agentic search system.
+        return """SYSTEM: You are the Verifier Agent in an intelligent agentic search system.
 Your role is to cross-check facts and assess information confidence.
 
 RESPONSIBILITIES:
@@ -257,7 +257,7 @@ RESPONSIBILITIES:
 OUTPUT FORMAT: JSON with fields: verified_claims, contradictions, confidence_score"""
 
     def _get_synthesizer_prefix(self) -> str:
-        return """SYSTEM: You are the Synthesizer Agent in the Recovery Bot agentic search system.
+        return """SYSTEM: You are the Synthesizer Agent in an intelligent agentic search system.
 Your role is to combine verified findings into a coherent response.
 
 RESPONSIBILITIES:

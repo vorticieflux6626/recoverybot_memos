@@ -39,6 +39,12 @@ from .scraper import ContentScraper, DeepReader
 from .scratchpad import AgenticScratchpad, ScratchpadManager, QuestionStatus, FindingType
 from .content_cache import get_content_cache
 from .ttl_cache_manager import get_ttl_cache_manager, ToolType, ToolCallContext
+from .context_limits import (
+    get_synthesizer_limits,
+    get_dynamic_source_allocation,
+    SYNTHESIZER_LIMITS,
+    THINKING_SYNTHESIZER_LIMITS,
+)
 from .enhanced_reasoning import (
     EnhancedReasoningEngine,
     get_enhanced_reasoning,
@@ -344,7 +350,7 @@ class EnhancedAgenticOrchestrator:
                 ]
 
                 relevant_urls = await self.analyzer.evaluate_urls_for_scraping(
-                    request.query, results_for_eval, max_urls=6
+                    request.query, results_for_eval, max_urls=request.max_urls_to_scrape
                 )
 
                 for url_info in relevant_urls:
@@ -358,7 +364,7 @@ class EnhancedAgenticOrchestrator:
                             scraped_content.append({
                                 "url": url,
                                 "title": url_info["title"],
-                                "content": scraped["content"][:12000]
+                                "content": scraped["content"][:request.max_content_per_source]
                             })
                             scratchpad.record_scrape(url)
                     except Exception as e:
@@ -471,27 +477,51 @@ class EnhancedAgenticOrchestrator:
     ) -> str:
         """Synthesize with full scraped content and contradiction awareness"""
 
-        # Build comprehensive source text
+        # Build comprehensive source text - use ALL scraped content to maximize context utilization
+        # Determine if we're using a thinking model for dynamic limit calculation
+        is_thinking_model = hasattr(self, '_use_thinking_model') and self._use_thinking_model
+
         if scraped_content:
             sources_text = ""
-            for i, sc in enumerate(scraped_content[:5], 1):
-                content_preview = sc.get("content", "")[:2000]
+            # Get dynamic limits based on model context window
+            limits = THINKING_SYNTHESIZER_LIMITS if is_thinking_model else SYNTHESIZER_LIMITS
+            max_context_chars = limits["max_total_content"]
+            max_sources = limits["max_urls_to_scrape"]
+            chars_per_source_base = limits["max_content_per_source"]
+
+            # Dynamic per-source allocation based on total sources available
+            chars_per_source, sources_to_use = get_dynamic_source_allocation(
+                len(scraped_content),
+                is_thinking_model=is_thinking_model
+            )
+
+            logger.info(f"Enhanced synthesis: {max_context_chars} chars budget, {chars_per_source} chars/source for {len(scraped_content)} sources")
+
+            for i, sc in enumerate(scraped_content, 1):
+                content_preview = sc.get("content", "")[:chars_per_source]
                 sources_text += f"\n\n[Source {i}] {sc.get('title', 'Unknown')} ({sc.get('url', '')[:50]}...)\n{content_preview}"
+
+                # Stop if we're approaching context limit or max sources
+                if len(sources_text) > max_context_chars or i >= max_sources:
+                    break
         else:
+            # Fallback to snippets - use more snippets with dynamic limits
+            limits = SYNTHESIZER_LIMITS
+            max_snippets = limits.get("max_snippets_if_no_scrape", 15)
             sources_text = "\n".join([
                 f"[{i+1}] {r.title}: {r.snippet}"
-                for i, r in enumerate(search_results[:10])
+                for i, r in enumerate(search_results[:max_snippets])
             ])
 
-        # Add contradiction warnings
+        # Add contradiction warnings - include all contradictions for complete context
         contradiction_text = ""
         if contradictions:
             contradiction_text = "\n\nNOTE - Conflicting information found:\n"
-            for c in contradictions[:3]:
+            for c in contradictions:
                 contradiction_text += f"- {c.claim}: Sources disagree. {c.resolution_suggestion}\n"
 
-        prompt = f"""You are a research synthesizer for a recovery support application.
-Create a comprehensive, accurate answer based on the sources provided.
+        prompt = f"""You are a research synthesizer providing accurate, well-structured answers.
+Create a comprehensive answer based on the sources provided.
 
 Question: {query}
 
@@ -503,7 +533,7 @@ Instructions:
 1. Synthesize information from all sources
 2. Cite sources using [Source N] format
 3. If sources conflict, present both viewpoints
-4. Use supportive, non-judgmental tone
+4. Be direct and solution-focused
 5. Provide practical, actionable guidance
 6. Acknowledge limitations if information is incomplete
 
@@ -546,9 +576,9 @@ Synthesized Answer:"""
         source_score = min(1.0, unique_domains / 5)
         signals.append(("source_diversity", 0.25, source_score))
 
-        # Content depth (25%)
+        # Content depth (25%) - increased threshold to match expanded context window usage
         content_chars = sum(len(sc.get("content", "")) for sc in scraped_content)
-        depth_score = min(1.0, content_chars / 20000)
+        depth_score = min(1.0, content_chars / 50000)
         signals.append(("content_depth", 0.25, depth_score))
 
         # Contradiction penalty (15%)
@@ -559,8 +589,8 @@ Synthesized Answer:"""
         # Reflection quality (20%)
         signals.append(("quality", 0.20, quality_score))
 
-        # Coverage (15%)
-        coverage_score = min(1.0, state.sources_consulted / 8)
+        # Coverage (15%) - increased threshold to match expanded source limits
+        coverage_score = min(1.0, state.sources_consulted / 15)
         signals.append(("coverage", 0.15, coverage_score))
 
         # Calculate weighted score

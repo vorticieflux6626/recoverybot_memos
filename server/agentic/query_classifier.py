@@ -151,6 +151,7 @@ class QueryClassifier:
 
         # Prioritized list of FAST classification models
         # Classification is a simple task - use fast models, not thinking models
+        # IMPORTANT: Avoid embedding models - they can't be used for text generation
         preferred_models = [
             "qwen3:8b",           # Fast 8B model - good balance
             "gemma3:4b",          # Very fast 4B model
@@ -158,14 +159,27 @@ class QueryClassifier:
             "qwen3:4b",           # Another fast option
         ]
 
+        # Models to skip (embedding models, vision-only models)
+        skip_patterns = ["embedding", "embed", "vision", "-vl"]
+
         for model in preferred_models:
-            # Check for exact match or prefix match
+            # Check for exact match first
+            if model in available:
+                logger.info(f"Selected classifier model: {model}")
+                return model
+
+            # Check for versioned match (e.g., qwen3:8b-q4_0)
             for available_model in available:
-                if model in available_model or available_model.startswith(model.split(":")[0]):
+                # Skip embedding and vision models
+                if any(pattern in available_model.lower() for pattern in skip_patterns):
+                    continue
+
+                # Match base name without quantization suffix
+                if available_model.startswith(model):
                     logger.info(f"Selected classifier model: {available_model}")
                     return available_model
 
-        # Fallback to default
+        # Fallback to default (make sure it's not an embedding model)
         logger.warning(f"No preferred classifier model found, using default: {self.model}")
         return self.model
 

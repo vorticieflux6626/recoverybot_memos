@@ -1,5 +1,5 @@
 """
-Mixed-Precision Embedding Service for Recovery Bot.
+Mixed-Precision Embedding Service for Agentic Search.
 
 Implements precision-stratified embedding retrieval based on:
 - Matryoshka Representation Learning (MRL) for flexible dimensions
@@ -239,7 +239,7 @@ class RetrievalStats:
 
 class MixedPrecisionEmbeddingService:
     """
-    Implements precision-stratified embedding retrieval for Recovery Bot RAG.
+    Implements precision-stratified embedding retrieval for RAG systems.
 
     Architecture:
     ```

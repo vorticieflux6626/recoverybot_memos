@@ -112,6 +112,25 @@ class SearchRequest(BaseModel):
         le=10,
         description="Maximum scrape refinement cycles to improve corpus quality"
     )
+    # Context utilization configuration
+    max_urls_to_scrape: int = Field(
+        default=15,  # Increased from 8 to maximize source utilization
+        ge=1,
+        le=30,
+        description="Maximum URLs to scrape for content (higher uses more context)"
+    )
+    max_content_per_source: int = Field(
+        default=10000,  # 10K chars per source
+        ge=1000,
+        le=50000,
+        description="Maximum characters to use from each scraped source"
+    )
+    max_synthesis_context: int = Field(
+        default=48000,  # Expanded from 24K to utilize 32K context window
+        ge=8000,
+        le=100000,
+        description="Maximum total characters for synthesis prompt (should be ~1.5x context window)"
+    )
 
 
 class SimpleSearchRequest(BaseModel):
@@ -272,6 +291,8 @@ class SearchMeta(BaseModel):
     semantic_match: bool = False
     matched_query: Optional[str] = None
     similarity_score: Optional[float] = None
+    # Unified orchestrator enhancement metadata
+    enhancement_metadata: Optional[Dict[str, Any]] = None
 
 
 class SearchResultData(BaseModel):
@@ -314,13 +335,13 @@ class SearchResponse(BaseModel):
             "example": {
                 "success": True,
                 "data": {
-                    "synthesized_context": "Evidence-based treatments for opioid addiction include...",
+                    "synthesized_context": "The recommended approach for solving this problem includes...",
                     "sources": [
-                        {"title": "SAMHSA Guidelines", "url": "https://samhsa.gov/..."}
+                        {"title": "Official Documentation", "url": "https://docs.example.com/..."}
                     ],
                     "search_queries": [
-                        "evidence-based opioid addiction treatment",
-                        "medication assisted treatment MAT"
+                        "technical problem solution guide",
+                        "best practices implementation"
                     ],
                     "confidence_score": 0.85,
                     "confidence_level": "high",

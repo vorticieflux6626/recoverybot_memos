@@ -56,6 +56,23 @@ from .experience_distiller import (
 from .classifier_feedback import (
     ClassifierFeedback, get_classifier_feedback
 )
+from .context_limits import (
+    get_synthesizer_limits,
+    get_dynamic_source_allocation,
+    get_analyzer_limits,
+    SYNTHESIZER_LIMITS,
+    THINKING_SYNTHESIZER_LIMITS,
+)
+from .sufficient_context import (
+    SufficientContextClassifier,
+    PositionalOptimizer,
+    DynamicContextAllocator,
+    SufficiencyResult,
+    ContextSufficiency,
+    get_sufficient_context_classifier,
+    get_positional_optimizer,
+    get_dynamic_allocator,
+)
 from . import events
 from .events import (
     EventEmitter, EventType, SearchEvent,
@@ -672,7 +689,7 @@ class AgenticOrchestrator:
                     relevant_urls = await self.analyzer.evaluate_urls_for_scraping(
                         request.query,
                         results_for_eval,
-                        max_urls=8
+                        max_urls=request.max_urls_to_scrape
                     )
                     logger.info(f"[{request_id}] {len(relevant_urls)} URLs deemed relevant for scraping")
 
@@ -699,7 +716,7 @@ class AgenticOrchestrator:
                                     scraped_content.append({
                                         "url": url,
                                         "title": title,
-                                        "content": scraped["content"][:12000],
+                                        "content": scraped["content"][:request.max_content_per_source],
                                         "content_type": scraped.get("content_type", "html")
                                     })
                                     # Record in scratchpad
@@ -780,6 +797,146 @@ class AgenticOrchestrator:
 
                 # No more refinements needed or possible
                 break
+
+            # STEP 4.5: SUFFICIENT CONTEXT CHECK & POSITIONAL OPTIMIZATION
+            # Based on Google's "Sufficient Context" research (arXiv:2411.06037)
+            # Check if we have enough context to answer the query before synthesis
+            sufficiency_result = None
+            try:
+                if scraped_content and len(scraped_content) >= 2:
+                    # Combine scraped content for sufficiency check
+                    combined_context = "\n\n---\n\n".join([
+                        f"Source: {sc.get('title', 'Unknown')}\n{sc.get('content', '')[:3000]}"
+                        for sc in scraped_content[:10]  # Check first 10 sources
+                    ])
+
+                    # Run sufficient context classification
+                    context_classifier = get_sufficient_context_classifier()
+                    sufficiency_result = await context_classifier.classify(
+                        question=request.query,
+                        context=combined_context
+                    )
+
+                    search_trace.append({
+                        "step": "sufficient_context_check",
+                        "is_sufficient": sufficiency_result.is_sufficient,
+                        "confidence": sufficiency_result.confidence,
+                        "sufficiency_level": sufficiency_result.sufficiency_level.value,
+                        "missing_info": sufficiency_result.missing_information[:3],
+                        "recommendation": sufficiency_result.recommendation
+                    })
+
+                    logger.info(
+                        f"[{request_id}] Sufficient context check: "
+                        f"sufficient={sufficiency_result.is_sufficient}, "
+                        f"confidence={sufficiency_result.confidence:.2f}, "
+                        f"level={sufficiency_result.sufficiency_level.value}"
+                    )
+
+                    # If insufficient and we can still refine, add targeted queries
+                    if (not sufficiency_result.is_sufficient and
+                        sufficiency_result.confidence >= 0.7 and
+                        sufficiency_result.missing_information and
+                        state.iteration < request.max_iterations - 1):
+
+                        logger.warning(
+                            f"[{request_id}] Context INSUFFICIENT: {sufficiency_result.missing_information}"
+                        )
+                        # Generate targeted queries for missing information
+                        missing_queries = [
+                            f"{request.query} {missing}"
+                            for missing in sufficiency_result.missing_information[:2]
+                        ]
+                        state.add_pending_queries(missing_queries)
+                        logger.info(f"[{request_id}] Added targeted queries for missing info: {missing_queries}")
+
+            except Exception as e:
+                logger.warning(f"[{request_id}] Sufficient context check failed (non-fatal): {e}")
+
+            # STEP 4.6: DYNAMIC CONTEXT ALLOCATION
+            # Adjust context budget based on current confidence and sufficiency
+            dynamic_allocator = get_dynamic_allocator()
+            current_confidence = 0.5  # Default mid-point
+
+            # Estimate current confidence from verified claims
+            if state.verified_claims:
+                verified_ratio = sum(1 for v in state.verified_claims if v.verified) / len(state.verified_claims)
+                current_confidence = verified_ratio
+
+            context_budget = dynamic_allocator.calculate_budget(
+                current_confidence=current_confidence,
+                sufficiency_result=sufficiency_result,
+                iteration=state.iteration,
+                source_count=len(scraped_content) if scraped_content else len(state.raw_results)
+            )
+
+            # Apply dynamic limits to scraped content
+            if scraped_content:
+                max_per_source = context_budget["max_per_source"]
+                max_sources = context_budget["max_sources"]
+
+                # Truncate content per source based on dynamic allocation
+                for sc in scraped_content:
+                    if len(sc.get("content", "")) > max_per_source:
+                        sc["content"] = sc["content"][:max_per_source]
+
+                # Limit number of sources if needed
+                if len(scraped_content) > max_sources:
+                    logger.info(
+                        f"[{request_id}] Dynamic allocation: reducing sources from "
+                        f"{len(scraped_content)} to {max_sources} (confidence={current_confidence:.2f})"
+                    )
+                    scraped_content = scraped_content[:max_sources]
+
+                search_trace.append({
+                    "step": "dynamic_context_allocation",
+                    "allocation_ratio": context_budget["allocation_ratio"],
+                    "max_total_content": context_budget["max_total_content"],
+                    "max_per_source": max_per_source,
+                    "max_sources": max_sources,
+                    "current_confidence": current_confidence
+                })
+
+            # STEP 4.7: POSITIONAL OPTIMIZATION (Lost-in-the-Middle Mitigation)
+            # Reorder sources to place most relevant at beginning and end
+            if scraped_content and len(scraped_content) >= 5:
+                try:
+                    positional_optimizer = get_positional_optimizer()
+
+                    # Score relevance of each source
+                    relevance_scores = await positional_optimizer.score_relevance(
+                        request.query,
+                        scraped_content[:15]  # Score top 15
+                    )
+
+                    # Reorder for optimal attention
+                    reordered_content, positional_analysis = positional_optimizer.reorder_for_optimal_attention(
+                        scraped_content[:15],
+                        relevance_scores
+                    )
+
+                    # Replace scraped content with reordered version
+                    scraped_content = reordered_content + scraped_content[15:]
+
+                    search_trace.append({
+                        "step": "positional_optimization",
+                        "reordered_indices": positional_analysis.optimal_reorder,
+                        "beginning_relevance": round(positional_analysis.beginning_relevance, 2),
+                        "middle_relevance": round(positional_analysis.middle_relevance, 2),
+                        "end_relevance": round(positional_analysis.end_relevance, 2),
+                        "lost_in_middle_risk": positional_analysis.lost_in_middle_risk
+                    })
+
+                    logger.info(
+                        f"[{request_id}] Positional optimization: "
+                        f"begin={positional_analysis.beginning_relevance:.2f}, "
+                        f"middle={positional_analysis.middle_relevance:.2f}, "
+                        f"end={positional_analysis.end_relevance:.2f}, "
+                        f"risk={positional_analysis.lost_in_middle_risk}"
+                    )
+
+                except Exception as e:
+                    logger.warning(f"[{request_id}] Positional optimization failed (non-fatal): {e}")
 
             # STEP 5: SYNTHESIZE - Use scraped content if available
             # Include scratchpad context for the synthesizer
@@ -1502,7 +1659,7 @@ class AgenticOrchestrator:
                     relevant_urls = await self.analyzer.evaluate_urls_for_scraping(
                         request.query,
                         results_for_eval,
-                        max_urls=8
+                        max_urls=request.max_urls_to_scrape
                     )
 
                     await emitter.emit(events.urls_evaluated(
@@ -1541,7 +1698,7 @@ class AgenticOrchestrator:
                                     scraped_content.append({
                                         "url": url,
                                         "title": title,
-                                        "content": scraped["content"][:12000],
+                                        "content": scraped["content"][:request.max_content_per_source],
                                         "content_type": scraped.get("content_type", "html")
                                     })
                                     # Record in scratchpad

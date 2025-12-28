@@ -560,7 +560,7 @@ JSON:"""
         """
         Detect contradictions between sources.
 
-        Important for recovery information where accuracy matters.
+        Important for technical information where accuracy matters.
         """
         if len(sources) < 2:
             return []

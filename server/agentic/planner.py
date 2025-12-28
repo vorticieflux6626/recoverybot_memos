@@ -83,7 +83,7 @@ Instructions:
 1. Break down the question into key information needs
 2. Generate search queries that cover different aspects
 3. Use specific, targeted search terms
-4. Focus on recovery, addiction, health, and support resources
+4. Include technical terminology and official names when relevant
 
 Output ONLY a JSON array of search query strings, like:
 ["query 1", "query 2", "query 3"]

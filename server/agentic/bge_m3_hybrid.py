@@ -1,5 +1,5 @@
 """
-BGE-M3 Hybrid Retrieval for Recovery Bot.
+BGE-M3 Hybrid Retrieval for Agentic Search.
 
 Implements multi-mode retrieval combining:
 1. Dense embeddings (semantic similarity via BGE-M3)

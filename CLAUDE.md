@@ -1,21 +1,21 @@
 # memOS Server Development Status
 
 ## Project Overview
-memOS is a memory management, quest/gamification, and **intelligent data injection** system for the Recovery Bot Android application. It provides REST APIs for storing user memories, tracking recovery journey progress, gamifying the recovery process through quests and achievements, and **orchestrating agentic AI workflows for enhanced context retrieval**.
+memOS is a memory management, quest/gamification, and **intelligent data injection** system for the Recovery Bot Android application. It provides REST APIs for storing user memories, tracking progress through quests and achievements, and **orchestrating agentic AI workflows for enhanced research and troubleshooting assistance**.
 
-## Strategic Vision: Intelligent Data Injection Hub
+## Strategic Vision: Intelligent Research Hub
 
-memOS is evolving to become the **central intelligence layer** for the Recovery Bot ecosystem, responsible for:
+memOS is the **central intelligence layer** for the Recovery Bot ecosystem, responsible for:
 
-1. **Memory Management** (Current) - HIPAA-compliant storage and semantic search
-2. **Quest Gamification** (Current) - Recovery journey progress tracking
-3. **Agentic Search Orchestration** (New) - Multi-agent web search and context enhancement
-4. **Context Injection** (New) - Intelligent data augmentation for LLM conversations
+1. **Memory Management** (Current) - Secure storage and semantic search
+2. **Quest Gamification** (Current) - Progress tracking and achievements
+3. **Agentic Search Orchestration** (Active) - Multi-agent web search and context enhancement
+4. **Context Injection** (Active) - Intelligent data augmentation for LLM conversations
 
 ### Core Architecture Principle
 memOS serves as the **Single Source of Truth (SSOT)** for user context, memory, and intelligent data retrieval. All context augmentation flows through memOS before reaching the primary LLM.
 
-## Current Status (2025-12-27)
+## Current Status (2025-12-28)
 
 ### Next-Gen Enhancement Plan (December 2025)
 
@@ -45,6 +45,65 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 10** | SSE Visibility + Thorough Search | ✅ **COMPLETE** |
 | **Phase 11** | Domain-Specific Persistent Scratchpad | ✅ **COMPLETE** |
 | **Phase 12** | SSE Graph Visualization + Enhanced Events | ✅ **COMPLETE** |
+| **Phase 13** | Universal Orchestrator + Bug Fixes | ✅ **COMPLETE** |
+
+#### ✅ Phase 13: Universal Orchestrator + Bug Fixes (Completed 2025-12-28)
+
+Consolidated all 40+ features into a single UniversalOrchestrator with preset-based configuration and fixed all method signature errors:
+
+**New Components:**
+- **UniversalOrchestrator** (`agentic/orchestrator_universal.py`): Single orchestrator with 5 presets
+- **BaseSearchPipeline** (`agentic/base_pipeline.py`): Shared pipeline functionality
+- **UniversalGraphState**: Real-time agent progress visualization
+
+**5 Presets (feature configurations):**
+| Preset | Features | Use Case |
+|--------|----------|----------|
+| `minimal` | 8 core features | Fast, simple queries |
+| `balanced` | 18 features | Default for most queries |
+| `enhanced` | 28 features | Complex research |
+| `research` | 35 features | Academic/thorough research |
+| `full` | 38+ features | Maximum capability |
+
+**17 Bug Fixes Applied:**
+1. ContentCache `get_cached_query_result` → `get_query_result`
+2. ToolCallContext request_id argument removed
+3. get_kv_cache_service argument error fixed
+4. AgenticScratchpad `add_entities` → `add_entity` loop
+5. DynamicPlanner `create_initial_plan` → `initial_decomposition`
+6. ThoughtLibrary `retrieve` → `retrieve_templates`
+7. EmbeddingAggregator `aggregate` → `retrieve`
+8. ActorFactory `analyze_task` removed (not needed)
+9. DomainCorpusManager async initialization fixed
+10. cross_domain_query `top_k` argument removed
+11. EntityEnhancedRetriever method signature fixed
+12. MixedPrecisionEmbeddingService method fixed
+13. detect_contradictions synthesis argument fixed
+14. Artifact storage await expression fixed
+15. Query classifier model selection fixed (skip embedding models)
+16. Graph visualization added to all SSE events
+17. ProgressAggregator `start_tracking`/`complete_tracking` methods added
+
+**Graph Visualization:**
+Real-time agent progress shown in SSE events:
+```
+[A✓]→[P✓]→[S•]→[E]→[W]→[V]→[Σ]→[R]→[✓]
+```
+- `A` = Analyze, `P` = Plan, `S` = Search, `E` = Evaluate (CRAG)
+- `W` = Scrape, `V` = Verify, `Σ` = Synthesize, `R` = Reflect
+- `✓` = Complete, `•` = Active
+
+**Test Results:**
+```
+Direct Answer Pipeline: ✅ Works
+Web Search Pipeline: ✅ Works
+Agentic Search Pipeline: ✅ Works
+Graph Visualization: ✅ All events include graph_line
+Confidence Score: 72% (research query)
+Execution Time: ~119s (full preset)
+```
+
+**Module Version**: `agentic/__init__.py` → v0.25.0
 
 **Documentation**: `agentic/ENHANCEMENT_IMPLEMENTATION_PLAN.md`
 
@@ -826,6 +885,17 @@ GET  /api/tts/models/status              - Check which models are loaded
 - **Search Modes**: Fixed, Adaptive, and Exhaustive search strategies
 - **Context Window**: 32K tokens for large content synthesis
 - **Confidence Scoring**: Multi-signal confidence calculation using verification (40%), source diversity (25%), content depth (20%), and synthesis quality (15%)
+- **SearXNG Integration** (NEW - December 2025):
+  - Self-hosted metasearch engine replacing rate-limited DuckDuckGo
+  - Aggregates results from Google, Bing, DuckDuckGo, Brave, Wikipedia, arXiv
+  - No rate limits, caching allowed, self-hosted privacy
+  - Provider priority: SearXNG → Brave → DuckDuckGo (cascading fallback)
+  - Location: `/home/sparkone/sdd/Recovery_Bot/searxng/` (separate git repo)
+  - Key files:
+    - `agentic/searcher.py` - `SearXNGSearchProvider` class with multi-provider fallback
+    - `agentic/searxng_search.py` - Async client for direct SearXNG API access
+    - `../searxng/searxng_client.py` - Standalone Python client
+  - API: `http://localhost:8888/search?q=query&format=json&engines=google,bing`
 - **Post-Scrape Content Coverage Evaluation** (NEW - December 2025):
   - Evaluates scraped content against decomposed questions using qwen3:8b
   - Identifies specific information gaps (e.g., missing costs, requirements, contact info)

@@ -30,6 +30,62 @@ class MetricType(str, Enum):
     TOOL_LATENCY = "tool_latency"
     SYNTHESIS_TIME = "synthesis_time"
     SEARCH_ITERATION = "search_iteration"
+    CONTEXT_UTILIZATION = "context_utilization"
+
+
+@dataclass
+class ContextUtilization:
+    """Tracks context window utilization per agent/model call"""
+    agent_name: str
+    model_name: str
+    context_window: int  # Total context window size (tokens)
+    input_chars: int  # Characters used in input
+    output_chars: int  # Characters in output (estimated)
+    estimated_input_tokens: int  # Estimated input tokens (chars / 4)
+    estimated_output_tokens: int  # Estimated output tokens
+    utilization_pct: float  # Percentage of context window used
+
+    @classmethod
+    def calculate(
+        cls,
+        agent_name: str,
+        model_name: str,
+        input_text: str,
+        output_text: str = "",
+        context_window: int = 32768
+    ) -> "ContextUtilization":
+        """Calculate context utilization from input/output text"""
+        input_chars = len(input_text)
+        output_chars = len(output_text)
+        # Rough estimate: ~4 characters per token
+        estimated_input_tokens = input_chars // 4
+        estimated_output_tokens = output_chars // 4
+        total_tokens = estimated_input_tokens + estimated_output_tokens
+        utilization_pct = (total_tokens / context_window) * 100 if context_window > 0 else 0
+
+        return cls(
+            agent_name=agent_name,
+            model_name=model_name,
+            context_window=context_window,
+            input_chars=input_chars,
+            output_chars=output_chars,
+            estimated_input_tokens=estimated_input_tokens,
+            estimated_output_tokens=estimated_output_tokens,
+            utilization_pct=round(utilization_pct, 1)
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for logging"""
+        return {
+            "agent": self.agent_name,
+            "model": self.model_name,
+            "context_window": self.context_window,
+            "input_chars": self.input_chars,
+            "output_chars": self.output_chars,
+            "est_input_tokens": self.estimated_input_tokens,
+            "est_output_tokens": self.estimated_output_tokens,
+            "utilization_pct": self.utilization_pct
+        }
 
 
 @dataclass
@@ -69,6 +125,40 @@ class QueryMetrics:
     success: bool = True
     error_message: str = ""
 
+    # Context utilization tracking per agent
+    context_utilization: List["ContextUtilization"] = field(default_factory=list)
+
+    def add_context_utilization(
+        self,
+        agent_name: str,
+        model_name: str,
+        input_text: str,
+        output_text: str = "",
+        context_window: int = 32768
+    ):
+        """Track context utilization for an agent call"""
+        utilization = ContextUtilization.calculate(
+            agent_name=agent_name,
+            model_name=model_name,
+            input_text=input_text,
+            output_text=output_text,
+            context_window=context_window
+        )
+        self.context_utilization.append(utilization)
+
+        # Log if utilization is below 50% (opportunity for improvement)
+        if utilization.utilization_pct < 50:
+            logger.debug(
+                f"Low context utilization: {agent_name} using {utilization.utilization_pct}% "
+                f"of {context_window} tokens ({utilization.estimated_input_tokens} input)"
+            )
+
+    def get_avg_context_utilization(self) -> float:
+        """Get average context utilization across all agent calls"""
+        if not self.context_utilization:
+            return 0.0
+        return sum(u.utilization_pct for u in self.context_utilization) / len(self.context_utilization)
+
     def complete(self, success: bool = True, error: str = ""):
         """Mark query as complete"""
         self.end_time = time.time()
@@ -98,7 +188,9 @@ class QueryMetrics:
             "urls_scraped": self.urls_scraped,
             "confidence": round(self.confidence_score, 2),
             "success": self.success,
-            "error": self.error_message
+            "error": self.error_message,
+            "avg_context_utilization_pct": round(self.get_avg_context_utilization(), 1),
+            "context_utilization": [u.to_dict() for u in self.context_utilization]
         }
 
 
@@ -146,10 +238,14 @@ class PerformanceMetrics:
             "total_ms": 0.0,
             "synthesis_ms": 0.0,
             "tokens_per_query": 0.0,
+            "context_utilization_pct": 0.0,
         }
 
         # Tool-specific latency tracking
         self._tool_latencies: Dict[str, List[float]] = defaultdict(list)
+
+        # Context utilization per agent type
+        self._agent_context_utilization: Dict[str, List[float]] = defaultdict(list)
 
     def start_query(self, request_id: str, query: str) -> QueryMetrics:
         """Start tracking a new query"""
@@ -236,6 +332,37 @@ class PerformanceMetrics:
         if len(self._tool_latencies[tool_name]) > 100:
             self._tool_latencies[tool_name].pop(0)
 
+    def record_context_utilization(
+        self,
+        request_id: str,
+        agent_name: str,
+        model_name: str,
+        input_text: str,
+        output_text: str = "",
+        context_window: int = 32768
+    ):
+        """Record context utilization for an agent call"""
+        if request_id in self._active_queries:
+            self._active_queries[request_id].add_context_utilization(
+                agent_name=agent_name,
+                model_name=model_name,
+                input_text=input_text,
+                output_text=output_text,
+                context_window=context_window
+            )
+            # Also track per-agent utilization
+            utilization = ContextUtilization.calculate(
+                agent_name=agent_name,
+                model_name=model_name,
+                input_text=input_text,
+                output_text=output_text,
+                context_window=context_window
+            )
+            self._agent_context_utilization[agent_name].append(utilization.utilization_pct)
+            # Keep last 100 samples per agent
+            if len(self._agent_context_utilization[agent_name]) > 100:
+                self._agent_context_utilization[agent_name].pop(0)
+
     def complete_query(
         self,
         request_id: str,
@@ -263,14 +390,16 @@ class PerformanceMetrics:
         # Update aggregates
         self._update_aggregates(metrics)
 
-        # Log summary
+        # Log summary including context utilization
+        avg_ctx_util = metrics.get_avg_context_utilization()
         logger.info(
             f"Query {request_id[:8]} completed: "
             f"total={metrics.total_ms:.0f}ms, "
             f"synthesis={metrics.synthesis_ms:.0f}ms, "
             f"cache_hit={metrics.cache_hit}, "
             f"tokens={metrics.input_tokens + metrics.output_tokens}, "
-            f"saved={metrics.thinking_tokens_saved}"
+            f"saved={metrics.thinking_tokens_saved}, "
+            f"ctx_util={avg_ctx_util:.1f}%"
         )
 
         return metrics
@@ -303,6 +432,7 @@ class PerformanceMetrics:
         self._update_ema("total_ms", metrics.total_ms)
         self._update_ema("synthesis_ms", metrics.synthesis_ms)
         self._update_ema("tokens_per_query", total_tokens)
+        self._update_ema("context_utilization_pct", metrics.get_avg_context_utilization())
 
     def _update_ema(self, key: str, value: float):
         """Update exponential moving average"""
@@ -347,6 +477,7 @@ class PerformanceMetrics:
                 k: round(v, 1) for k, v in self.rolling_avg.items()
             },
             "tool_latencies": self._get_tool_latency_stats(),
+            "context_utilization": self._get_context_utilization_stats(),
             "recent_queries": [
                 q.to_dict() for q in self._query_history[-5:]
             ],
@@ -368,6 +499,25 @@ class PerformanceMetrics:
             }
         return stats
 
+    def _get_context_utilization_stats(self) -> Dict[str, Dict[str, float]]:
+        """Get context utilization statistics per agent"""
+        stats = {
+            "avg_utilization_pct": round(self.rolling_avg.get("context_utilization_pct", 0), 1),
+            "per_agent": {}
+        }
+        for agent, utilizations in self._agent_context_utilization.items():
+            if not utilizations:
+                continue
+            sorted_utils = sorted(utilizations)
+            stats["per_agent"][agent] = {
+                "avg_pct": round(sum(utilizations) / len(utilizations), 1),
+                "min_pct": round(min(utilizations), 1),
+                "max_pct": round(max(utilizations), 1),
+                "p50_pct": round(sorted_utils[len(sorted_utils) // 2], 1),
+                "count": len(utilizations)
+            }
+        return stats
+
     def get_recent_queries(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get recent query metrics"""
         return [q.to_dict() for q in self._query_history[-limit:]]
@@ -377,6 +527,7 @@ class PerformanceMetrics:
         self._active_queries.clear()
         self._query_history.clear()
         self._tool_latencies.clear()
+        self._agent_context_utilization.clear()
         self.stats = {k: 0 for k in self.stats}
         self.rolling_avg = {k: 0.0 for k in self.rolling_avg}
 

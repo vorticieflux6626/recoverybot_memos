@@ -17,6 +17,12 @@ from .models import (
     SearchState,
     ConfidenceLevel
 )
+from .context_limits import (
+    get_synthesizer_limits,
+    get_dynamic_source_allocation,
+    SYNTHESIZER_LIMITS,
+    THINKING_SYNTHESIZER_LIMITS,
+)
 
 logger = logging.getLogger("agentic.synthesizer")
 
@@ -66,7 +72,7 @@ class SynthesizerAgent:
     - Structures information logically
     - Cites sources appropriately
     - Highlights conflicts or uncertainties
-    - Adapts tone for recovery context
+    - Adapts depth to query complexity
     """
 
     def __init__(
@@ -131,8 +137,8 @@ class SynthesizerAgent:
                 verification_text += f"\nPotential conflicts: {conflict_notes}"
 
         # Build synthesis prompt
-        prompt = f"""You are a helpful research synthesizer for a recovery support application.
-Based on the search results provided, create a comprehensive, supportive answer to the user's question.
+        prompt = f"""You are a research synthesizer providing accurate, well-structured answers.
+Based on the search results provided, create a comprehensive answer to the user's question.
 
 Original Question: {query}
 
@@ -141,13 +147,13 @@ Search Results:
 {verification_text}
 
 Instructions:
-1. Provide accurate, helpful information from the sources
+1. Provide accurate, technically correct information from the sources
 2. Structure your answer with clear sections if appropriate
-3. Use a supportive, non-judgmental tone
-4. Mention specific resources or organizations when relevant
+3. Be direct and solution-focused
+4. Include specific details, examples, and references when relevant
 5. If information is limited, acknowledge what's known and unknown
 6. Focus on practical, actionable guidance
-7. Include source references where helpful
+7. Use [Source N] citations for key facts and claims
 
 Your synthesized answer:"""
 
@@ -254,9 +260,9 @@ Your synthesized answer:"""
         return ""
 
     def _format_results(self, results: List[WebSearchResult]) -> str:
-        """Format search results for the synthesis prompt"""
+        """Format search results for the synthesis prompt - use all results to maximize context utilization"""
         formatted = []
-        for i, result in enumerate(results[:8], 1):
+        for i, result in enumerate(results[:15], 1):
             formatted.append(
                 f"[{i}] **{result.title}**\n"
                 f"Source: {result.source_domain}\n"
@@ -273,20 +279,20 @@ Your synthesized answer:"""
         if not results:
             return f"""I wasn't able to find specific information for your question: "{query}"
 
-For recovery-related resources, I recommend:
-- SAMHSA National Helpline: 1-800-662-4357 (24/7, free, confidential)
-- SAMHSA Treatment Locator: findtreatment.samhsa.gov
-- Your local health department
+Try these approaches:
+- Refine your search query with more specific terms
+- Check official documentation or authoritative sources
+- Break down complex questions into smaller parts
 
-Please reach out to a healthcare provider for personalized guidance."""
+Please try rephrasing your question or providing more context."""
 
-        # Basic compilation of results
+        # Basic compilation of results - use all available results
         synthesis = f"Here's what I found regarding your question: \"{query}\"\n\n"
 
-        for i, result in enumerate(results[:5], 1):
-            synthesis += f"**{result.title}**\n{result.snippet}\n\n"
+        for i, result in enumerate(results[:10], 1):
+            synthesis += f"**[{i}] {result.title}**\n{result.snippet}\n\n"
 
-        synthesis += "\nFor more detailed information, please consult with a healthcare provider."
+        synthesis += "\nFor more detailed information, consult the original sources linked above."
 
         return synthesis
 
@@ -351,7 +357,14 @@ Please reach out to a healthcare provider for personalized guidance."""
 
         content_sections = []
         total_chars = 0
-        max_total_chars = 24000  # Total context budget
+
+        # Get dynamic limits based on model context window
+        limits = THINKING_SYNTHESIZER_LIMITS if is_thinking_model else SYNTHESIZER_LIMITS
+        max_total_chars = limits["max_total_content"]
+        max_sources = limits["max_urls_to_scrape"]
+        per_source_limit_base = limits["max_content_per_source"]
+
+        logger.info(f"Synthesis context budget: {max_total_chars} chars, {max_sources} sources, {per_source_limit_base} chars/source")
 
         for i, content in enumerate(valid_sources, 1):
             title = content.get("title", "Source")
@@ -363,8 +376,8 @@ Please reach out to a healthcare provider for personalized guidance."""
             if remaining < 500:
                 break  # No more room
 
-            # Allow up to 10K per source, but respect remaining budget
-            per_source_limit = min(10000, remaining)
+            # Dynamic per-source allocation: larger budget if fewer sources
+            per_source_limit = min(per_source_limit_base, remaining)
             text = text[:per_source_limit]
 
             content_sections.append(
@@ -374,7 +387,7 @@ Please reach out to a healthcare provider for personalized guidance."""
             )
             total_chars += len(text)
 
-            if i >= 6:  # Cap at 6 sources max
+            if i >= max_sources:
                 break
 
         full_content = "\n\n".join(content_sections)

@@ -579,7 +579,7 @@ class GraphEnhancedOrchestrator:
             ]
 
             relevant_urls = await self.analyzer.evaluate_urls_for_scraping(
-                request.query, results_for_eval, max_urls=8
+                request.query, results_for_eval, max_urls=request.max_urls_to_scrape
             )
 
             if relevant_urls:
