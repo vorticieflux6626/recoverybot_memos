@@ -1381,3 +1381,93 @@ memOS publishes events for other services:
 "search.completed"   # Agentic search finished
 "context.injected"   # Context added to session
 ```
+
+---
+
+## Embedding Models Research (December 2025)
+
+### Available Ollama Embedding Models
+
+| Model | Parameters | Dimensions | Context | Size | Multilingual | MTEB Score |
+|-------|------------|------------|---------|------|--------------|------------|
+| **qwen3-embedding:8b** | 8B | 4096 (MRL: 32-4096) | 40K | 4.7GB | 100+ languages | **70.58** |
+| **qwen3-embedding:4b** | 4B | 2560 | 40K | 2.5GB | 100+ languages | 81.20 (Code) |
+| **qwen3-embedding:0.6b** | 0.6B | 1024 | 32K | 639MB | 100+ languages | 64.33 |
+| **mxbai-embed-large** | 335M | 1024 (MRL: 64-1024) | 512 | 670MB | English | 64.68 |
+| **snowflake-arctic-embed2** | 568M | 768 (MRL: 128+) | 8K | 1.2GB | Multilingual | 55.98 |
+| **nomic-embed-text** | 137M | 768 (MRL: 64-768) | 8K | 274MB | English | 53.01 |
+| **granite-embedding:278m** | 278M | 768 | - | 560MB | Multilingual | - |
+
+**MRL** = Matryoshka Representation Learning (flexible dimension truncation)
+
+### Locally Available Models
+
+```bash
+# Current local embedding models
+qwen3-embedding:latest     # 4.68GB - Primary high-quality model
+snowflake-arctic-embed2    # 1.16GB - Good multilingual
+mxbai-embed-large          # 670MB - Fast English-only
+nomic-embed-text           # 274MB - Lightweight with long context
+granite-embedding:278m     # 560MB - IBM Granite
+granite-embedding:30m      # 60MB - Ultra-lightweight
+```
+
+### Recommended Configuration
+
+For the domain corpus system (FANUC robotics, Raspberry Pi troubleshooting):
+
+| Use Case | Model | Rationale |
+|----------|-------|-----------|
+| **Primary** | qwen3-embedding:4b | 81.20 MTEB-Code, best for technical docs |
+| **Fast Fallback** | mxbai-embed-large | 1024d, fast inference, good English |
+| **Long Documents** | nomic-embed-text | 8K context window |
+| **Maximum Quality** | qwen3-embedding:8b | Highest MTEB score (70.58) |
+
+### Dimension Alignment Techniques
+
+When mixing embeddings from different models:
+
+1. **MRL Truncation** (Recommended): Truncate larger to match smaller
+   ```python
+   qwen_emb = model.encode(text)[:1024]  # Truncate 4096 → 1024
+   qwen_emb = qwen_emb / np.linalg.norm(qwen_emb)  # Re-normalize
+   ```
+
+2. **Linear Projection**: Project smaller to larger dimension
+   ```python
+   projector = nn.Linear(768, 1024)  # Train on paired data
+   ```
+
+3. **Orthogonal Procrustes**: Align embedding spaces while preserving geometry
+   ```python
+   R, _ = orthogonal_procrustes(model_a_anchors, model_b_anchors)
+   aligned = embeddings @ R
+   ```
+
+### Quantization Effects
+
+| Quantization | Compression | Quality Impact |
+|-------------|-------------|----------------|
+| float32 → float16 | 2x | Negligible |
+| float32 → int8 | 4x | Minor (needs calibration) |
+| float32 → binary | 32x | Significant (needs re-ranking) |
+| FP8 (E4M3) | 4x | Better than INT8 for NLP |
+
+**Recommended Pipeline**: Binary search → INT8 re-scoring → Cross-encoder re-ranking
+
+### VRAM Usage (24GB TITAN RTX)
+
+| Configuration | VRAM Used | Room for LLM |
+|---------------|-----------|--------------|
+| qwen3-embedding:8b | ~5.5GB | 18.5GB |
+| qwen3-embedding:4b | ~3.0GB | 21GB |
+| mxbai-embed-large | ~0.9GB | 23.1GB |
+| nomic-embed-text | ~0.4GB | 23.6GB |
+
+### Research References
+
+- **RouterRetriever** (arXiv:2409.02685): Similarity-based routing to domain experts
+- **HF-RAG** (arXiv:2509.02837): Z-score normalization for cross-source fusion
+- **MRL** (NeurIPS 2022): Matryoshka Representation Learning
+- **Procrustes Alignment** (arXiv:2510.13406): Cross-model embedding alignment
+- **PCA-RAG** (arXiv:2504.08386): 28.6x index reduction with moderate accuracy loss
