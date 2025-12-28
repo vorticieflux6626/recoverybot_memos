@@ -57,7 +57,11 @@ from .classifier_feedback import (
     ClassifierFeedback, get_classifier_feedback
 )
 from . import events
-from .events import EventEmitter, EventType, SearchEvent
+from .events import (
+    EventEmitter, EventType, SearchEvent,
+    AgentGraphState, get_graph_state, reset_graph_state,
+    graph_node_entered, graph_node_completed, graph_state_update
+)
 
 logger = logging.getLogger("agentic.orchestrator")
 
@@ -1122,23 +1126,33 @@ class AgenticOrchestrator:
 
             search_trace = []
 
+            # Initialize graph state for visualization
+            reset_graph_state()
+            graph = get_graph_state()
+
             # Emit scratchpad initialization event
             await emitter.emit(events.scratchpad_initialized(request_id, [request.query]))
 
             # STEP 1: ANALYZE
             if request.analyze_query:
+                # Graph: Enter analyze node
+                await emitter.emit(graph_node_entered(request_id, "analyze", graph))
                 await emitter.emit(events.analyzing_query(request_id, request.query))
 
+                analyze_start = time.time()
                 state.query_analysis = await self.analyzer.analyze(
                     request.query,
                     request.context
                 )
+                analyze_ms = int((time.time() - analyze_start) * 1000)
 
                 await emitter.emit(events.query_analyzed(
                     request_id,
                     state.query_analysis.requires_search,
                     state.query_analysis.query_type
                 ))
+                # Graph: Complete analyze node
+                await emitter.emit(graph_node_completed(request_id, "analyze", True, graph, analyze_ms))
 
                 search_trace.append({
                     "step": "analyze",
@@ -1180,7 +1194,10 @@ class AgenticOrchestrator:
                     )
 
             # STEP 2: PLAN
+            # Graph: Enter plan node
+            await emitter.emit(graph_node_entered(request_id, "plan", graph))
             await emitter.emit(events.planning_search(request_id))
+            plan_start = time.time()
 
             if state.query_analysis:
                 state.search_plan = await self.analyzer.create_search_plan(
@@ -1215,11 +1232,14 @@ class AgenticOrchestrator:
             # Emit scratchpad update with decomposed questions
             await emitter.emit(events.scratchpad_initialized(request_id, decomposed_qs))
 
+            plan_ms = int((time.time() - plan_start) * 1000)
             await emitter.emit(events.search_planned(
                 request_id,
                 initial_queries,
                 len(state.search_plan.search_phases)
             ))
+            # Graph: Complete plan node
+            await emitter.emit(graph_node_completed(request_id, "plan", True, graph, plan_ms))
 
             search_trace.append({
                 "step": "plan",
@@ -1248,6 +1268,11 @@ class AgenticOrchestrator:
                 if state.pending_queries:
                     queries_to_execute = state.pending_queries[:3]
 
+                    # Graph: Enter search node (only on first search in this iteration)
+                    if state.iteration == 1:
+                        await emitter.emit(graph_node_entered(request_id, "search", graph))
+                    search_start = time.time()
+
                     await emitter.emit(events.searching(
                         request_id,
                         queries_to_execute,
@@ -1263,6 +1288,7 @@ class AgenticOrchestrator:
                     async with ToolCallContext(request_id, ToolType.WEB_SEARCH, manager=self.ttl_manager):
                         results = await self.searcher.search(queries_to_execute)
                     state.add_results(results)
+                    search_ms = int((time.time() - search_start) * 1000)
 
                     # Record preliminary findings in scratchpad
                     for result in results:
@@ -1288,6 +1314,11 @@ class AgenticOrchestrator:
 
                     # Log scratchpad progress
                     sp_status = scratchpad.get_completion_status()
+                    # Emit graph state update
+                    await emitter.emit(graph_state_update(
+                        request_id, graph,
+                        f"Search: {len(results)} results from {len(state.unique_domains)} domains"
+                    ))
 
                     search_trace.append({
                         "step": "search",
@@ -1302,6 +1333,9 @@ class AgenticOrchestrator:
                 # CRAG: Pre-synthesis retrieval quality evaluation
                 if state.raw_results and iteration == 0:
                     try:
+                        # Graph: Enter CRAG node
+                        await emitter.emit(graph_node_entered(request_id, "crag", graph))
+                        crag_start = time.time()
                         await emitter.emit(events.crag_evaluating(request_id, len(state.raw_results)))
 
                         retrieval_eval = await self.retrieval_evaluator.evaluate(
@@ -1358,12 +1392,22 @@ class AgenticOrchestrator:
                             await emitter.emit(events.web_search_fallback(request_id, "CRAG", "refined_search", "low relevance"))
                             logger.info(f"[{request_id}] CRAG: Web fallback with {len(retrieval_eval.refined_queries)} alternative queries")
 
+                        # Graph: Complete CRAG node
+                        crag_ms = int((time.time() - crag_start) * 1000)
+                        await emitter.emit(graph_node_completed(request_id, "crag", True, graph, crag_ms))
+
                     except Exception as e:
                         logger.warning(f"[{request_id}] CRAG evaluation failed (non-fatal): {e}")
+                        # Graph: Complete CRAG node with failure
+                        await emitter.emit(graph_node_completed(request_id, "crag", False, graph, 0))
 
                 # VERIFY
                 if (request.verification_level != VerificationLevel.NONE and
                     state.raw_results and not state.verified_claims):
+
+                    # Graph: Enter verify node
+                    await emitter.emit(graph_node_entered(request_id, "verify", graph))
+                    verify_start = time.time()
 
                     await emitter.emit(events.verifying_claims(
                         request_id,
@@ -1379,9 +1423,12 @@ class AgenticOrchestrator:
                         )
                         verified_count = sum(1 for v in state.verified_claims if v.verified)
 
+                        verify_ms = int((time.time() - verify_start) * 1000)
                         await emitter.emit(events.claims_verified(
                             request_id, verified_count, len(state.verified_claims)
                         ))
+                        # Graph: Complete verify node
+                        await emitter.emit(graph_node_completed(request_id, "verify", True, graph, verify_ms))
 
                         search_trace.append({
                             "step": "verify",
@@ -1430,6 +1477,10 @@ class AgenticOrchestrator:
             max_scrape_refinements = getattr(request, 'max_scrape_refinements', 3)
             scrape_refinement = 0
             scraped_content = []
+
+            # Graph: Enter scrape node
+            await emitter.emit(graph_node_entered(request_id, "scrape", graph))
+            scrape_start = time.time()
 
             while scrape_refinement <= max_scrape_refinements:
                 if state.raw_results and len(state.raw_results) > 0:
@@ -1603,7 +1654,14 @@ class AgenticOrchestrator:
                 # No more refinements needed or possible
                 break
 
+            # Graph: Complete scrape node
+            scrape_ms = int((time.time() - scrape_start) * 1000)
+            await emitter.emit(graph_node_completed(request_id, "scrape", len(scraped_content) > 0, graph, scrape_ms))
+
             # STEP 5: SYNTHESIZE with scraped content
+            # Graph: Enter synthesize node
+            await emitter.emit(graph_node_entered(request_id, "synthesize", graph))
+            synth_start = time.time()
             await emitter.emit(events.synthesizing(request_id, state.sources_consulted))
 
             # Include scratchpad context for the synthesizer
@@ -1641,13 +1699,19 @@ class AgenticOrchestrator:
                 synthesis_length=len(synthesis),
                 scraped_sources=interim_scraped_count
             )
+            synth_ms = int((time.time() - synth_start) * 1000)
             await emitter.emit(events.synthesis_complete(
                 request_id,
                 len(synthesis),
                 interim_confidence
             ))
+            # Graph: Complete synthesize node
+            await emitter.emit(graph_node_completed(request_id, "synthesize", len(synthesis) > 0, graph, synth_ms))
 
             # STEP 6: SELF-RAG REFLECTION - Check synthesis quality before returning
+            # Graph: Enter reflect node
+            await emitter.emit(graph_node_entered(request_id, "reflect", graph))
+            reflect_start = time.time()
             logger.info(f"[{request_id}] Performing Self-RAG reflection on synthesis...")
             reflection_result = None
             try:
@@ -1705,8 +1769,18 @@ class AgenticOrchestrator:
                     "reflection": reflection_result.to_dict()
                 })
 
+                # Graph: Complete reflect node (success)
+                reflect_ms = int((time.time() - reflect_start) * 1000)
+                await emitter.emit(graph_node_completed(request_id, "reflect", True, graph, reflect_ms))
+
             except Exception as e:
                 logger.warning(f"[{request_id}] Self-reflection failed (non-fatal): {e}")
+                # Graph: Complete reflect node (failure)
+                reflect_ms = int((time.time() - reflect_start) * 1000)
+                await emitter.emit(graph_node_completed(request_id, "reflect", False, graph, reflect_ms))
+
+            # Graph: Enter complete node
+            await emitter.emit(graph_node_entered(request_id, "complete", graph))
 
             # Get final scratchpad status
             final_scratchpad_status = scratchpad.get_completion_status()
@@ -1854,6 +1928,13 @@ class AgenticOrchestrator:
                     logger.debug(f"[{request_id}] Classifier outcome recorded for feedback loop")
                 except Exception as fb_err:
                     logger.debug(f"[{request_id}] Classifier feedback failed: {fb_err}")
+
+            # Graph: Complete the graph - emit final state
+            await emitter.emit(graph_node_completed(request_id, "complete", True, graph, execution_time_ms))
+            await emitter.emit(graph_state_update(
+                request_id, graph,
+                f"Complete: {graph.to_line_simple()}"
+            ))
 
             return response
 

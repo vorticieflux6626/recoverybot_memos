@@ -250,6 +250,17 @@ from .ragas import (
     create_ragas_evaluator
 )
 from . import events
+from .events import (
+    AgentGraphState,
+    get_graph_state,
+    reset_graph_state,
+    graph_node_entered,
+    graph_node_completed,
+    graph_state_update,
+    graph_edge_traversed,
+    graph_branch_created,
+    graph_paths_merged
+)
 
 __all__ = [
     # Core orchestration
@@ -267,6 +278,16 @@ __all__ = [
     "EventManager",
     "get_event_manager",
     "events",
+    # Graph Visualization
+    "AgentGraphState",
+    "get_graph_state",
+    "reset_graph_state",
+    "graph_node_entered",
+    "graph_node_completed",
+    "graph_state_update",
+    "graph_edge_traversed",
+    "graph_branch_created",
+    "graph_paths_merged",
     # TTL Cache Management
     "TTLCacheManager",
     "ToolType",
@@ -461,4 +482,4 @@ __all__ = [
     "create_ragas_evaluator",
 ]
 
-__version__ = "0.19.0"  # RAGAS evaluation pipeline for RAG quality assessment
+__version__ = "0.20.0"  # SSE graph visualization for agent traversal

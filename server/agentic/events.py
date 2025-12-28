@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Dict, Any, Set, Callable, Awaitable
+from typing import Optional, Dict, Any, Set, Callable, Awaitable, List
 from dataclasses import dataclass, field, asdict
 import uuid
 
@@ -148,6 +148,38 @@ class EventType(str, Enum):
     DECISION_POINT = "decision_point"  # Generic decision logging
     PIPELINE_ROUTED = "pipeline_routed"  # Which pipeline was chosen
 
+    # ========== NEW: BGE-M3 Hybrid Retrieval Events ==========
+    HYBRID_SEARCH_START = "hybrid_search_start"
+    HYBRID_SEARCH_COMPLETE = "hybrid_search_complete"
+    HYBRID_INDEXING = "hybrid_indexing"
+    HYBRID_INDEX_COMPLETE = "hybrid_index_complete"
+    BM25_SEARCH = "bm25_search"
+    DENSE_EMBEDDING = "dense_embedding"
+    RRF_FUSION = "rrf_fusion"
+
+    # ========== NEW: HyDE Query Expansion Events ==========
+    HYDE_GENERATING = "hyde_generating"
+    HYDE_HYPOTHETICAL_GENERATED = "hyde_hypothetical_generated"
+    HYDE_EMBEDDING = "hyde_embedding"
+    HYDE_FUSING = "hyde_fusing"
+    HYDE_COMPLETE = "hyde_complete"
+
+    # ========== NEW: RAGAS Evaluation Events ==========
+    RAGAS_EVALUATING = "ragas_evaluating"
+    RAGAS_CLAIMS_EXTRACTING = "ragas_claims_extracting"
+    RAGAS_CLAIMS_EXTRACTED = "ragas_claims_extracted"
+    RAGAS_CLAIM_VERIFYING = "ragas_claim_verifying"
+    RAGAS_CLAIM_VERIFIED = "ragas_claim_verified"
+    RAGAS_EVALUATION_COMPLETE = "ragas_evaluation_complete"
+
+    # ========== NEW: Agent Graph Traversal Visualization ==========
+    GRAPH_STATE_UPDATE = "graph_state_update"  # Main event for graph visualization
+    GRAPH_NODE_ENTERED = "graph_node_entered"
+    GRAPH_NODE_COMPLETED = "graph_node_completed"
+    GRAPH_EDGE_TRAVERSED = "graph_edge_traversed"
+    GRAPH_BRANCH_CREATED = "graph_branch_created"
+    GRAPH_PATHS_MERGED = "graph_paths_merged"
+
 
 @dataclass
 class SearchEvent:
@@ -184,6 +216,9 @@ class SearchEvent:
 
     # Enhanced search marker
     enhanced: bool = False
+
+    # Graph visualization (one-line representation)
+    graph_line: Optional[str] = None  # ASCII graph like: "●─○─○─◎" or "[A]→[S]→[V]→[Σ]"
 
     def to_sse(self) -> str:
         """Convert to Server-Sent Event format"""
@@ -226,6 +261,8 @@ class SearchEvent:
             event_data["data"] = self.data
         if self.enhanced:
             event_data["enhanced"] = self.enhanced
+        if self.graph_line:
+            event_data["graph_line"] = self.graph_line
 
         return f"event: {self.event_type.value}\ndata: {json.dumps(event_data)}\n\n"
 
@@ -1046,5 +1083,593 @@ def iteration_complete_detailed(
         data={
             "results_this_iteration": results_this_iteration,
             "continue_reason": continue_reason
+        }
+    )
+
+
+# ========== BGE-M3 Hybrid Retrieval Events ==========
+
+def hybrid_search_start(
+    request_id: str,
+    query: str,
+    mode: str = "hybrid"
+) -> SearchEvent:
+    """Hybrid search started"""
+    return SearchEvent(
+        event_type=EventType.HYBRID_SEARCH_START,
+        request_id=request_id,
+        message=f"Hybrid search: Starting {mode} retrieval...",
+        query=query,
+        data={"mode": mode}
+    )
+
+
+def hybrid_search_complete(
+    request_id: str,
+    results_count: int,
+    dense_count: int,
+    sparse_count: int,
+    duration_ms: int
+) -> SearchEvent:
+    """Hybrid search completed"""
+    return SearchEvent(
+        event_type=EventType.HYBRID_SEARCH_COMPLETE,
+        request_id=request_id,
+        message=f"Hybrid search: {results_count} results (dense={dense_count}, sparse={sparse_count})",
+        results_count=results_count,
+        data={
+            "dense_count": dense_count,
+            "sparse_count": sparse_count,
+            "duration_ms": duration_ms
+        }
+    )
+
+
+def hybrid_indexing(
+    request_id: str,
+    doc_count: int,
+    current: int = 0
+) -> SearchEvent:
+    """Hybrid indexing progress"""
+    return SearchEvent(
+        event_type=EventType.HYBRID_INDEXING,
+        request_id=request_id,
+        message=f"Hybrid index: Indexing {current}/{doc_count} documents...",
+        data={"total": doc_count, "current": current}
+    )
+
+
+def hybrid_index_complete(
+    request_id: str,
+    indexed_count: int,
+    total_docs: int
+) -> SearchEvent:
+    """Hybrid indexing completed"""
+    return SearchEvent(
+        event_type=EventType.HYBRID_INDEX_COMPLETE,
+        request_id=request_id,
+        message=f"Hybrid index: {indexed_count} documents indexed (total: {total_docs})",
+        data={"indexed": indexed_count, "total": total_docs}
+    )
+
+
+def bm25_search(
+    request_id: str,
+    query: str,
+    results_count: int,
+    duration_ms: int
+) -> SearchEvent:
+    """BM25 sparse search completed"""
+    return SearchEvent(
+        event_type=EventType.BM25_SEARCH,
+        request_id=request_id,
+        message=f"BM25 sparse: {results_count} lexical matches in {duration_ms}ms",
+        query=query,
+        results_count=results_count,
+        data={"duration_ms": duration_ms}
+    )
+
+
+def dense_embedding(
+    request_id: str,
+    text_length: int,
+    dimensions: int,
+    duration_ms: int
+) -> SearchEvent:
+    """Dense embedding generated"""
+    return SearchEvent(
+        event_type=EventType.DENSE_EMBEDDING,
+        request_id=request_id,
+        message=f"Dense embedding: {dimensions}D vector from {text_length} chars in {duration_ms}ms",
+        data={
+            "text_length": text_length,
+            "dimensions": dimensions,
+            "duration_ms": duration_ms
+        }
+    )
+
+
+def rrf_fusion(
+    request_id: str,
+    dense_count: int,
+    sparse_count: int,
+    fused_count: int,
+    rrf_k: int = 60
+) -> SearchEvent:
+    """RRF score fusion completed"""
+    return SearchEvent(
+        event_type=EventType.RRF_FUSION,
+        request_id=request_id,
+        message=f"RRF fusion: {dense_count}+{sparse_count}→{fused_count} (k={rrf_k})",
+        data={
+            "dense_count": dense_count,
+            "sparse_count": sparse_count,
+            "fused_count": fused_count,
+            "rrf_k": rrf_k
+        }
+    )
+
+
+# ========== HyDE Query Expansion Events ==========
+
+def hyde_generating(
+    request_id: str,
+    query: str,
+    doc_type: str = "answer",
+    num_hypotheticals: int = 1
+) -> SearchEvent:
+    """HyDE hypothetical document generation started"""
+    return SearchEvent(
+        event_type=EventType.HYDE_GENERATING,
+        request_id=request_id,
+        message=f"HyDE: Generating {num_hypotheticals} hypothetical {doc_type}(s)...",
+        query=query,
+        data={"doc_type": doc_type, "num_hypotheticals": num_hypotheticals}
+    )
+
+
+def hyde_hypothetical_generated(
+    request_id: str,
+    index: int,
+    total: int,
+    length: int,
+    duration_ms: int
+) -> SearchEvent:
+    """Single hypothetical document generated"""
+    return SearchEvent(
+        event_type=EventType.HYDE_HYPOTHETICAL_GENERATED,
+        request_id=request_id,
+        message=f"HyDE: Generated hypothetical {index}/{total} ({length} chars) in {duration_ms}ms",
+        data={
+            "index": index,
+            "total": total,
+            "length": length,
+            "duration_ms": duration_ms
+        }
+    )
+
+
+def hyde_embedding(
+    request_id: str,
+    text_count: int,
+    include_query: bool
+) -> SearchEvent:
+    """HyDE embedding generation"""
+    texts = text_count + (1 if include_query else 0)
+    return SearchEvent(
+        event_type=EventType.HYDE_EMBEDDING,
+        request_id=request_id,
+        message=f"HyDE: Embedding {texts} texts (query included: {include_query})",
+        data={"text_count": texts, "include_query": include_query}
+    )
+
+
+def hyde_fusing(
+    request_id: str,
+    embedding_count: int,
+    fusion_method: str = "mean"
+) -> SearchEvent:
+    """HyDE embedding fusion"""
+    return SearchEvent(
+        event_type=EventType.HYDE_FUSING,
+        request_id=request_id,
+        message=f"HyDE: Fusing {embedding_count} embeddings via {fusion_method}",
+        data={"embedding_count": embedding_count, "fusion_method": fusion_method}
+    )
+
+
+def hyde_complete(
+    request_id: str,
+    hypotheticals_generated: int,
+    gen_time_ms: int,
+    emb_time_ms: int,
+    dimensions: int
+) -> SearchEvent:
+    """HyDE expansion completed"""
+    return SearchEvent(
+        event_type=EventType.HYDE_COMPLETE,
+        request_id=request_id,
+        message=f"HyDE: Complete - {hypotheticals_generated} docs, {gen_time_ms}ms gen + {emb_time_ms}ms emb",
+        data={
+            "hypotheticals": hypotheticals_generated,
+            "generation_time_ms": gen_time_ms,
+            "embedding_time_ms": emb_time_ms,
+            "dimensions": dimensions
+        }
+    )
+
+
+# ========== RAGAS Evaluation Events ==========
+
+def ragas_evaluating(
+    request_id: str,
+    metrics: list,
+    context_count: int
+) -> SearchEvent:
+    """RAGAS evaluation started"""
+    return SearchEvent(
+        event_type=EventType.RAGAS_EVALUATING,
+        request_id=request_id,
+        message=f"RAGAS: Evaluating {len(metrics)} metrics on {context_count} contexts...",
+        data={"metrics": metrics, "context_count": context_count}
+    )
+
+
+def ragas_claims_extracting(
+    request_id: str,
+    answer_length: int
+) -> SearchEvent:
+    """RAGAS claim extraction started"""
+    return SearchEvent(
+        event_type=EventType.RAGAS_CLAIMS_EXTRACTING,
+        request_id=request_id,
+        message=f"RAGAS: Extracting claims from {answer_length}-char answer...",
+        data={"answer_length": answer_length}
+    )
+
+
+def ragas_claims_extracted(
+    request_id: str,
+    claim_count: int,
+    duration_ms: int
+) -> SearchEvent:
+    """RAGAS claims extracted"""
+    return SearchEvent(
+        event_type=EventType.RAGAS_CLAIMS_EXTRACTED,
+        request_id=request_id,
+        message=f"RAGAS: Extracted {claim_count} claims in {duration_ms}ms",
+        data={"claim_count": claim_count, "duration_ms": duration_ms}
+    )
+
+
+def ragas_claim_verifying(
+    request_id: str,
+    claim_index: int,
+    total_claims: int,
+    claim_preview: str
+) -> SearchEvent:
+    """RAGAS verifying a single claim"""
+    preview = claim_preview[:50] + "..." if len(claim_preview) > 50 else claim_preview
+    return SearchEvent(
+        event_type=EventType.RAGAS_CLAIM_VERIFYING,
+        request_id=request_id,
+        message=f"RAGAS: Verifying claim {claim_index}/{total_claims}: {preview}",
+        data={"claim_index": claim_index, "total_claims": total_claims}
+    )
+
+
+def ragas_claim_verified(
+    request_id: str,
+    claim_index: int,
+    verdict: str,
+    confidence: float
+) -> SearchEvent:
+    """RAGAS single claim verified"""
+    return SearchEvent(
+        event_type=EventType.RAGAS_CLAIM_VERIFIED,
+        request_id=request_id,
+        message=f"RAGAS: Claim {claim_index} → {verdict} ({confidence:.2f})",
+        data={
+            "claim_index": claim_index,
+            "verdict": verdict,
+            "confidence": confidence
+        }
+    )
+
+
+def ragas_evaluation_complete(
+    request_id: str,
+    faithfulness: float,
+    answer_relevancy: float,
+    context_relevancy: float,
+    overall_score: float,
+    duration_ms: int
+) -> SearchEvent:
+    """RAGAS evaluation completed"""
+    return SearchEvent(
+        event_type=EventType.RAGAS_EVALUATION_COMPLETE,
+        request_id=request_id,
+        message=f"RAGAS: Complete - F={faithfulness:.2f} AR={answer_relevancy:.2f} CR={context_relevancy:.2f} → {overall_score:.2f}",
+        data={
+            "faithfulness": faithfulness,
+            "answer_relevancy": answer_relevancy,
+            "context_relevancy": context_relevancy,
+            "overall_score": overall_score,
+            "duration_ms": duration_ms
+        }
+    )
+
+
+# ========== Agent Graph Traversal Visualization ==========
+
+class AgentGraphState:
+    """
+    Tracks the current state of agent graph traversal for visualization.
+
+    Generates one-line ASCII representations like:
+      [A]→[S•]→[V]→[Σ]     (S is active)
+      ●─●─◎─○─○              (step 3 of 5 active)
+      Analyze→Search→Verify→Synthesize
+    """
+
+    # Agent symbols for compact display
+    AGENT_SYMBOLS = {
+        "classify": "C",
+        "analyze": "A",
+        "plan": "P",
+        "search": "S",
+        "scrape": "W",  # Web scrape
+        "verify": "V",
+        "synthesize": "Σ",
+        "reflect": "R",
+        "hyde": "H",
+        "hybrid": "M",  # Mixed/hybrid
+        "ragas": "Q",  # Quality
+        "crag": "E",   # Evaluate
+        "complete": "✓"
+    }
+
+    def __init__(self):
+        self.nodes: List[Dict[str, Any]] = []
+        self.current_index: int = -1
+        self.branches: List[List[str]] = []  # For multi-path visualization
+
+    def add_node(self, agent: str, status: str = "pending") -> int:
+        """Add a node to the graph"""
+        node = {
+            "agent": agent,
+            "symbol": self.AGENT_SYMBOLS.get(agent.lower(), agent[0].upper()),
+            "status": status,
+            "index": len(self.nodes)
+        }
+        self.nodes.append(node)
+        return node["index"]
+
+    def set_active(self, index: int):
+        """Set a node as the currently active one"""
+        for i, node in enumerate(self.nodes):
+            if i < index:
+                node["status"] = "completed"
+            elif i == index:
+                node["status"] = "active"
+                self.current_index = i
+            else:
+                node["status"] = "pending"
+
+    def complete_node(self, index: int, success: bool = True):
+        """Mark a node as completed"""
+        if 0 <= index < len(self.nodes):
+            self.nodes[index]["status"] = "completed" if success else "failed"
+
+    def to_line_simple(self) -> str:
+        """Generate simple one-line representation: [A]→[S•]→[V]→[Σ]"""
+        if not self.nodes:
+            return ""
+
+        parts = []
+        for node in self.nodes:
+            symbol = node["symbol"]
+            if node["status"] == "active":
+                parts.append(f"[{symbol}•]")
+            elif node["status"] == "completed":
+                parts.append(f"[{symbol}✓]")
+            elif node["status"] == "failed":
+                parts.append(f"[{symbol}✗]")
+            else:
+                parts.append(f"[{symbol}]")
+
+        return "→".join(parts)
+
+    def to_line_dots(self) -> str:
+        """Generate dot-based representation: ●─●─◎─○─○"""
+        if not self.nodes:
+            return ""
+
+        symbols = []
+        for node in self.nodes:
+            if node["status"] == "completed":
+                symbols.append("●")
+            elif node["status"] == "active":
+                symbols.append("◎")
+            elif node["status"] == "failed":
+                symbols.append("✗")
+            else:
+                symbols.append("○")
+
+        return "─".join(symbols)
+
+    def to_line_names(self) -> str:
+        """Generate name-based representation: Analyze→Search→Verify"""
+        if not self.nodes:
+            return ""
+
+        parts = []
+        for node in self.nodes:
+            name = node["agent"].title()
+            if node["status"] == "active":
+                parts.append(f"*{name}*")
+            elif node["status"] == "completed":
+                parts.append(name)
+            else:
+                parts.append(f"({name})")
+
+        return "→".join(parts)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for SSE transmission"""
+        return {
+            "nodes": self.nodes,
+            "current_index": self.current_index,
+            "line_simple": self.to_line_simple(),
+            "line_dots": self.to_line_dots(),
+            "line_names": self.to_line_names()
+        }
+
+
+# Global graph state for easy access
+_graph_state: Optional[AgentGraphState] = None
+
+
+def get_graph_state() -> AgentGraphState:
+    """Get or create the global graph state"""
+    global _graph_state
+    if _graph_state is None:
+        _graph_state = AgentGraphState()
+    return _graph_state
+
+
+def reset_graph_state():
+    """Reset the global graph state for a new search"""
+    global _graph_state
+    _graph_state = AgentGraphState()
+
+
+def graph_state_update(
+    request_id: str,
+    graph_state: AgentGraphState,
+    message: str = ""
+) -> SearchEvent:
+    """Emit current graph state for visualization"""
+    state_dict = graph_state.to_dict()
+    return SearchEvent(
+        event_type=EventType.GRAPH_STATE_UPDATE,
+        request_id=request_id,
+        message=message or f"Graph: {state_dict['line_simple']}",
+        graph_line=state_dict["line_simple"],
+        data=state_dict
+    )
+
+
+def graph_node_entered(
+    request_id: str,
+    agent: str,
+    graph_state: AgentGraphState
+) -> SearchEvent:
+    """Agent node entered"""
+    index = graph_state.add_node(agent, status="active")
+    graph_state.set_active(index)
+
+    return SearchEvent(
+        event_type=EventType.GRAPH_NODE_ENTERED,
+        request_id=request_id,
+        message=f"→ {agent.title()}",
+        graph_line=graph_state.to_line_simple(),
+        data={
+            "agent": agent,
+            "index": index,
+            "graph": graph_state.to_dict()
+        }
+    )
+
+
+def graph_node_completed(
+    request_id: str,
+    agent: str,
+    success: bool,
+    graph_state: AgentGraphState,
+    duration_ms: int = 0
+) -> SearchEvent:
+    """Agent node completed"""
+    # Find and complete the node
+    for i, node in enumerate(graph_state.nodes):
+        if node["agent"].lower() == agent.lower() and node["status"] == "active":
+            graph_state.complete_node(i, success)
+            break
+
+    status = "✓" if success else "✗"
+    return SearchEvent(
+        event_type=EventType.GRAPH_NODE_COMPLETED,
+        request_id=request_id,
+        message=f"{agent.title()} {status} ({duration_ms}ms)",
+        graph_line=graph_state.to_line_simple(),
+        data={
+            "agent": agent,
+            "success": success,
+            "duration_ms": duration_ms,
+            "graph": graph_state.to_dict()
+        }
+    )
+
+
+def graph_edge_traversed(
+    request_id: str,
+    from_agent: str,
+    to_agent: str,
+    graph_state: AgentGraphState,
+    reason: str = ""
+) -> SearchEvent:
+    """Edge traversed between agents"""
+    return SearchEvent(
+        event_type=EventType.GRAPH_EDGE_TRAVERSED,
+        request_id=request_id,
+        message=f"{from_agent}→{to_agent}" + (f": {reason}" if reason else ""),
+        graph_line=graph_state.to_line_simple(),
+        data={
+            "from": from_agent,
+            "to": to_agent,
+            "reason": reason,
+            "graph": graph_state.to_dict()
+        }
+    )
+
+
+def graph_branch_created(
+    request_id: str,
+    parent_agent: str,
+    branch_agents: List[str],
+    graph_state: AgentGraphState
+) -> SearchEvent:
+    """Branch created for parallel exploration"""
+    branch_str = ", ".join(branch_agents)
+    return SearchEvent(
+        event_type=EventType.GRAPH_BRANCH_CREATED,
+        request_id=request_id,
+        message=f"{parent_agent} → [{branch_str}]",
+        graph_line=graph_state.to_line_simple(),
+        data={
+            "parent": parent_agent,
+            "branches": branch_agents,
+            "graph": graph_state.to_dict()
+        }
+    )
+
+
+def graph_paths_merged(
+    request_id: str,
+    merged_agents: List[str],
+    target_agent: str,
+    graph_state: AgentGraphState
+) -> SearchEvent:
+    """Multiple paths merged"""
+    sources = ", ".join(merged_agents)
+    return SearchEvent(
+        event_type=EventType.GRAPH_PATHS_MERGED,
+        request_id=request_id,
+        message=f"[{sources}] → {target_agent}",
+        graph_line=graph_state.to_line_simple(),
+        data={
+            "sources": merged_agents,
+            "target": target_agent,
+            "graph": graph_state.to_dict()
         }
     )

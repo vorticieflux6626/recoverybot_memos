@@ -44,6 +44,7 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 9** | Classifier Feedback Loop | ✅ **COMPLETE** |
 | **Phase 10** | SSE Visibility + Thorough Search | ✅ **COMPLETE** |
 | **Phase 11** | Domain-Specific Persistent Scratchpad | ✅ **COMPLETE** |
+| **Phase 12** | SSE Graph Visualization + Enhanced Events | ✅ **COMPLETE** |
 
 **Documentation**: `agentic/ENHANCEMENT_IMPLEMENTATION_PLAN.md`
 
@@ -448,6 +449,84 @@ Passed: 9/9
 ```
 
 **Module Version**: `agentic/__init__.py` → v0.14.0
+
+#### ✅ Phase 12: SSE Graph Visualization + Enhanced Events (Completed 2025-12-27)
+
+Implemented comprehensive SSE event system with real-time agent graph visualization for Android app display:
+
+**New Components (`agentic/events.py`):**
+- **AgentGraphState**: Tracks agent traversal state for visualization
+- **Graph Event Types**: `graph_node_entered`, `graph_node_completed`, `graph_state_update`, `graph_edge_traversed`, `graph_branch_created`, `graph_paths_merged`
+- **BGE-M3 Events**: `hybrid_search_start/complete`, `bm25_search`, `dense_embedding`, `rrf_fusion`
+- **HyDE Events**: `hyde_generating`, `hyde_hypothetical_generated`, `hyde_embedding`, `hyde_complete`
+- **RAGAS Events**: `ragas_evaluating`, `ragas_claims_extracted`, `ragas_claim_verified`, `ragas_evaluation_complete`
+
+**Graph Visualization Formats:**
+```
+Simple:  [A✓]→[P✓]→[S•]→[V]→[Σ]     (active step marked with •)
+Dots:    ●─●─◎─○─○                    (● completed, ◎ active, ○ pending)
+Names:   Analyze→Plan→*Search*→(Verify)→(Synthesize)
+```
+
+**Agent Symbols:**
+| Symbol | Agent | Description |
+|--------|-------|-------------|
+| A | Analyze | Query analysis |
+| P | Plan | Search planning |
+| S | Search | Web search |
+| E | CRAG | Retrieval evaluation |
+| V | Verify | Claim verification |
+| W | Scrape | Web scraping |
+| Σ | Synthesize | Answer synthesis |
+| R | Reflect | Self-RAG reflection |
+| H | HyDE | Query expansion |
+| M | Hybrid | BGE-M3 retrieval |
+| Q | RAGAS | Quality evaluation |
+| ✓ | Complete | Pipeline complete |
+
+**Full Pipeline Graph Example:**
+```
+[A✓]→[P✓]→[S✓]→[E✓]→[V✓]→[W✓]→[Σ✓]→[R✓]→[✓✓]
+```
+
+**Key Features:**
+- **Real-Time Visualization**: Graph line included in every SSE event for live UI updates
+- **Agent Status Tracking**: Pending, active (•), completed (✓), or failed (✗)
+- **Multi-Path Support**: Branch and merge visualization for parallel exploration
+- **Orchestrator Integration**: All major pipeline steps emit graph events
+- **Android SSE Parsing**: `graph_line` field in event data for easy UI rendering
+
+**SSE Event Example:**
+```json
+{
+  "event": "graph_node_completed",
+  "request_id": "abc123",
+  "message": "Analyze ✓ (245ms)",
+  "graph_line": "[A✓]→[P•]",
+  "data": {
+    "agent": "analyze",
+    "success": true,
+    "duration_ms": 245,
+    "graph": {
+      "nodes": [...],
+      "line_simple": "[A✓]→[P•]",
+      "line_dots": "●─◎",
+      "line_names": "Analyze→*Plan*"
+    }
+  }
+}
+```
+
+**Test Results:**
+```
+Full Pipeline Test:
+  Events: 201
+  Graph Events: 19
+  Duration: 153.4s
+  Final Graph: [A✓]→[P✓]→[S✓]→[E✓]→[V✓]→[W✓]→[Σ✓]→[R✓]→[✓✓]
+```
+
+**Module Version**: `agentic/__init__.py` → v0.20.0
 
 #### ✅ Phase 3: DAG-Based Reasoning (Completed 2025-12-27)
 
