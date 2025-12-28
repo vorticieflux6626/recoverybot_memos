@@ -118,6 +118,14 @@ from .kv_cache_service import KVCacheService, get_kv_cache_service
 from .memory_tiers import MemoryTierManager, get_memory_tier_manager
 from .artifacts import ArtifactStore, get_artifact_store, ArtifactType
 from .content_cache import get_content_cache
+from .context_limits import (
+    calculate_context_budget,
+    get_synthesizer_limits,
+    get_model_context_window,
+    format_context_utilization_report,
+    PipelineContextConfig,
+    DEFAULT_PIPELINE_CONFIG
+)
 
 logger = logging.getLogger("agentic.orchestrator_universal")
 
@@ -731,6 +739,10 @@ class UniversalOrchestrator(BaseSearchPipeline):
         scratchpad = self.create_scratchpad(request, request_id)
         search_trace = []
         enhancement_metadata = {"features_used": []}
+
+        # Apply dynamic context limits based on model's context window
+        context_info = self._apply_dynamic_context_limits(request, request_id)
+        enhancement_metadata["context_limits"] = context_info
 
         # PHASE 0: Initialize TTL pinning for long-running operations
         ttl_context = None
@@ -1439,19 +1451,23 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 graph_line=self._graph_state.to_line()
             )
             try:
-                content = await self.scraper.scrape(url)
-                if content:
+                result = await self.scraper.scrape_url(url)
+                if result.get("success") and result.get("content"):
+                    content = result["content"]
                     scraped_content.append(content[:request.max_content_per_source])
                     # Emit URL scraped event
                     await self.emit_event(
                         EventType.URL_SCRAPED,
                         {"url": url, "content_length": len(content)},
                         request_id,
-                        message=f"Scraped {len(content)} chars",
+                        message=f"Scraped {len(content):,} chars from {url[:40]}...",
                         graph_line=self._graph_state.to_line()
                     )
+                    logger.info(f"[{request_id}] Scraped {len(content):,} chars from {url[:60]}")
+                else:
+                    logger.debug(f"[{request_id}] Scrape returned no content for {url[:60]}: {result.get('error', 'unknown')}")
             except Exception as e:
-                logger.debug(f"Failed to scrape {url}: {e}")
+                logger.warning(f"[{request_id}] Failed to scrape {url[:60]}: {e}")
 
         search_trace.append({
             "step": "scrape",
@@ -1562,10 +1578,24 @@ class UniversalOrchestrator(BaseSearchPipeline):
             context={"additional_context": additional_context} if additional_context else None
         )
 
+        # Calculate and log context utilization
+        total_content_chars = sum(len(sc.get("content", "")) for sc in scraped_content_dicts)
+        additional_context_chars = len(additional_context) if additional_context else 0
+        total_input_chars = total_content_chars + additional_context_chars + len(request.query)
+
+        utilization_report = format_context_utilization_report(
+            DEFAULT_PIPELINE_CONFIG.synthesizer_model,
+            total_input_chars,
+            len(synthesis)
+        )
+        logger.info(f"[{request_id}] Context utilization:\n{utilization_report}")
+
         search_trace.append({
             "step": "synthesize",
             "sources_count": len(scraped_content_dicts),
             "synthesis_length": len(synthesis),
+            "total_input_chars": total_input_chars,
+            "context_utilization": total_input_chars / (get_model_context_window(DEFAULT_PIPELINE_CONFIG.synthesizer_model) * 4),
             "duration_ms": int((time.time() - start) * 1000)
         })
         self._record_timing("synthesis", time.time() - start)
@@ -2128,6 +2158,73 @@ class UniversalOrchestrator(BaseSearchPipeline):
         if feature not in self._feature_timings:
             self._feature_timings[feature] = []
         self._feature_timings[feature].append(duration * 1000)  # ms
+
+    def _apply_dynamic_context_limits(
+        self,
+        request: SearchRequest,
+        request_id: str
+    ) -> Dict[str, Any]:
+        """
+        Calculate and apply dynamic context limits based on the synthesizer model.
+
+        Uses the model's recorded context window from the database to maximize
+        context utilization for better results.
+
+        Returns:
+            Dict with applied limits and utilization info for logging
+        """
+        # Get limits based on synthesizer model (DeepSeek-R1 or configured model)
+        synthesizer_model = DEFAULT_PIPELINE_CONFIG.synthesizer_model
+        is_thinking = "deepseek" in synthesizer_model.lower() or "r1" in synthesizer_model.lower()
+
+        limits = get_synthesizer_limits(
+            model_name=synthesizer_model,
+            is_thinking_model=is_thinking
+        )
+
+        # Calculate context budget for detailed logging
+        budget = calculate_context_budget(
+            synthesizer_model,
+            system_prompt_chars=2500,
+            response_reserve_chars=8000 if is_thinking else 4000
+        )
+
+        # Apply dynamic limits - override request defaults with model-aware values
+        original_limits = {
+            "max_urls_to_scrape": request.max_urls_to_scrape,
+            "max_content_per_source": request.max_content_per_source,
+            "max_sources": request.max_sources
+        }
+
+        # Update request with calculated limits
+        request.max_urls_to_scrape = limits["max_urls_to_scrape"]
+        request.max_content_per_source = limits["max_content_per_source"]
+        request.max_sources = min(request.max_sources, limits["max_urls_to_scrape"] * 2)
+
+        applied_limits = {
+            "max_urls_to_scrape": request.max_urls_to_scrape,
+            "max_content_per_source": request.max_content_per_source,
+            "max_sources": request.max_sources,
+            "max_total_content": limits["max_total_content"],
+            "num_ctx": limits["num_ctx"]
+        }
+
+        # Log context utilization info
+        logger.info(f"[{request_id}] Context limits applied for model '{synthesizer_model}':")
+        logger.info(f"[{request_id}]   Context window: {budget.context_window_tokens:,} tokens ({budget.context_window_chars:,} chars)")
+        logger.info(f"[{request_id}]   Available for content: {budget.available_chars:,} chars ({budget.target_utilization*100:.0f}% utilization)")
+        logger.info(f"[{request_id}]   Max URLs to scrape: {original_limits['max_urls_to_scrape']} -> {applied_limits['max_urls_to_scrape']}")
+        logger.info(f"[{request_id}]   Max content/source: {original_limits['max_content_per_source']:,} -> {applied_limits['max_content_per_source']:,} chars")
+        logger.info(f"[{request_id}]   Total capacity: {applied_limits['max_total_content']:,} chars (~{applied_limits['max_total_content']//4:,} tokens)")
+
+        return {
+            "model": synthesizer_model,
+            "context_window_tokens": budget.context_window_tokens,
+            "available_chars": budget.available_chars,
+            "original_limits": original_limits,
+            "applied_limits": applied_limits,
+            "is_thinking_model": is_thinking
+        }
 
     def get_stats(self) -> Dict[str, Any]:
         """Get orchestrator statistics."""
