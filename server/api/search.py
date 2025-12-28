@@ -4328,8 +4328,8 @@ async def _execute_agentic_pipeline(
     """Execute full agentic search pipeline."""
     from agentic import events
 
-    # The enhanced orchestrator already emits detailed SSE events
-    orchestrator = await get_enhanced_orchestrator()
+    # Use the base orchestrator which has SSE event emission via search_with_events
+    orchestrator = await get_orchestrator()
 
     search_request = SearchRequest(
         query=request.query,
@@ -4343,9 +4343,8 @@ async def _execute_agentic_pipeline(
         cache_results=True
     )
 
-    # The orchestrator's search_with_events method already emits to the emitter
-    # We need to use the event-aware search method
-    response = await orchestrator.search(search_request)
+    # Use search_with_events which emits all SSE events (search_results, scraping, etc.)
+    response = await orchestrator.search_with_events(search_request, emitter)
 
     # Emit final gateway completion
     await emitter.emit(SearchEvent(
