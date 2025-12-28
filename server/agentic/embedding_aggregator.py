@@ -55,7 +55,7 @@ class DomainExpert:
     description: str
     entity_types: List[str]  # Entity types this expert handles
     keywords: List[str]  # Routing keywords
-    embedding_dim: int = 768
+    embedding_dim: int = 4096
     confidence_weight: float = 1.0
     is_active: bool = True
 
@@ -134,7 +134,7 @@ class EmbeddingAggregator:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        embedding_model: str = "mxbai-embed-large",  # 1024 dim, high quality
+        embedding_model: str = "qwen3-embedding",  # 4096 dim, best for technical docs
         db_path: Optional[str] = None
     ):
         self.ollama_url = ollama_url.rstrip("/")
@@ -299,8 +299,8 @@ class EmbeddingAggregator:
 
         except Exception as e:
             logger.error(f"Error getting embedding: {e}")
-            # Return zero vector on error (mxbai-embed-large uses 1024 dims)
-            return np.zeros(1024, dtype=np.float32)
+            # Return zero vector on error (qwen3-embedding uses 4096 dims)
+            return np.zeros(4096, dtype=np.float32)
 
     def route_to_experts(
         self,
