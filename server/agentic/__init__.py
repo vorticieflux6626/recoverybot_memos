@@ -214,6 +214,11 @@ from .mixed_precision_embeddings import (
     QuantizedEmbedding,
     SearchResult as MixedPrecisionSearchResult,
     RetrievalStats,
+    EmbeddingModelSpec,
+    QWEN3_EMBEDDING_MODELS,
+    MODEL_TIERS,
+    get_model_spec,
+    get_model_dimension,
     get_mixed_precision_service
 )
 from . import events
@@ -395,7 +400,12 @@ __all__ = [
     "QuantizedEmbedding",
     "MixedPrecisionSearchResult",
     "RetrievalStats",
+    "EmbeddingModelSpec",
+    "QWEN3_EMBEDDING_MODELS",
+    "MODEL_TIERS",
+    "get_model_spec",
+    "get_model_dimension",
     "get_mixed_precision_service",
 ]
 
-__version__ = "0.16.0"  # Mixed-precision embeddings with three-tier retrieval
+__version__ = "0.16.1"  # Multi-model support with dimension auto-detection
