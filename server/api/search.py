@@ -3274,3 +3274,252 @@ async def semantic_arithmetic(request: SemanticArithmeticRequest):
     except Exception as e:
         logger.error(f"Semantic arithmetic failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# BGE-M3 Hybrid Retrieval Endpoints
+# =============================================================================
+
+from agentic.bge_m3_hybrid import (
+    BGEM3HybridRetriever,
+    HybridDocument,
+    HybridSearchResult,
+    RetrievalMode,
+    get_hybrid_retriever,
+    create_hybrid_retriever
+)
+
+# Global hybrid retriever instance
+_hybrid_retriever: Optional[BGEM3HybridRetriever] = None
+
+
+async def get_hybrid_retriever_instance() -> BGEM3HybridRetriever:
+    """Get or create the global hybrid retriever instance."""
+    global _hybrid_retriever
+    if _hybrid_retriever is None:
+        _hybrid_retriever = await create_hybrid_retriever(
+            db_path="/home/sparkone/sdd/Recovery_Bot/memOS/data/bge_m3_hybrid.db",
+            load_existing=True
+        )
+    return _hybrid_retriever
+
+
+class HybridIndexRequest(BaseModel):
+    """Request to index documents in hybrid retriever."""
+    documents: List[Dict[str, Any]]  # [{"doc_id": str, "content": str, "metadata": dict}]
+
+
+class HybridSearchRequest(BaseModel):
+    """Request for hybrid search."""
+    query: str
+    top_k: int = 10
+    mode: str = "hybrid"  # dense_only, sparse_only, hybrid
+    dense_candidates: int = 100
+    sparse_candidates: int = 100
+
+
+class HybridWeightsRequest(BaseModel):
+    """Request to update fusion weights."""
+    dense_weight: float = 0.5
+    sparse_weight: float = 0.5
+    multivec_weight: float = 0.0
+    use_rrf: bool = True
+
+
+@router.get("/hybrid/stats")
+async def get_hybrid_stats():
+    """Get BGE-M3 hybrid retrieval statistics."""
+    try:
+        retriever = await get_hybrid_retriever_instance()
+        stats = retriever.get_stats()
+
+        return {
+            "success": True,
+            "data": {
+                "documents_indexed": stats.documents_indexed,
+                "vocabulary_size": stats.vocabulary_size,
+                "avg_doc_length": stats.avg_doc_length,
+                "dense_index_size_mb": stats.dense_index_size_mb,
+                "sparse_index_size_mb": stats.sparse_index_size_mb,
+                "mode": stats.mode,
+                "model": retriever.model,
+                "weights": {
+                    "dense": retriever.dense_weight,
+                    "sparse": retriever.sparse_weight,
+                    "multivec": retriever.multivec_weight
+                },
+                "use_rrf": retriever.use_rrf
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to get hybrid stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hybrid/index")
+async def index_hybrid_documents(request: HybridIndexRequest):
+    """
+    Index documents for hybrid retrieval.
+
+    Creates both dense (BGE-M3) and sparse (BM25) representations.
+    """
+    try:
+        retriever = await get_hybrid_retriever_instance()
+
+        indexed_docs = []
+        for doc_data in request.documents:
+            doc = await retriever.add_document(
+                doc_id=doc_data.get("doc_id", hashlib.md5(doc_data["content"].encode()).hexdigest()),
+                content=doc_data["content"],
+                metadata=doc_data.get("metadata", {})
+            )
+            indexed_docs.append(doc.to_dict())
+
+        return {
+            "success": True,
+            "data": {
+                "indexed": len(indexed_docs),
+                "documents": indexed_docs
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Hybrid indexing failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hybrid/search")
+async def hybrid_search(request: HybridSearchRequest):
+    """
+    Execute hybrid search combining dense and sparse retrieval.
+
+    Modes:
+    - dense_only: BGE-M3 semantic similarity only
+    - sparse_only: BM25 lexical matching only
+    - hybrid: Combined dense + sparse with RRF fusion
+    """
+    try:
+        retriever = await get_hybrid_retriever_instance()
+
+        # Map mode string to enum
+        mode_map = {
+            "dense_only": RetrievalMode.DENSE_ONLY,
+            "sparse_only": RetrievalMode.SPARSE_ONLY,
+            "hybrid": RetrievalMode.HYBRID,
+            "full_hybrid": RetrievalMode.FULL_HYBRID
+        }
+        mode = mode_map.get(request.mode, RetrievalMode.HYBRID)
+
+        results = await retriever.search(
+            query=request.query,
+            top_k=request.top_k,
+            mode=mode,
+            dense_candidates=request.dense_candidates,
+            sparse_candidates=request.sparse_candidates
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "query": request.query,
+                "mode": request.mode,
+                "results": [r.to_dict() for r in results],
+                "total_results": len(results)
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Hybrid search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hybrid/weights")
+async def update_hybrid_weights(request: HybridWeightsRequest):
+    """Update fusion weights for hybrid retrieval."""
+    try:
+        retriever = await get_hybrid_retriever_instance()
+
+        # Normalize weights
+        total = request.dense_weight + request.sparse_weight + request.multivec_weight
+        if total > 0:
+            retriever.dense_weight = request.dense_weight / total
+            retriever.sparse_weight = request.sparse_weight / total
+            retriever.multivec_weight = request.multivec_weight / total
+        retriever.use_rrf = request.use_rrf
+
+        return {
+            "success": True,
+            "data": {
+                "weights": {
+                    "dense": retriever.dense_weight,
+                    "sparse": retriever.sparse_weight,
+                    "multivec": retriever.multivec_weight
+                },
+                "use_rrf": retriever.use_rrf
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to update weights: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/hybrid/bm25-stats")
+async def get_bm25_stats():
+    """Get BM25 sparse index statistics."""
+    try:
+        retriever = await get_hybrid_retriever_instance()
+        bm25_stats = retriever.bm25_index.get_stats()
+
+        return {
+            "success": True,
+            "data": bm25_stats,
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get BM25 stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/hybrid/clear")
+async def clear_hybrid_index():
+    """Clear all documents from hybrid index."""
+    global _hybrid_retriever
+
+    try:
+        if _hybrid_retriever:
+            await _hybrid_retriever.close()
+            _hybrid_retriever = None
+
+        # Remove database file
+        import os
+        db_path = "/home/sparkone/sdd/Recovery_Bot/memOS/data/bge_m3_hybrid.db"
+        if os.path.exists(db_path):
+            os.remove(db_path)
+
+        return {
+            "success": True,
+            "data": {"message": "Hybrid index cleared"},
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to clear hybrid index: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

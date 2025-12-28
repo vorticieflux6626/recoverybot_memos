@@ -221,6 +221,16 @@ from .mixed_precision_embeddings import (
     get_model_dimension,
     get_mixed_precision_service
 )
+from .bge_m3_hybrid import (
+    BGEM3HybridRetriever,
+    HybridDocument,
+    HybridSearchResult,
+    HybridRetrievalStats,
+    RetrievalMode,
+    BM25Index,
+    get_hybrid_retriever,
+    create_hybrid_retriever
+)
 from . import events
 
 __all__ = [
@@ -406,6 +416,15 @@ __all__ = [
     "get_model_spec",
     "get_model_dimension",
     "get_mixed_precision_service",
+    # BGE-M3 Hybrid Retrieval (December 2025)
+    "BGEM3HybridRetriever",
+    "HybridDocument",
+    "HybridSearchResult",
+    "HybridRetrievalStats",
+    "RetrievalMode",
+    "BM25Index",
+    "get_hybrid_retriever",
+    "create_hybrid_retriever",
 ]
 
-__version__ = "0.16.1"  # Multi-model support with dimension auto-detection
+__version__ = "0.17.0"  # BGE-M3 hybrid retrieval with dense + sparse (BM25)
