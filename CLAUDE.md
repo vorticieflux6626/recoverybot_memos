@@ -38,8 +38,416 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 3** | Reasoning DAG | ✅ **COMPLETE** |
 | **Phase 4** | Thought Template Library | ✅ **COMPLETE** |
 | **Phase 5** | Actor Factory | ✅ **COMPLETE** |
+| **Phase 6** | Self-RAG Reflection | ✅ **COMPLETE** |
+| **Phase 7** | CRAG Retrieval Evaluator | ✅ **COMPLETE** |
+| **Phase 8** | Experience Distillation | ✅ **COMPLETE** |
+| **Phase 9** | Classifier Feedback Loop | ✅ **COMPLETE** |
+| **Phase 10** | SSE Visibility + Thorough Search | ✅ **COMPLETE** |
+| **Phase 11** | Domain-Specific Persistent Scratchpad | ✅ **COMPLETE** |
 
 **Documentation**: `agentic/ENHANCEMENT_IMPLEMENTATION_PLAN.md`
+
+#### ✅ Phase 6: Self-RAG Reflection (Completed 2025-12-27)
+
+Implemented Self-Reflective RAG based on arXiv:2310.11511 for synthesis quality assurance:
+
+**New Components:**
+- **SelfReflectionAgent** (`agentic/self_reflection.py`): ISREL/ISSUP/ISUSE reflection pattern
+- **TemporalFactValidator**: Cross-checks dates/years for consistency
+- **ReflectionResult**: Detailed quality assessment with refinement suggestions
+
+**Key Features:**
+- **ISREL (Relevance)**: Scores how relevant synthesis is to query (0-1)
+- **ISSUP (Support)**: Checks if claims are supported by sources (fully_supported/partially_supported/no_support/contradicted)
+- **ISUSE (Usefulness)**: Evaluates if response actually answers the question (0-1)
+- **Temporal Validation**: Extracts and cross-checks dates/years for contradictions
+- **Auto-Refinement**: Automatically refines synthesis when temporal conflicts detected
+- **Blended Confidence**: Combines verifier confidence (60%) with reflection confidence (40%)
+
+**Benchmark Results (Before/After Self-RAG):**
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Temporal Accuracy | ❌ Errors | ✅ Correct | Fixed |
+| Confidence Score | 0.61 | 0.74 | +21% |
+| Relevance | N/A | 1.00 | New metric |
+| Support Level | N/A | fully_supported | New metric |
+
+**Usage:**
+```python
+from agentic import SelfReflectionAgent, get_self_reflection_agent
+
+reflector = get_self_reflection_agent()
+result = await reflector.reflect(
+    query="When was GPT-3 released vs Anthropic founded?",
+    synthesis="...",
+    sources=[{"title": "...", "snippet": "...", "url": "..."}],
+    scraped_content=["..."]
+)
+
+if result.needs_refinement:
+    refined = await reflector.refine_synthesis(synthesis, result, sources)
+```
+
+**Module Version**: `agentic/__init__.py` → v0.9.0
+
+#### ✅ Phase 7: CRAG Retrieval Evaluator (Completed 2025-12-27)
+
+Implemented Corrective RAG based on arXiv:2401.15884 for pre-synthesis retrieval quality assessment:
+
+**New Components:**
+- **RetrievalEvaluator** (`agentic/retrieval_evaluator.py`): Pre-synthesis quality assessment
+- **RetrievalQuality**: Quality levels (CORRECT/AMBIGUOUS/INCORRECT)
+- **CorrectiveAction**: Actions (PROCEED/REFINE_QUERY/WEB_FALLBACK/DECOMPOSE)
+- **DocumentScore**: Per-document relevance, quality, and coverage scoring
+
+**Two-Stage Quality Control Pipeline:**
+```
+Search Results → CRAG Eval → [Corrective Action] → Synthesis → Self-RAG Eval → [Refinement]
+                  ^Stage 1                          ^Stage 2
+```
+
+**Key Features:**
+- **Pre-Synthesis Evaluation**: Assesses retrieval quality BEFORE LLM synthesis (unlike Self-RAG which evaluates AFTER)
+- **Three Quality Levels**:
+  - `CORRECT` (relevance ≥ 0.7): At least one document highly relevant → proceed
+  - `AMBIGUOUS` (0.4-0.7): Mixed quality → refine queries and re-retrieve
+  - `INCORRECT` (< 0.4): Poor retrieval → discard and trigger web fallback
+- **Corrective Actions**:
+  - `PROCEED`: Continue to synthesis
+  - `REFINE_QUERY`: Generate targeted refinement queries
+  - `WEB_FALLBACK`: Discard results, trigger fresh web search
+  - `DECOMPOSE`: Break complex query into sub-questions
+- **Document Scoring**: Per-document relevance, quality (source trust), coverage
+- **Query Coverage Analysis**: Maps which parts of query are answered by results
+- **LLM-Based Assessment**: Uses lightweight model (gemma3:4b) for fast evaluation
+
+**Integration with Orchestrator:**
+- Runs immediately after search phase, before synthesis
+- Adds up to 3 refined queries if quality is AMBIGUOUS
+- Triggers web fallback if quality is INCORRECT
+- Logs CRAG evaluation results for debugging
+
+**Test Results:**
+```
+CRAG Evaluation Output:
+- Quality: ambiguous
+- Relevance: 0.82
+- Coverage: 0.00 (gaps detected)
+- Action: refine_query
+- Refined Queries: ["topic X specific aspect", "topic Y details", ...]
+```
+
+**Usage:**
+```python
+from agentic import RetrievalEvaluator, get_retrieval_evaluator
+
+evaluator = get_retrieval_evaluator()
+result = await evaluator.evaluate(
+    query="What are the latest developments in topic X?",
+    search_results=[{"title": "...", "snippet": "...", "url": "..."}],
+    decomposed_questions=["sub-question 1", "sub-question 2"]
+)
+
+if result.recommended_action == CorrectiveAction.REFINE_QUERY:
+    for refined_q in result.refined_queries:
+        # Add to search queue
+        state.pending_queries.append(refined_q)
+```
+
+**Module Version**: `agentic/__init__.py` → v0.10.0
+
+#### ✅ Phase 8: Experience Distillation (Completed 2025-12-27)
+
+Implemented MetaAgent-style experience distillation based on arXiv:2402.11904:
+
+**New Components:**
+- **ExperienceDistiller** (`agentic/experience_distiller.py`): Captures and distills successful search experiences
+- **SearchExperience**: Structured capture of successful search patterns
+- **DistillationResult**: Result of template extraction attempt
+
+**Key Features:**
+- **Automatic Experience Capture**: Captures successful searches (confidence ≥ 0.75) for learning
+- **Structure Extraction**: Extracts abstract structure (headers, lists, patterns) from synthesis
+- **Insight Extraction**: Identifies key insights using emphasis patterns (bold, "Key", "Important")
+- **LLM-Based Distillation**: Uses gemma3:4b to generalize patterns into reusable templates
+- **ThoughtLibrary Integration**: Adds distilled templates directly to the ThoughtLibrary
+- **Duplicate Detection**: Checks for similar existing templates before creation
+- **Per-Type Memory**: Stores experiences by query type for targeted distillation
+
+**Experience Capture Flow:**
+```
+Successful Search (conf ≥ 0.75)
+    ↓
+Extract: structure, insights, queries, sources
+    ↓
+Store in ExperienceDistiller.experiences[query_type]
+    ↓
+If experiences ≥ 3: Trigger Distillation
+    ↓
+LLM analyzes patterns → Creates ThoughtTemplate
+```
+
+**API Endpoints:**
+- `GET /api/v1/search/distillation/stats` - Distillation statistics
+- `GET /api/v1/search/distillation/experiences` - View captured experiences
+- `POST /api/v1/search/distillation/distill?query_type=X` - Trigger distillation
+- `DELETE /api/v1/search/distillation/experiences` - Clear experiences
+
+**Integration with Orchestrator:**
+```python
+# Automatic capture after successful search (orchestrator.py:994-1015)
+if response.success and confidence_score >= 0.75:
+    await self.experience_distiller.capture_experience(
+        query=request.query,
+        response=response,
+        query_type=query_type,
+        decomposed_questions=decomposed
+    )
+```
+
+**Benefits (from MetaAgent research):**
+- Continuous learning from successful searches
+- Reduces token usage by reusing proven patterns
+- Improves over time as more experiences are captured
+- Combines with Buffer of Thoughts (Phase 4) for template reuse
+
+**Module Version**: `agentic/__init__.py` → v0.11.0
+
+#### ✅ Phase 9: Classifier Feedback Loop (Completed 2025-12-27)
+
+Implemented Adaptive-RAG style feedback loop based on arXiv:2403.14403:
+
+**New Components:**
+- **ClassifierFeedback** (`agentic/classifier_feedback.py`): Tracks classification outcomes
+- **ClassificationOutcome**: Record of prediction vs actual outcome
+- **AdaptiveHint**: Learned adjustment for future classifications
+- **OutcomeQuality**: Quality levels (EXCELLENT/GOOD/ADEQUATE/POOR/FAILED)
+
+**Key Features:**
+- **Outcome Tracking**: Records classification predictions vs actual search outcomes
+- **Mismatch Detection**:
+  - `was_overkill`: Used agentic search when web_search would suffice
+  - `was_underkill`: Used simple pipeline when agentic was needed
+  - `missed_web_search`: Used direct answer when web search was needed
+- **Adaptive Hint Generation**: Learns patterns from outcomes every 10 searches
+- **Per-Category Statistics**: Tracks success rates by query category
+- **Pattern-Based Adjustments**: Suggests pipeline upgrades/downgrades based on query patterns
+
+**Feedback Flow:**
+```
+Search Completes
+    ↓
+Record: predicted_category, predicted_pipeline, actual_confidence
+    ↓
+Detect: overkill? underkill? missed_web?
+    ↓
+Store in outcomes[category]
+    ↓
+Every 10 outcomes: Generate adaptive hints
+    ↓
+Future queries: Apply hints to adjust classifications
+```
+
+**API Endpoints:**
+- `GET /api/v1/search/classifier/stats` - Feedback statistics
+- `GET /api/v1/search/classifier/outcomes` - View outcome history
+- `GET /api/v1/search/classifier/hints` - View learned hints
+- `DELETE /api/v1/search/classifier/outcomes` - Clear history
+
+**Integration with Orchestrator:**
+```python
+# Automatic recording after search (orchestrator.py:1023-1050)
+if state.query_analysis:
+    self.classifier_feedback.record_outcome(
+        query=request.query,
+        classification=pseudo_classification,
+        confidence=confidence_score,
+        iteration_count=state.iteration,
+        source_count=len(state.raw_results),
+        execution_time_ms=execution_time_ms
+    )
+```
+
+**Mismatch Thresholds:**
+- Overkill: High confidence (≥0.70) + fast completion (<30s) + few iterations (≤1)
+- Underkill: Low confidence (<0.60) with simple pipeline
+- Missed Web: Direct answer with low confidence (<0.55) and no sources
+
+**Module Version**: `agentic/__init__.py` → v0.12.0
+
+#### ✅ Phase 10: SSE Visibility + Thorough Search (Completed 2025-12-27)
+
+Implemented comprehensive SSE event visibility for debugging and Android app display, plus increased iteration/refinement limits for thorough multi-direction exploration:
+
+**Configuration Changes (`agentic/models.py`):**
+- `max_iterations`: 5 → 10 (allows more ReAct loop cycles)
+- `min_sources`: 3 → 5 (requires more source diversity)
+- `max_sources`: 15 → 25 (allows comprehensive research)
+- `min_confidence`: 0.70 (new - minimum quality threshold)
+- `max_scrape_refinements`: 3 (new - configurable refinement cycles)
+
+**New SSE Event Types (`agentic/events.py`):**
+40+ new event types for complete agent processing visibility:
+
+| Category | Events |
+|----------|--------|
+| **Query Classification** | `CLASSIFYING_QUERY`, `QUERY_CLASSIFIED` |
+| **CRAG Evaluation** | `CRAG_EVALUATING`, `CRAG_EVALUATION_COMPLETE`, `CRAG_REFINING` |
+| **Self-RAG Reflection** | `SELF_RAG_REFLECTING`, `SELF_RAG_COMPLETE`, `SELF_RAG_REFINING` |
+| **Scratchpad** | `SCRATCHPAD_INITIALIZED`, `SCRATCHPAD_UPDATED`, `SCRATCHPAD_FINDING_ADDED`, `SCRATCHPAD_QUESTION_ANSWERED`, `SCRATCHPAD_GAP_DETECTED` |
+| **Coverage** | `COVERAGE_EVALUATING`, `COVERAGE_EVALUATED`, `COVERAGE_INSUFFICIENT` |
+| **Refinement** | `REFINEMENT_CYCLE_START`, `REFINEMENT_CYCLE_COMPLETE`, `REFINEMENT_QUERIES_GENERATED` |
+| **LLM Calls** | `LLM_CALL_START`, `LLM_CALL_COMPLETE` |
+| **Quality** | `CORPUS_QUALITY_ASSESSED` |
+| **Web Search** | `WEB_SEARCH_START`, `WEB_SEARCH_COMPLETE`, `WEB_SEARCH_FALLBACK` |
+| **Decision Points** | `DECISION_POINT`, `PIPELINE_ROUTED` |
+| **Learning** | `EXPERIENCE_CAPTURED`, `OUTCOME_RECORDED` |
+
+**Orchestrator Enhancements (`agentic/orchestrator.py`):**
+- Both `search()` and `search_with_events()` now have CRAG + Self-RAG
+- Streaming method now uses configurable `max_scrape_refinements` (was hardcoded 1)
+- Blended confidence scoring with reflection in both methods
+- Full experience distillation and classifier feedback in streaming method
+- Comprehensive event emissions at every processing step
+
+**Event Helper Functions:**
+```python
+from agentic import events
+
+# Query classification events
+await emitter.emit(events.classifying_query(request_id, query))
+await emitter.emit(events.query_classified(request_id, category, pipeline, complexity, capabilities))
+
+# CRAG events
+await emitter.emit(events.crag_evaluating(request_id, document_count))
+await emitter.emit(events.crag_evaluation_complete(request_id, quality, relevance, action))
+await emitter.emit(events.crag_refining(request_id, refined_queries))
+
+# Self-RAG events
+await emitter.emit(events.self_rag_reflecting(request_id, synthesis_length))
+await emitter.emit(events.self_rag_complete(request_id, relevance, support_level, usefulness, temporal_conflicts))
+
+# Coverage events
+await emitter.emit(events.coverage_evaluating(request_id))
+await emitter.emit(events.coverage_evaluated(request_id, score, is_sufficient, gaps))
+await emitter.emit(events.coverage_insufficient(request_id, gaps))
+
+# Quality assessment
+await emitter.emit(events.corpus_quality_assessed(request_id, confidence, sources, domains, iterations))
+```
+
+**Benefits:**
+- Full visibility into all agent processing steps in Android app
+- Comprehensive debug logging for engineering analysis
+- Thorough multi-direction exploration with configurable depth
+- Quality-gated corpus generation with refinement cycles
+- Real-time progress updates for user feedback
+
+**Module Version**: `agentic/__init__.py` → v0.13.0
+
+#### ✅ Phase 11: Domain-Specific Persistent Scratchpad (Completed 2025-12-27)
+
+Implemented a general-purpose framework for building domain-specific knowledge corpuses that persist across sessions. Designed for technical troubleshooting domains like FANUC robotics, Raspberry Pi, industrial equipment, etc.
+
+**Research Basis:**
+- **HybridRAG (2025)**: Entity-focused retrieval with knowledge graphs (97.5% accuracy)
+- **GSW (2025)**: Actor-centric memory for 51% token reduction
+- **Industrial Knowledge Graphs**: Proven in manufacturing troubleshooting
+- **Incremental Learning**: Delta indexing without full corpus rebuild
+
+**New Components (`agentic/domain_corpus.py`):**
+- **DomainSchema**: Define domain-specific entity types and relationships
+- **DomainCorpus**: SQLite-backed persistent knowledge store with embeddings
+- **CorpusBuilder**: Incremental document indexing with LLM entity extraction
+- **CorpusRetriever**: Hybrid search (semantic + graph traversal)
+- **DomainCorpusManager**: Multi-domain support with unified API
+
+**Pre-built Domain Schemas:**
+| Domain | Entity Types | Relationships | Description |
+|--------|--------------|---------------|-------------|
+| `fanuc_robotics` | 8 types | 6 relations | FANUC robot troubleshooting |
+| `raspberry_pi` | 8 types | 7 relations | Raspberry Pi projects/issues |
+
+**Troubleshooting Entity Types:**
+```python
+TroubleshootingEntityType:
+  - error_code    # SRVO-001, GPIO Error
+  - component     # J1 motor, GPIO pin
+  - symptom       # overcurrent, overheating
+  - cause         # worn gearbox, voltage spike
+  - solution      # replace component, recalibrate
+  - procedure     # mastering, backup/restore
+  - parameter     # $PARAM_GROUP, config.txt
+  - part_number   # A06B-6079-H101
+```
+
+**Key Features:**
+- **Incremental Building**: Content hashing prevents duplicate indexing
+- **Entity Deduplication**: Canonical names merge similar entities
+- **Graph Traversal**: Navigate error → symptom → cause → solution chains
+- **Semantic Search**: Embedding-based relevance scoring
+- **Persistence**: SQLite-backed with hot cache for performance
+- **Cross-Domain Queries**: Search across all registered corpuses
+
+**API Endpoints:**
+```
+GET  /api/v1/search/corpus/domains                    - List registered domains
+GET  /api/v1/search/corpus/{domain_id}/stats          - Domain statistics
+POST /api/v1/search/corpus/{domain_id}/documents      - Add document with extraction
+POST /api/v1/search/corpus/{domain_id}/query          - Hybrid search query
+GET  /api/v1/search/corpus/{domain_id}/entities       - List entities
+GET  /api/v1/search/corpus/{domain_id}/graph          - Export knowledge graph
+GET  /api/v1/search/corpus/{domain_id}/troubleshoot/{code} - Get troubleshooting path
+POST /api/v1/search/corpus/cross-domain/query         - Query all domains
+POST /api/v1/search/corpus/register                   - Register custom domain
+```
+
+**Usage Example:**
+```python
+from agentic import (
+    DomainCorpus,
+    CorpusBuilder,
+    CorpusRetriever,
+    create_fanuc_schema
+)
+
+# Create corpus
+corpus = DomainCorpus(schema=create_fanuc_schema(), db_path="fanuc.db")
+
+# Build incrementally
+builder = CorpusBuilder(corpus)
+result = await builder.add_document(
+    content="SRVO-001 servo overcurrent alarm...",
+    source_url="manual.pdf",
+    source_type="manual"
+)
+# Result: {"status": "indexed", "entities": 5, "relations": 3}
+
+# Query with hybrid search
+retriever = CorpusRetriever(corpus)
+result = await retriever.query("motor overcurrent error")
+# Result: {entities: [...], related: [...], context: "..."}
+
+# Get troubleshooting path
+path = await retriever.get_troubleshooting_path("SRVO-001")
+# Result: {error_code: {...}, symptoms: [...], causes: [...], solutions: [...]}
+```
+
+**Test Results:**
+```
+python test_domain_corpus.py
+  Schema Creation: PASS
+  Corpus Initialization: PASS
+  Corpus Persistence: PASS
+  Content Deduplication: PASS
+  Corpus Manager: PASS
+  Semantic Search: PASS
+  Troubleshooting Path: PASS
+  LLM Entity Extraction: PASS
+Passed: 9/9
+```
+
+**Module Version**: `agentic/__init__.py` → v0.14.0
 
 #### ✅ Phase 3: DAG-Based Reasoning (Completed 2025-12-27)
 

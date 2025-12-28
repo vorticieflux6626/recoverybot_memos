@@ -75,6 +75,79 @@ class EventType(str, Enum):
     COMPLETE = "complete"  # Overall completion
     ERROR = "error"  # Error occurred
 
+    # ========== NEW: Comprehensive Agent Processing Events ==========
+
+    # Query Classification (DeepSeek-R1)
+    CLASSIFYING_QUERY = "classifying_query"
+    QUERY_CLASSIFIED = "query_classified"
+
+    # CRAG Pre-Retrieval Evaluation
+    CRAG_EVALUATING = "crag_evaluating"
+    CRAG_EVALUATION_COMPLETE = "crag_evaluation_complete"
+    CRAG_REFINING = "crag_refining"  # When corrective action is taken
+
+    # Self-RAG Post-Synthesis Reflection
+    SELF_RAG_REFLECTING = "self_rag_reflecting"
+    SELF_RAG_COMPLETE = "self_rag_complete"
+    SELF_RAG_REFINING = "self_rag_refining"  # When synthesis needs refinement
+
+    # Scratchpad/Blackboard Updates
+    SCRATCHPAD_INITIALIZED = "scratchpad_initialized"
+    SCRATCHPAD_UPDATED = "scratchpad_updated"
+    SCRATCHPAD_FINDING_ADDED = "scratchpad_finding_added"
+    SCRATCHPAD_QUESTION_ANSWERED = "scratchpad_question_answered"
+    SCRATCHPAD_GAP_DETECTED = "scratchpad_gap_detected"
+
+    # Thought Template (Buffer of Thoughts)
+    THOUGHT_TEMPLATE_MATCHED = "thought_template_matched"
+    THOUGHT_TEMPLATE_APPLIED = "thought_template_applied"
+
+    # Experience Distillation
+    EXPERIENCE_CAPTURED = "experience_captured"
+    EXPERIENCE_DISTILLING = "experience_distilling"
+    TEMPLATE_CREATED = "template_created"
+
+    # Classifier Feedback
+    OUTCOME_RECORDED = "outcome_recorded"
+    ADAPTIVE_HINT_APPLIED = "adaptive_hint_applied"
+
+    # Coverage Assessment
+    COVERAGE_EVALUATING = "coverage_evaluating"
+    COVERAGE_EVALUATED = "coverage_evaluated"
+    COVERAGE_INSUFFICIENT = "coverage_insufficient"
+
+    # Refinement Cycles
+    REFINEMENT_CYCLE_START = "refinement_cycle_start"
+    REFINEMENT_CYCLE_COMPLETE = "refinement_cycle_complete"
+    REFINEMENT_QUERIES_GENERATED = "refinement_queries_generated"
+
+    # Reasoning DAG (Graph of Thoughts)
+    REASONING_BRANCH_CREATED = "reasoning_branch_created"
+    REASONING_NODE_VERIFIED = "reasoning_node_verified"
+    REASONING_PATHS_MERGED = "reasoning_paths_merged"
+
+    # Entity Tracking (GSW)
+    ENTITIES_EXTRACTED = "entities_extracted"
+    ENTITY_RELATION_FOUND = "entity_relation_found"
+
+    # LLM Calls (for debugging)
+    LLM_CALL_START = "llm_call_start"
+    LLM_CALL_COMPLETE = "llm_call_complete"
+
+    # Quality Assessment
+    QUALITY_CHECK_START = "quality_check_start"
+    QUALITY_CHECK_COMPLETE = "quality_check_complete"
+    CORPUS_QUALITY_ASSESSED = "corpus_quality_assessed"
+
+    # Web Search Specific
+    WEB_SEARCH_START = "web_search_start"
+    WEB_SEARCH_COMPLETE = "web_search_complete"
+    WEB_SEARCH_FALLBACK = "web_search_fallback"  # When switching to fallback API
+
+    # Decision Points (for debugging)
+    DECISION_POINT = "decision_point"  # Generic decision logging
+    PIPELINE_ROUTED = "pipeline_routed"  # Which pipeline was chosen
+
 
 @dataclass
 class SearchEvent:
@@ -498,13 +571,24 @@ def search_completed(
         execution_time_ms = response.meta.execution_time_ms if response.meta else execution_time_ms
 
     mode = "ENHANCED search" if enhanced else "Search"
+
+    # Build data dict - MUST include full response for Android client parsing
+    event_data = {
+        "execution_time_ms": execution_time_ms,
+        "enhanced": enhanced
+    }
+
+    # Include full response object if provided (Android client expects data.response)
+    if response:
+        event_data["response"] = response.model_dump()
+
     return SearchEvent(
         event_type=EventType.SEARCH_COMPLETED,
         request_id=request_id,
         message=f"{mode} complete: {sources_count} sources in {execution_time_ms}ms",
         sources_count=sources_count,
         progress_percent=100,
-        data={"execution_time_ms": execution_time_ms, "enhanced": enhanced},
+        data=event_data,
         enhanced=enhanced
     )
 
@@ -527,4 +611,440 @@ def progress_update(request_id: str, percent: int, message: str) -> SearchEvent:
         request_id=request_id,
         message=message,
         progress_percent=percent
+    )
+
+
+# ========== NEW: Comprehensive Agent Processing Event Helpers ==========
+
+def classifying_query(request_id: str, query: str) -> SearchEvent:
+    """Query classification started"""
+    return SearchEvent(
+        event_type=EventType.CLASSIFYING_QUERY,
+        request_id=request_id,
+        message="Classifying query to determine optimal pipeline...",
+        query=query,
+        progress_percent=2
+    )
+
+
+def query_classified(
+    request_id: str,
+    category: str,
+    pipeline: str,
+    complexity: str,
+    capabilities: list
+) -> SearchEvent:
+    """Query classification completed"""
+    return SearchEvent(
+        event_type=EventType.QUERY_CLASSIFIED,
+        request_id=request_id,
+        message=f"Query classified: {category} → {pipeline}",
+        progress_percent=4,
+        data={
+            "category": category,
+            "pipeline": pipeline,
+            "complexity": complexity,
+            "capabilities": capabilities
+        }
+    )
+
+
+def crag_evaluating(request_id: str, document_count: int) -> SearchEvent:
+    """CRAG pre-retrieval evaluation started"""
+    return SearchEvent(
+        event_type=EventType.CRAG_EVALUATING,
+        request_id=request_id,
+        message=f"CRAG: Evaluating quality of {document_count} retrieved documents...",
+        results_count=document_count,
+        progress_percent=45
+    )
+
+
+def crag_evaluation_complete(
+    request_id: str,
+    quality: str,
+    relevance: float,
+    action: str
+) -> SearchEvent:
+    """CRAG evaluation completed"""
+    return SearchEvent(
+        event_type=EventType.CRAG_EVALUATION_COMPLETE,
+        request_id=request_id,
+        message=f"CRAG: Quality={quality}, Relevance={relevance:.2f}, Action={action}",
+        progress_percent=48,
+        data={
+            "quality": quality,
+            "relevance": relevance,
+            "action": action
+        }
+    )
+
+
+def crag_refining(request_id: str, refined_queries: list) -> SearchEvent:
+    """CRAG triggered refinement"""
+    return SearchEvent(
+        event_type=EventType.CRAG_REFINING,
+        request_id=request_id,
+        message=f"CRAG: Refining with {len(refined_queries)} new queries",
+        queries=refined_queries,
+        progress_percent=50
+    )
+
+
+def self_rag_reflecting(request_id: str, synthesis_length: int) -> SearchEvent:
+    """Self-RAG reflection started"""
+    return SearchEvent(
+        event_type=EventType.SELF_RAG_REFLECTING,
+        request_id=request_id,
+        message=f"Self-RAG: Reflecting on synthesis ({synthesis_length:,} chars)...",
+        progress_percent=88,
+        data={"synthesis_length": synthesis_length}
+    )
+
+
+def self_rag_complete(
+    request_id: str,
+    relevance: float,
+    support_level: str,
+    usefulness: float,
+    temporal_conflicts: int = 0
+) -> SearchEvent:
+    """Self-RAG reflection completed"""
+    return SearchEvent(
+        event_type=EventType.SELF_RAG_COMPLETE,
+        request_id=request_id,
+        message=f"Self-RAG: Relevance={relevance:.2f}, Support={support_level}, Usefulness={usefulness:.2f}",
+        progress_percent=90,
+        data={
+            "relevance": relevance,
+            "support_level": support_level,
+            "usefulness": usefulness,
+            "temporal_conflicts": temporal_conflicts
+        }
+    )
+
+
+def self_rag_refining(request_id: str, reason: str) -> SearchEvent:
+    """Self-RAG triggered synthesis refinement"""
+    return SearchEvent(
+        event_type=EventType.SELF_RAG_REFINING,
+        request_id=request_id,
+        message=f"Self-RAG: Refining synthesis - {reason}",
+        progress_percent=91,
+        data={"reason": reason}
+    )
+
+
+def scratchpad_initialized(request_id: str, questions: list) -> SearchEvent:
+    """Scratchpad initialized with decomposed questions"""
+    return SearchEvent(
+        event_type=EventType.SCRATCHPAD_INITIALIZED,
+        request_id=request_id,
+        message=f"Scratchpad: Initialized with {len(questions)} questions",
+        progress_percent=18,
+        data={"questions": questions[:5]}  # First 5 for brevity
+    )
+
+
+def scratchpad_updated(request_id: str, findings_count: int, gaps_count: int) -> SearchEvent:
+    """Scratchpad state updated"""
+    return SearchEvent(
+        event_type=EventType.SCRATCHPAD_UPDATED,
+        request_id=request_id,
+        message=f"Scratchpad: {findings_count} findings, {gaps_count} gaps remaining",
+        data={"findings": findings_count, "gaps": gaps_count}
+    )
+
+
+def scratchpad_finding_added(request_id: str, finding_type: str, source: str) -> SearchEvent:
+    """New finding added to scratchpad"""
+    return SearchEvent(
+        event_type=EventType.SCRATCHPAD_FINDING_ADDED,
+        request_id=request_id,
+        message=f"Scratchpad: Added {finding_type} finding from {source[:30]}...",
+        data={"type": finding_type, "source": source}
+    )
+
+
+def scratchpad_question_answered(request_id: str, question: str, confidence: float) -> SearchEvent:
+    """Question marked as answered"""
+    return SearchEvent(
+        event_type=EventType.SCRATCHPAD_QUESTION_ANSWERED,
+        request_id=request_id,
+        message=f"Scratchpad: Question answered (confidence={confidence:.2f})",
+        data={"question": question[:50], "confidence": confidence}
+    )
+
+
+def scratchpad_gap_detected(request_id: str, gap_description: str) -> SearchEvent:
+    """Gap detected in coverage"""
+    return SearchEvent(
+        event_type=EventType.SCRATCHPAD_GAP_DETECTED,
+        request_id=request_id,
+        message=f"Scratchpad: Gap detected - {gap_description[:60]}...",
+        data={"gap": gap_description}
+    )
+
+
+def coverage_evaluating(request_id: str) -> SearchEvent:
+    """Coverage evaluation started"""
+    return SearchEvent(
+        event_type=EventType.COVERAGE_EVALUATING,
+        request_id=request_id,
+        message="Evaluating corpus coverage against query requirements...",
+        progress_percent=72
+    )
+
+
+def coverage_evaluated(
+    request_id: str,
+    coverage_score: float,
+    is_sufficient: bool,
+    gaps: list
+) -> SearchEvent:
+    """Coverage evaluation completed"""
+    return SearchEvent(
+        event_type=EventType.COVERAGE_EVALUATED,
+        request_id=request_id,
+        message=f"Coverage: {coverage_score:.1%} - {'Sufficient' if is_sufficient else f'{len(gaps)} gaps found'}",
+        progress_percent=74,
+        data={
+            "coverage_score": coverage_score,
+            "is_sufficient": is_sufficient,
+            "gaps": gaps[:3]  # First 3 gaps
+        }
+    )
+
+
+def coverage_insufficient(request_id: str, gaps: list) -> SearchEvent:
+    """Coverage insufficient, need more sources"""
+    return SearchEvent(
+        event_type=EventType.COVERAGE_INSUFFICIENT,
+        request_id=request_id,
+        message=f"Coverage insufficient: {len(gaps)} information gaps",
+        data={"gaps": gaps}
+    )
+
+
+def refinement_cycle_start(request_id: str, cycle: int, max_cycles: int) -> SearchEvent:
+    """Refinement cycle started"""
+    return SearchEvent(
+        event_type=EventType.REFINEMENT_CYCLE_START,
+        request_id=request_id,
+        message=f"Starting refinement cycle {cycle}/{max_cycles}",
+        iteration=cycle,
+        max_iterations=max_cycles,
+        progress_percent=75 + (cycle * 5)  # 75-90%
+    )
+
+
+def refinement_cycle_complete(
+    request_id: str,
+    cycle: int,
+    new_sources: int,
+    quality_improved: bool
+) -> SearchEvent:
+    """Refinement cycle completed"""
+    return SearchEvent(
+        event_type=EventType.REFINEMENT_CYCLE_COMPLETE,
+        request_id=request_id,
+        message=f"Refinement cycle {cycle} complete: +{new_sources} sources, quality {'improved' if quality_improved else 'unchanged'}",
+        data={"cycle": cycle, "new_sources": new_sources, "quality_improved": quality_improved}
+    )
+
+
+def refinement_queries_generated(request_id: str, queries: list) -> SearchEvent:
+    """New refinement queries generated"""
+    return SearchEvent(
+        event_type=EventType.REFINEMENT_QUERIES_GENERATED,
+        request_id=request_id,
+        message=f"Generated {len(queries)} refinement queries",
+        queries=queries,
+        data={"count": len(queries)}
+    )
+
+
+def llm_call_start(request_id: str, model: str, task: str, input_tokens: int = 0) -> SearchEvent:
+    """LLM API call started"""
+    return SearchEvent(
+        event_type=EventType.LLM_CALL_START,
+        request_id=request_id,
+        message=f"LLM: Calling {model} for {task}",
+        model_name=model,
+        data={"task": task, "input_tokens": input_tokens}
+    )
+
+
+def llm_call_complete(
+    request_id: str,
+    model: str,
+    task: str,
+    duration_ms: int,
+    output_tokens: int = 0
+) -> SearchEvent:
+    """LLM API call completed"""
+    return SearchEvent(
+        event_type=EventType.LLM_CALL_COMPLETE,
+        request_id=request_id,
+        message=f"LLM: {model} completed {task} in {duration_ms}ms",
+        model_name=model,
+        data={"task": task, "duration_ms": duration_ms, "output_tokens": output_tokens}
+    )
+
+
+def corpus_quality_assessed(
+    request_id: str,
+    confidence: float,
+    sources: int,
+    domains: int,
+    iterations: int
+) -> SearchEvent:
+    """Overall corpus quality assessment"""
+    return SearchEvent(
+        event_type=EventType.CORPUS_QUALITY_ASSESSED,
+        request_id=request_id,
+        message=f"Corpus quality: confidence={confidence:.2f}, {sources} sources from {domains} domains",
+        progress_percent=93,
+        data={
+            "confidence": confidence,
+            "sources": sources,
+            "unique_domains": domains,
+            "iterations": iterations
+        }
+    )
+
+
+def web_search_start(request_id: str, query: str, api: str) -> SearchEvent:
+    """Web search API call started"""
+    return SearchEvent(
+        event_type=EventType.WEB_SEARCH_START,
+        request_id=request_id,
+        message=f"Web search: Querying {api}...",
+        query=query,
+        data={"api": api}
+    )
+
+
+def web_search_complete(request_id: str, results_count: int, api: str) -> SearchEvent:
+    """Web search API call completed"""
+    return SearchEvent(
+        event_type=EventType.WEB_SEARCH_COMPLETE,
+        request_id=request_id,
+        message=f"Web search: {results_count} results from {api}",
+        results_count=results_count,
+        data={"api": api}
+    )
+
+
+def web_search_fallback(request_id: str, from_api: str, to_api: str, reason: str) -> SearchEvent:
+    """Falling back to alternative search API"""
+    return SearchEvent(
+        event_type=EventType.WEB_SEARCH_FALLBACK,
+        request_id=request_id,
+        message=f"Web search: Falling back from {from_api} to {to_api} ({reason})",
+        data={"from_api": from_api, "to_api": to_api, "reason": reason}
+    )
+
+
+def decision_point(
+    request_id: str,
+    decision_type: str,
+    decision: str,
+    reason: str,
+    alternatives: list = None
+) -> SearchEvent:
+    """Log a decision point for debugging"""
+    return SearchEvent(
+        event_type=EventType.DECISION_POINT,
+        request_id=request_id,
+        message=f"Decision [{decision_type}]: {decision}",
+        data={
+            "type": decision_type,
+            "decision": decision,
+            "reason": reason,
+            "alternatives": alternatives or []
+        }
+    )
+
+
+def pipeline_routed(request_id: str, pipeline: str, reason: str) -> SearchEvent:
+    """Query routed to specific pipeline"""
+    return SearchEvent(
+        event_type=EventType.PIPELINE_ROUTED,
+        request_id=request_id,
+        message=f"Pipeline: Routing to {pipeline}",
+        progress_percent=5,
+        data={"pipeline": pipeline, "reason": reason}
+    )
+
+
+def experience_captured(request_id: str, query_type: str, confidence: float) -> SearchEvent:
+    """Experience captured for distillation"""
+    return SearchEvent(
+        event_type=EventType.EXPERIENCE_CAPTURED,
+        request_id=request_id,
+        message=f"Experience captured: {query_type} query (confidence={confidence:.2f})",
+        data={"query_type": query_type, "confidence": confidence}
+    )
+
+
+def outcome_recorded(
+    request_id: str,
+    category: str,
+    quality: str,
+    was_overkill: bool,
+    was_underkill: bool
+) -> SearchEvent:
+    """Classifier outcome recorded for feedback"""
+    return SearchEvent(
+        event_type=EventType.OUTCOME_RECORDED,
+        request_id=request_id,
+        message=f"Outcome recorded: {category} → {quality}",
+        data={
+            "category": category,
+            "quality": quality,
+            "was_overkill": was_overkill,
+            "was_underkill": was_underkill
+        }
+    )
+
+
+def iteration_start_detailed(
+    request_id: str,
+    iteration: int,
+    max_iterations: int,
+    pending_queries: int,
+    sources_so_far: int
+) -> SearchEvent:
+    """Detailed iteration start with context"""
+    return SearchEvent(
+        event_type=EventType.ITERATION_START,
+        request_id=request_id,
+        message=f"Iteration {iteration}/{max_iterations}: {pending_queries} queries pending, {sources_so_far} sources collected",
+        iteration=iteration,
+        max_iterations=max_iterations,
+        sources_count=sources_so_far,
+        progress_percent=20 + int((iteration / max_iterations) * 60),  # 20-80%
+        data={"pending_queries": pending_queries}
+    )
+
+
+def iteration_complete_detailed(
+    request_id: str,
+    iteration: int,
+    results_this_iteration: int,
+    total_sources: int,
+    continue_reason: str = None
+) -> SearchEvent:
+    """Detailed iteration completion"""
+    return SearchEvent(
+        event_type=EventType.ITERATION_COMPLETE,
+        request_id=request_id,
+        message=f"Iteration {iteration} complete: +{results_this_iteration} results, {total_sources} total sources",
+        iteration=iteration,
+        sources_count=total_sources,
+        data={
+            "results_this_iteration": results_this_iteration,
+            "continue_reason": continue_reason
+        }
     )

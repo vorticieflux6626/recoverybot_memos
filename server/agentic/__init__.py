@@ -133,6 +133,81 @@ from .actor_factory import (
     create_actor_factory,
     get_actor_factory
 )
+from .self_reflection import (
+    SelfReflectionAgent,
+    ReflectionResult,
+    ReflectionToken,
+    SupportLevel,
+    TemporalFact,
+    TemporalConflict,
+    create_self_reflection_agent,
+    get_self_reflection_agent
+)
+from .retrieval_evaluator import (
+    RetrievalEvaluator,
+    RetrievalEvaluation,
+    RetrievalQuality,
+    CorrectiveAction,
+    DocumentScore,
+    create_retrieval_evaluator,
+    get_retrieval_evaluator
+)
+from .experience_distiller import (
+    ExperienceDistiller,
+    SearchExperience,
+    DistillationResult,
+    create_experience_distiller,
+    get_experience_distiller
+)
+from .classifier_feedback import (
+    ClassifierFeedback,
+    ClassificationOutcome,
+    AdaptiveHint,
+    OutcomeQuality,
+    create_classifier_feedback,
+    get_classifier_feedback
+)
+from .domain_corpus import (
+    DomainSchema,
+    DomainEntityDef,
+    DomainRelationDef,
+    DomainEntity,
+    DomainRelation,
+    DomainCorpus,
+    CorpusBuilder,
+    CorpusRetriever,
+    DomainCorpusManager,
+    TroubleshootingEntityType,
+    TroubleshootingRelationType,
+    create_fanuc_schema,
+    create_raspberry_pi_schema,
+    get_corpus_manager,
+    initialize_default_corpuses
+)
+from .query_classifier import (
+    QueryClassifier,
+    QueryClassification,
+    QueryCategory,
+    QueryComplexity,
+    RecommendedPipeline,
+    classify_query,
+    get_query_classifier
+)
+from .embedding_aggregator import (
+    EmbeddingAggregator,
+    DomainExpert,
+    AggregatedEmbedding,
+    SubManifoldResult,
+    RetrievalResult,
+    get_embedding_aggregator,
+    retrieve_with_entities
+)
+from .entity_enhanced_retrieval import (
+    EntityEnhancedRetriever,
+    EnhancedRetrievalResult,
+    entity_enhanced_retrieve,
+    get_entity_enhanced_retriever
+)
 from . import events
 
 __all__ = [
@@ -239,6 +314,73 @@ __all__ = [
     "ModelCapability",
     "create_actor_factory",
     "get_actor_factory",
+    # Self-RAG Reflection (Phase 6 Enhancement)
+    "SelfReflectionAgent",
+    "ReflectionResult",
+    "ReflectionToken",
+    "SupportLevel",
+    "TemporalFact",
+    "TemporalConflict",
+    "create_self_reflection_agent",
+    "get_self_reflection_agent",
+    # CRAG Retrieval Evaluator (Phase 7 Enhancement)
+    "RetrievalEvaluator",
+    "RetrievalEvaluation",
+    "RetrievalQuality",
+    "CorrectiveAction",
+    "DocumentScore",
+    "create_retrieval_evaluator",
+    "get_retrieval_evaluator",
+    # Experience Distillation (Phase 8 Enhancement)
+    "ExperienceDistiller",
+    "SearchExperience",
+    "DistillationResult",
+    "create_experience_distiller",
+    "get_experience_distiller",
+    # Classifier Feedback (Phase 9 Enhancement)
+    "ClassifierFeedback",
+    "ClassificationOutcome",
+    "AdaptiveHint",
+    "OutcomeQuality",
+    "create_classifier_feedback",
+    "get_classifier_feedback",
+    # Domain Corpus System (December 2025)
+    "DomainSchema",
+    "DomainEntityDef",
+    "DomainRelationDef",
+    "DomainEntity",
+    "DomainRelation",
+    "DomainCorpus",
+    "CorpusBuilder",
+    "CorpusRetriever",
+    "DomainCorpusManager",
+    "TroubleshootingEntityType",
+    "TroubleshootingRelationType",
+    "create_fanuc_schema",
+    "create_raspberry_pi_schema",
+    "get_corpus_manager",
+    "initialize_default_corpuses",
+    # Query Classification (December 2025)
+    "QueryClassifier",
+    "QueryClassification",
+    "QueryCategory",
+    "QueryComplexity",
+    "RecommendedPipeline",
+    "classify_query",
+    "get_query_classifier",
+    # Master Embedding Aggregation (December 2025)
+    "EmbeddingAggregator",
+    "DomainExpert",
+    "AggregatedEmbedding",
+    "SubManifoldResult",
+    "RetrievalResult",
+    "get_embedding_aggregator",
+    "retrieve_with_entities",
+    # Entity-Enhanced Retrieval (December 2025)
+    "EntityEnhancedRetriever",
+    "EnhancedRetrievalResult",
+    "entity_enhanced_retrieve",
+    "get_entity_enhanced_retriever",
 ]
 
-__version__ = "0.8.0"  # Updated for Actor Factory (Phase 5)
+__version__ = "0.15.0"  # Entity-enhanced retrieval with master embedding aggregation

@@ -1831,3 +1831,1115 @@ async def estimate_prefix_reuse(
             status_code=500,
             detail=f"Failed to estimate prefix reuse: {str(e)}"
         )
+
+
+# =============================================================================
+# Experience Distillation Endpoints (MetaAgent-inspired)
+# =============================================================================
+
+@router.get("/distillation/stats")
+async def get_distillation_stats():
+    """
+    Get experience distillation statistics.
+
+    Returns information about captured experiences, distillation attempts,
+    and templates created from successful searches.
+    """
+    try:
+        from agentic import get_experience_distiller
+
+        distiller = get_experience_distiller()
+        stats = distiller.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get distillation stats failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get distillation stats: {str(e)}"
+        )
+
+
+@router.get("/distillation/experiences")
+async def get_experiences(
+    query_type: Optional[str] = Query(None, description="Filter by query type")
+):
+    """
+    Get captured search experiences.
+
+    These are successful searches that have been captured for potential
+    distillation into reusable templates.
+    """
+    try:
+        from agentic import get_experience_distiller
+
+        distiller = get_experience_distiller()
+        experiences = distiller.get_experiences(query_type)
+
+        return {
+            "success": True,
+            "data": {
+                "experiences": experiences,
+                "count": len(experiences)
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "query_type_filter": query_type
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get experiences failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get experiences: {str(e)}"
+        )
+
+
+@router.post("/distillation/distill")
+async def trigger_distillation(
+    query_type: str = Query(..., description="Query type to distill")
+):
+    """
+    Trigger distillation for a specific query type.
+
+    Analyzes captured experiences and attempts to extract a reusable
+    template for the ThoughtLibrary.
+    """
+    try:
+        from agentic import get_experience_distiller
+
+        distiller = get_experience_distiller()
+        result = await distiller.attempt_distillation(query_type)
+
+        return {
+            "success": True,
+            "data": result.to_dict(),
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "query_type": query_type
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Trigger distillation failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to trigger distillation: {str(e)}"
+        )
+
+
+@router.delete("/distillation/experiences")
+async def clear_experiences(
+    query_type: Optional[str] = Query(None, description="Query type to clear (all if not specified)")
+):
+    """
+    Clear captured experiences.
+
+    Args:
+        query_type: If specified, only clear experiences of this type.
+                   If not specified, clear all experiences.
+    """
+    try:
+        from agentic import get_experience_distiller
+
+        distiller = get_experience_distiller()
+        count = distiller.clear_experiences(query_type)
+
+        return {
+            "success": True,
+            "data": {
+                "cleared_count": count,
+                "query_type": query_type or "all"
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Clear experiences failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to clear experiences: {str(e)}"
+        )
+
+
+# =============================================================================
+# Classifier Feedback Endpoints (Adaptive-RAG inspired)
+# =============================================================================
+
+@router.get("/classifier/stats")
+async def get_classifier_stats():
+    """
+    Get classifier feedback statistics.
+
+    Returns information about classification outcomes, mismatch patterns,
+    and adaptive hints generated from learning.
+    """
+    try:
+        from agentic import get_classifier_feedback
+
+        feedback = get_classifier_feedback()
+        stats = feedback.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get classifier stats failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get classifier stats: {str(e)}"
+        )
+
+
+@router.get("/classifier/outcomes")
+async def get_classifier_outcomes(
+    category: Optional[str] = Query(None, description="Filter by query category"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum outcomes to return")
+):
+    """
+    Get classification outcome history.
+
+    Shows past classifications and their actual outcomes for analysis.
+    """
+    try:
+        from agentic import get_classifier_feedback
+
+        feedback = get_classifier_feedback()
+        outcomes = feedback.get_outcomes(category, limit)
+
+        return {
+            "success": True,
+            "data": {
+                "outcomes": outcomes,
+                "count": len(outcomes)
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "category_filter": category,
+                "limit": limit
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get classifier outcomes failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get classifier outcomes: {str(e)}"
+        )
+
+
+@router.get("/classifier/hints")
+async def get_classifier_hints():
+    """
+    Get adaptive hints learned from classification outcomes.
+
+    These hints are used to adjust future classifications based on
+    observed patterns in past outcomes.
+    """
+    try:
+        from agentic import get_classifier_feedback
+
+        feedback = get_classifier_feedback()
+        stats = feedback.get_stats()
+
+        return {
+            "success": True,
+            "data": {
+                "hints": stats.get("hints", []),
+                "hint_count": stats.get("hint_count", 0),
+                "last_generation": stats.get("last_hint_generation")
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get classifier hints failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get classifier hints: {str(e)}"
+        )
+
+
+@router.delete("/classifier/outcomes")
+async def clear_classifier_outcomes(
+    category: Optional[str] = Query(None, description="Category to clear (all if not specified)")
+):
+    """
+    Clear classification outcome history.
+
+    Args:
+        category: If specified, only clear outcomes of this category.
+                 If not specified, clear all outcomes.
+    """
+    try:
+        from agentic import get_classifier_feedback
+
+        feedback = get_classifier_feedback()
+        count = feedback.clear_outcomes(category)
+
+        return {
+            "success": True,
+            "data": {
+                "cleared_count": count,
+                "category": category or "all"
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Clear classifier outcomes failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to clear classifier outcomes: {str(e)}"
+        )
+
+
+# ============================================
+# DOMAIN CORPUS ENDPOINTS (Phase 2: December 2025)
+# Persistent domain-specific knowledge bases
+# ============================================
+
+# Global corpus manager instance
+_corpus_manager = None
+
+
+async def get_corpus_manager():
+    """Get or create the domain corpus manager"""
+    global _corpus_manager
+    if _corpus_manager is None:
+        import os
+        from agentic.domain_corpus import (
+            get_corpus_manager as _get_manager,
+            create_fanuc_schema,
+            create_raspberry_pi_schema
+        )
+        _corpus_manager = _get_manager()
+
+        # Register default schemas
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        _corpus_manager.register_corpus(create_fanuc_schema(), ollama_url)
+        _corpus_manager.register_corpus(create_raspberry_pi_schema(), ollama_url)
+
+        logger.info(f"Domain corpus manager initialized with {len(_corpus_manager.corpuses)} domains")
+    return _corpus_manager
+
+
+class CorpusDocumentRequest(BaseModel):
+    """Request to add document to corpus"""
+    content: str
+    source_url: str = ""
+    source_type: str = "unknown"
+    title: str = ""
+    extract_entities: bool = True
+
+
+class CorpusQueryRequest(BaseModel):
+    """Request to query corpus"""
+    query: str
+    entity_types: Optional[list[str]] = None
+    include_relations: bool = True
+    max_results: int = 10
+
+
+class CorpusSchemaRequest(BaseModel):
+    """Request to create custom domain schema"""
+    domain_id: str
+    domain_name: str
+    description: str
+    entity_types: list[dict]
+    relationships: list[dict]
+    extraction_hints: dict = {}
+    priority_patterns: list[str] = []
+
+
+@router.get("/corpus/domains")
+async def list_corpus_domains():
+    """
+    List all registered domain corpuses.
+
+    Returns domain IDs, names, and entity/relation counts.
+    """
+    try:
+        manager = await get_corpus_manager()
+        domains = manager.list_domains()
+
+        return {
+            "success": True,
+            "data": {
+                "domains": domains,
+                "count": len(domains)
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"List corpus domains failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list domains: {str(e)}"
+        )
+
+
+@router.get("/corpus/{domain_id}/stats")
+async def get_corpus_stats(domain_id: str):
+    """
+    Get statistics for a specific domain corpus.
+
+    Args:
+        domain_id: Domain identifier (e.g., 'fanuc_robotics', 'raspberry_pi')
+
+    Returns:
+        Entity counts, relation counts, document counts, extraction stats
+    """
+    try:
+        manager = await get_corpus_manager()
+        corpus = manager.get_corpus(domain_id)
+
+        if not corpus:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Domain corpus '{domain_id}' not found"
+            )
+
+        return {
+            "success": True,
+            "data": corpus.get_stats(),
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get corpus stats failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get corpus stats: {str(e)}"
+        )
+
+
+@router.post("/corpus/{domain_id}/documents")
+async def add_corpus_document(domain_id: str, request: CorpusDocumentRequest):
+    """
+    Add document to domain corpus with entity extraction.
+
+    The document will be:
+    1. Checked for duplicates via content hashing
+    2. Chunked if necessary
+    3. Processed to extract domain-specific entities
+    4. Indexed for semantic retrieval
+
+    Args:
+        domain_id: Domain identifier
+        request: Document content and metadata
+
+    Returns:
+        Extraction results (entities and relations found)
+    """
+    try:
+        manager = await get_corpus_manager()
+        builder = manager.get_builder(domain_id)
+
+        if not builder:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Domain corpus '{domain_id}' not found"
+            )
+
+        result = await builder.add_document(
+            content=request.content,
+            source_url=request.source_url,
+            source_type=request.source_type,
+            title=request.title,
+            extract_entities=request.extract_entities
+        )
+
+        return {
+            "success": True,
+            "data": result,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "domain_id": domain_id
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Add corpus document failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to add document: {str(e)}"
+        )
+
+
+@router.post("/corpus/{domain_id}/query")
+async def query_corpus(domain_id: str, request: CorpusQueryRequest):
+    """
+    Query domain corpus with hybrid search.
+
+    Combines:
+    - Semantic search via embeddings
+    - Graph traversal for related entities
+    - Contextual synthesis for LLM consumption
+
+    Args:
+        domain_id: Domain identifier
+        request: Query parameters
+
+    Returns:
+        Matching entities, related entities, synthesized context
+    """
+    try:
+        manager = await get_corpus_manager()
+        retriever = manager.get_retriever(domain_id)
+
+        if not retriever:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Domain corpus '{domain_id}' not found"
+            )
+
+        result = await retriever.query(
+            query=request.query,
+            entity_types=request.entity_types,
+            include_relations=request.include_relations
+        )
+
+        return {
+            "success": True,
+            "data": result,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "domain_id": domain_id
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Query corpus failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to query corpus: {str(e)}"
+        )
+
+
+@router.get("/corpus/{domain_id}/troubleshoot/{error_code}")
+async def get_troubleshooting_path(domain_id: str, error_code: str):
+    """
+    Get complete troubleshooting path for an error code.
+
+    Traverses the knowledge graph:
+    error_code → symptoms → causes → solutions
+
+    Args:
+        domain_id: Domain identifier
+        error_code: Error code to troubleshoot (e.g., 'SRVO-001')
+
+    Returns:
+        Complete troubleshooting path with symptoms, causes, and solutions
+    """
+    try:
+        manager = await get_corpus_manager()
+        retriever = manager.get_retriever(domain_id)
+
+        if not retriever:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Domain corpus '{domain_id}' not found"
+            )
+
+        result = await retriever.get_troubleshooting_path(error_code)
+
+        if "error" in result:
+            raise HTTPException(
+                status_code=404,
+                detail=result["error"]
+            )
+
+        return {
+            "success": True,
+            "data": result,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "domain_id": domain_id,
+                "error_code": error_code
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get troubleshooting path failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get troubleshooting path: {str(e)}"
+        )
+
+
+@router.get("/corpus/{domain_id}/entities")
+async def list_corpus_entities(
+    domain_id: str,
+    entity_type: Optional[str] = Query(None, description="Filter by entity type"),
+    limit: int = Query(50, ge=1, le=500, description="Maximum entities to return")
+):
+    """
+    List entities in a domain corpus.
+
+    Args:
+        domain_id: Domain identifier
+        entity_type: Optional filter by entity type
+        limit: Maximum entities to return
+
+    Returns:
+        List of entities with their attributes
+    """
+    try:
+        manager = await get_corpus_manager()
+        corpus = manager.get_corpus(domain_id)
+
+        if not corpus:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Domain corpus '{domain_id}' not found"
+            )
+
+        if entity_type:
+            entities = corpus.get_entities_by_type(entity_type)
+        else:
+            entities = list(corpus.entities.values())
+
+        # Sort by mention count and limit
+        entities = sorted(entities, key=lambda e: e.mention_count, reverse=True)[:limit]
+
+        return {
+            "success": True,
+            "data": {
+                "entities": [e.to_dict() for e in entities],
+                "count": len(entities),
+                "total": len(corpus.entities)
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "domain_id": domain_id,
+                "filter": entity_type
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"List corpus entities failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list entities: {str(e)}"
+        )
+
+
+@router.get("/corpus/{domain_id}/graph")
+async def export_knowledge_graph(domain_id: str):
+    """
+    Export corpus as knowledge graph for visualization.
+
+    Returns nodes (entities) and edges (relations) in a format
+    suitable for graph visualization libraries.
+
+    Args:
+        domain_id: Domain identifier
+
+    Returns:
+        Nodes, edges, and schema definition
+    """
+    try:
+        manager = await get_corpus_manager()
+        corpus = manager.get_corpus(domain_id)
+
+        if not corpus:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Domain corpus '{domain_id}' not found"
+            )
+
+        return {
+            "success": True,
+            "data": corpus.export_knowledge_graph(),
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "domain_id": domain_id
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Export knowledge graph failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to export graph: {str(e)}"
+        )
+
+
+@router.post("/corpus/cross-domain/query")
+async def cross_domain_query(request: CorpusQueryRequest):
+    """
+    Query across all registered domain corpuses.
+
+    Useful when the domain is unknown or the query spans multiple domains.
+
+    Args:
+        request: Query parameters
+
+    Returns:
+        Results from each domain corpus
+    """
+    try:
+        manager = await get_corpus_manager()
+        result = await manager.cross_domain_query(request.query)
+
+        return {
+            "success": True,
+            "data": result,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Cross-domain query failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to execute cross-domain query: {str(e)}"
+        )
+
+
+@router.post("/corpus/register")
+async def register_custom_corpus(request: CorpusSchemaRequest):
+    """
+    Register a custom domain corpus with a new schema.
+
+    Allows creating domain-specific knowledge bases beyond the
+    default FANUC and Raspberry Pi schemas.
+
+    Args:
+        request: Domain schema definition
+
+    Returns:
+        Confirmation of registration
+    """
+    try:
+        import os
+        from agentic.domain_corpus import (
+            DomainSchema,
+            DomainEntityDef,
+            DomainRelationDef
+        )
+
+        manager = await get_corpus_manager()
+
+        # Check if domain already exists
+        if manager.get_corpus(request.domain_id):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Domain '{request.domain_id}' already exists"
+            )
+
+        # Build entity type definitions
+        entity_types = [
+            DomainEntityDef(
+                entity_type=et.get("type", "concept"),
+                description=et.get("description", ""),
+                extraction_patterns=et.get("patterns", []),
+                examples=et.get("examples", []),
+                attributes=et.get("attributes", [])
+            )
+            for et in request.entity_types
+        ]
+
+        # Build relationship definitions
+        relationships = [
+            DomainRelationDef(
+                relation_type=rel.get("type", "related_to"),
+                source_types=rel.get("source_types", []),
+                target_types=rel.get("target_types", []),
+                description=rel.get("description", ""),
+                bidirectional=rel.get("bidirectional", False)
+            )
+            for rel in request.relationships
+        ]
+
+        # Create schema
+        schema = DomainSchema(
+            domain_id=request.domain_id,
+            domain_name=request.domain_name,
+            description=request.description,
+            entity_types=entity_types,
+            relationships=relationships,
+            extraction_hints=request.extraction_hints,
+            priority_patterns=request.priority_patterns
+        )
+
+        # Register corpus
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        manager.register_corpus(schema, ollama_url)
+
+        return {
+            "success": True,
+            "data": {
+                "domain_id": request.domain_id,
+                "domain_name": request.domain_name,
+                "entity_types": len(entity_types),
+                "relationships": len(relationships)
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Register custom corpus failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to register corpus: {str(e)}"
+        )
+
+
+# ============================================================================
+# Entity-Enhanced Retrieval Endpoints (December 2025)
+# ============================================================================
+
+class EntityEnhancedQueryRequest(BaseModel):
+    """Request for entity-enhanced retrieval."""
+    query: str
+    context: Optional[Dict[str, Any]] = None
+    max_results: int = 10
+    include_relations: bool = True
+    enable_classification: bool = True
+    enable_entity_extraction: bool = True
+    enable_domain_corpus: bool = True
+    enable_embedding_aggregation: bool = True
+
+
+@router.post("/entity-enhanced/query")
+async def entity_enhanced_query(request: EntityEnhancedQueryRequest):
+    """
+    Entity-enhanced retrieval with full pipeline.
+
+    Combines:
+    - Query classification (DeepSeek-R1)
+    - Entity extraction (GSW-style)
+    - Domain corpus retrieval (FANUC, Raspberry Pi, etc.)
+    - Master embedding aggregation (RouterRetriever pattern)
+    - Sub-manifold navigation (entity-guided)
+
+    Returns comprehensive retrieval result with context from all sources.
+    """
+    from agentic.entity_enhanced_retrieval import get_entity_enhanced_retriever
+
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        retriever = get_entity_enhanced_retriever(ollama_url)
+
+        # Configure feature flags
+        retriever.enable_classification = request.enable_classification
+        retriever.enable_entity_extraction = request.enable_entity_extraction
+        retriever.enable_domain_corpus = request.enable_domain_corpus
+        retriever.enable_embedding_aggregation = request.enable_embedding_aggregation
+
+        result = await retriever.retrieve(
+            query=request.query,
+            context=request.context,
+            max_results=request.max_results,
+            include_relations=request.include_relations
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "query": result.query,
+                "synthesized_context": result.synthesized_context,
+                "confidence": result.confidence,
+                "pipeline_used": result.pipeline_used,
+                "domains_queried": result.domains_queried,
+                "sources_used": result.sources_used,
+                "extracted_entities": result.extracted_entities,
+                "classification": {
+                    "category": result.classification.category.value if result.classification else None,
+                    "complexity": result.classification.complexity.value if result.classification else None,
+                    "recommended_pipeline": result.classification.recommended_pipeline.value if result.classification else None,
+                    "reasoning": result.classification.reasoning if result.classification else None
+                } if result.classification else None,
+                "embedding_results": {
+                    "result_count": len(result.embedding_results.sub_manifold_results) if result.embedding_results else 0,
+                    "domains_used": result.embedding_results.domains_used if result.embedding_results else [],
+                    "retrieval_time_ms": result.embedding_results.retrieval_time_ms if result.embedding_results else 0
+                } if result.embedding_results else None
+            },
+            "meta": {
+                "total_time_ms": result.total_time_ms,
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Entity-enhanced query failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Entity-enhanced query failed: {str(e)}"
+        )
+
+
+@router.get("/entity-enhanced/stats")
+async def get_entity_enhanced_stats():
+    """Get entity-enhanced retriever statistics."""
+    from agentic.entity_enhanced_retrieval import get_entity_enhanced_retriever
+
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        retriever = get_entity_enhanced_retriever(ollama_url)
+        stats = retriever.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get stats: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
+class ClassifyQueryRequest(BaseModel):
+    """Request for query classification."""
+    query: str
+    context: Optional[Dict[str, Any]] = None
+
+
+@router.post("/classify")
+async def classify_query_endpoint(request: ClassifyQueryRequest):
+    """
+    Classify a query using DeepSeek-R1 or fallback model.
+
+    Returns:
+    - category: research, problem_solving, factual, technical, etc.
+    - capabilities: web_search, reasoning, code_analysis, etc.
+    - complexity: simple, moderate, complex, expert
+    - recommended_pipeline: direct_answer, web_search, agentic_search, code_assistant
+    """
+    from agentic.query_classifier import get_query_classifier
+
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        classifier = get_query_classifier(ollama_url)
+
+        result = await classifier.classify(request.query, request.context)
+
+        return {
+            "success": True,
+            "data": {
+                "category": result.category.value,
+                "capabilities": result.capabilities,
+                "complexity": result.complexity.value,
+                "urgency": result.urgency,
+                "use_thinking_model": result.use_thinking_model,
+                "recommended_pipeline": result.recommended_pipeline.value,
+                "reasoning": result.reasoning
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Query classification failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Classification failed: {str(e)}"
+        )
+
+
+@router.get("/classifier/stats")
+async def get_classifier_stats():
+    """Get query classifier statistics."""
+    from agentic.query_classifier import get_query_classifier
+
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        classifier = get_query_classifier(ollama_url)
+
+        return {
+            "success": True,
+            "data": classifier.get_stats() if hasattr(classifier, 'get_stats') else {},
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get classifier stats: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
+@router.get("/embedding-aggregator/stats")
+async def get_embedding_aggregator_stats():
+    """Get embedding aggregator statistics."""
+    from agentic.embedding_aggregator import get_embedding_aggregator
+
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        aggregator = get_embedding_aggregator(ollama_url)
+        stats = aggregator.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get embedding aggregator stats: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
+class IndexEntityRequest(BaseModel):
+    """Request to index an entity in the master embedding."""
+    domain: str
+    entity_id: str
+    entity_name: str
+    entity_type: str
+    context: str
+    source_url: Optional[str] = ""
+
+
+@router.post("/embedding-aggregator/index")
+async def index_entity_in_aggregator(request: IndexEntityRequest):
+    """Index an entity in the master embedding aggregator."""
+    from agentic.embedding_aggregator import get_embedding_aggregator
+
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        aggregator = get_embedding_aggregator(ollama_url)
+
+        success = await aggregator.index_entity(
+            domain=request.domain,
+            entity_id=request.entity_id,
+            entity_name=request.entity_name,
+            entity_type=request.entity_type,
+            context=request.context,
+            source_url=request.source_url
+        )
+
+        return {
+            "success": success,
+            "data": {
+                "entity_id": request.entity_id,
+                "domain": request.domain,
+                "indexed": success
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to index entity: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
+class SubManifoldQueryRequest(BaseModel):
+    """Request for sub-manifold retrieval."""
+    anchor_entities: List[Dict[str, str]]
+    domains: List[str] = []
+    k: int = 10
+    hop_radius: int = 2
+
+
+@router.post("/embedding-aggregator/sub-manifold")
+async def query_sub_manifold(request: SubManifoldQueryRequest):
+    """
+    Query sub-manifold around anchor entities.
+
+    Uses entity-guided navigation through embedding space.
+    """
+    from agentic.embedding_aggregator import get_embedding_aggregator
+
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        aggregator = get_embedding_aggregator(ollama_url)
+
+        results = await aggregator.retrieve_sub_manifold(
+            anchor_entities=request.anchor_entities,
+            domains=request.domains,
+            k=request.k,
+            hop_radius=request.hop_radius
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "results": [
+                    {
+                        "entity_id": r.entity_id,
+                        "entity_name": r.entity_name,
+                        "entity_type": r.entity_type,
+                        "distance": r.distance,
+                        "domain": r.domain,
+                        "context": r.context[:500] if r.context else "",
+                        "related_entities": r.related_entities
+                    }
+                    for r in results
+                ],
+                "count": len(results)
+            },
+            "meta": {
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Sub-manifold query failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )

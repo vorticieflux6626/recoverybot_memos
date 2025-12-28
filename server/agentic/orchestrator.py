@@ -44,6 +44,18 @@ from .ttl_cache_manager import (
 from .query_classifier import (
     QueryClassifier, QueryClassification, RecommendedPipeline, QueryCategory
 )
+from .self_reflection import (
+    SelfReflectionAgent, ReflectionResult, SupportLevel, get_self_reflection_agent
+)
+from .retrieval_evaluator import (
+    RetrievalEvaluator, RetrievalEvaluation, RetrievalQuality, CorrectiveAction
+)
+from .experience_distiller import (
+    ExperienceDistiller, get_experience_distiller
+)
+from .classifier_feedback import (
+    ClassifierFeedback, get_classifier_feedback
+)
 from . import events
 from .events import EventEmitter, EventType, SearchEvent
 
@@ -88,6 +100,8 @@ class AgenticOrchestrator:
         self.searcher = SearcherAgent(brave_api_key=brave_api_key)
         self.verifier = VerifierAgent(ollama_url=ollama_url)
         self.synthesizer = SynthesizerAgent(ollama_url=ollama_url, mcp_url=mcp_url)
+        self.reflector = SelfReflectionAgent(ollama_url=ollama_url)
+        self.retrieval_evaluator = RetrievalEvaluator(ollama_url=ollama_url)
 
         # Content scraper and deep reader for document analysis
         self.scraper = ContentScraper()
@@ -104,6 +118,12 @@ class AgenticOrchestrator:
 
         # TTL cache manager for tool call latency tracking
         self.ttl_manager = get_ttl_cache_manager()
+
+        # Experience distiller for learning from successful searches
+        self.experience_distiller = get_experience_distiller()
+
+        # Classifier feedback for adaptive learning
+        self.classifier_feedback = get_classifier_feedback()
 
         # Search cache (in-memory, cleared on restart)
         self._cache: Dict[str, SearchResponse] = {}
@@ -482,6 +502,60 @@ class AgenticOrchestrator:
                         "scratchpad_progress": sp_status['overall']
                     })
 
+                # CRAG: Pre-synthesis retrieval quality evaluation
+                if state.raw_results and iteration == 0:
+                    # Only evaluate on first iteration (before refinements)
+                    try:
+                        logger.info(f"[{request_id}] CRAG: Evaluating retrieval quality...")
+                        retrieval_eval = await self.retrieval_evaluator.evaluate(
+                            query=request.query,
+                            search_results=[
+                                {"title": r.title, "snippet": r.snippet, "url": r.url}
+                                for r in state.raw_results[:10]
+                            ],
+                            decomposed_questions=list(scratchpad.questions.keys()) if scratchpad.questions else None
+                        )
+
+                        logger.info(
+                            f"[{request_id}] CRAG result: quality={retrieval_eval.quality.value}, "
+                            f"relevance={retrieval_eval.overall_relevance:.2f}, "
+                            f"action={retrieval_eval.recommended_action.value}"
+                        )
+
+                        search_trace.append({
+                            "step": "crag_evaluation",
+                            "iteration": iteration + 1,
+                            "quality": retrieval_eval.quality.value,
+                            "relevance": retrieval_eval.overall_relevance,
+                            "coverage": retrieval_eval.query_coverage,
+                            "action": retrieval_eval.recommended_action.value
+                        })
+
+                        # Take corrective action if needed
+                        if retrieval_eval.recommended_action == CorrectiveAction.REFINE_QUERY:
+                            # Add refined queries to pending
+                            for refined_q in retrieval_eval.refined_queries[:3]:
+                                if refined_q not in state.executed_queries:
+                                    state.pending_queries.append(refined_q)
+                            logger.info(f"[{request_id}] CRAG: Added {len(retrieval_eval.refined_queries)} refined queries")
+
+                        elif retrieval_eval.recommended_action == CorrectiveAction.DECOMPOSE:
+                            # Add decomposed questions to scratchpad
+                            for sub_q in retrieval_eval.decomposed_questions[:4]:
+                                if sub_q not in scratchpad.questions:
+                                    scratchpad.add_question(sub_q)
+                            logger.info(f"[{request_id}] CRAG: Decomposed into {len(retrieval_eval.decomposed_questions)} sub-questions")
+
+                        elif retrieval_eval.recommended_action == CorrectiveAction.WEB_FALLBACK:
+                            # Add fallback queries with different terms
+                            for fallback_q in retrieval_eval.refined_queries[:3]:
+                                if fallback_q not in state.executed_queries:
+                                    state.pending_queries.append(fallback_q)
+                            logger.info(f"[{request_id}] CRAG: Web fallback with {len(retrieval_eval.refined_queries)} alternative queries")
+
+                    except Exception as e:
+                        logger.warning(f"[{request_id}] CRAG evaluation failed (non-fatal): {e}")
+
                 # VERIFY: If requested and we have results
                 if (request.verification_level != VerificationLevel.NONE and
                     state.raw_results and
@@ -571,7 +645,8 @@ class AgenticOrchestrator:
             # STEP 4: URL EVALUATION, SCRAPING, AND COVERAGE CHECK
             # This step may loop back to search if content coverage is insufficient
             # OPTIMIZATION: Reduced from 2 to 1 refinement (saves ~30s per search)
-            max_scrape_refinements = 1  # Allow 1 additional search round after scraping
+            # Use configurable scrape refinements from request (default 3)
+            max_scrape_refinements = getattr(request, 'max_scrape_refinements', 3)
             scrape_refinement = 0
             scraped_content = []
 
@@ -741,6 +816,56 @@ class AgenticOrchestrator:
                         synthesis_context
                     )
 
+            # STEP 6: SELF-RAG REFLECTION - Check synthesis quality before returning
+            # Implements ISREL/ISSUP/ISUSE checks and temporal validation
+            logger.info(f"[{request_id}] Performing Self-RAG reflection on synthesis...")
+            try:
+                sources_for_reflection = [
+                    {"title": r.title, "snippet": r.snippet, "url": r.url}
+                    for r in state.raw_results[:10]
+                ]
+                reflection_result = await self.reflector.reflect(
+                    query=request.query,
+                    synthesis=synthesis,
+                    sources=sources_for_reflection,
+                    scraped_content=scraped_content
+                )
+
+                # Log reflection results
+                logger.info(
+                    f"[{request_id}] Reflection: relevance={reflection_result.relevance_score:.2f}, "
+                    f"support={reflection_result.support_level.value}, "
+                    f"usefulness={reflection_result.usefulness_score:.2f}, "
+                    f"temporal_conflicts={len(reflection_result.temporal_conflicts)}"
+                )
+
+                # If reflection finds issues, attempt to refine synthesis
+                if reflection_result.needs_refinement:
+                    logger.warning(
+                        f"[{request_id}] Synthesis needs refinement: "
+                        f"suggestions={reflection_result.refinement_suggestions}"
+                    )
+                    # Only refine if we have temporal conflicts (most serious issue)
+                    if reflection_result.temporal_conflicts:
+                        refined_synthesis = await self.reflector.refine_synthesis(
+                            synthesis,
+                            reflection_result,
+                            sources_for_reflection
+                        )
+                        if refined_synthesis != synthesis:
+                            logger.info(f"[{request_id}] Synthesis refined to fix temporal issues")
+                            synthesis = refined_synthesis
+
+                # Add reflection to search trace
+                search_trace.append({
+                    "step": "self_reflection",
+                    "reflection": reflection_result.to_dict()
+                })
+
+            except Exception as e:
+                logger.warning(f"[{request_id}] Self-reflection failed (non-fatal): {e}")
+                reflection_result = None
+
             # Mark scratchpad as complete
             scratchpad.mark_complete(f"Synthesized {len(state.raw_results)} sources from {len(state.unique_domains)} domains")
 
@@ -763,13 +888,27 @@ class AgenticOrchestrator:
 
             # Calculate confidence with multiple signals
             scraped_count = len(scraped_content) if scraped_content else 0
-            confidence_score = self.verifier.calculate_overall_confidence(
+            base_confidence = self.verifier.calculate_overall_confidence(
                 state.verified_claims,
                 source_count=len(state.raw_results),
                 unique_domains=len(state.unique_domains),
                 synthesis_length=len(synthesis),
                 scraped_sources=scraped_count
             )
+
+            # Blend base confidence with reflection-based confidence (if available)
+            if reflection_result is not None:
+                # Use reflection's confidence which accounts for ISREL/ISSUP/ISUSE + temporal
+                reflection_confidence = reflection_result.overall_confidence
+                # Blend: 60% base verifier confidence, 40% reflection confidence
+                confidence_score = (base_confidence * 0.6) + (reflection_confidence * 0.4)
+                logger.info(
+                    f"[{request_id}] Blended confidence: base={base_confidence:.2f}, "
+                    f"reflection={reflection_confidence:.2f}, final={confidence_score:.2f}"
+                )
+            else:
+                confidence_score = base_confidence
+
             confidence_level = self.synthesizer.determine_confidence_level(
                 state.verified_claims,
                 len(state.raw_results)
@@ -859,6 +998,58 @@ class AgenticOrchestrator:
                 f"mode={request.search_mode.value}"
             )
 
+            # Experience distillation: Capture successful searches for template learning
+            if response.success and confidence_score >= 0.75:
+                try:
+                    # Determine query type from analysis or classification
+                    query_type = "research"  # default
+                    if state.query_analysis:
+                        query_type = state.query_analysis.query_type
+                    elif hasattr(state, 'classification') and state.classification:
+                        query_type = state.classification.category.value
+
+                    # Get decomposed questions from scratchpad
+                    decomposed = list(scratchpad.questions.keys()) if scratchpad else []
+
+                    await self.experience_distiller.capture_experience(
+                        query=request.query,
+                        response=response,
+                        query_type=query_type,
+                        decomposed_questions=decomposed
+                    )
+                    logger.debug(f"[{request_id}] Experience captured for template distillation")
+                except Exception as exp_err:
+                    logger.debug(f"[{request_id}] Experience capture failed: {exp_err}")
+
+            # Classifier feedback: Record outcome for adaptive learning
+            if state.query_analysis:
+                try:
+                    from .query_classifier import QueryClassification, QueryCategory, RecommendedPipeline, QueryComplexity
+
+                    # Create a pseudo-classification from query analysis
+                    pseudo_classification = QueryClassification(
+                        category=QueryCategory(state.query_analysis.query_type),
+                        capabilities=["web_search"] if state.query_analysis.requires_search else [],
+                        complexity=QueryComplexity.MODERATE,  # Default
+                        urgency="medium",
+                        use_thinking_model=False,
+                        recommended_pipeline=RecommendedPipeline.AGENTIC_SEARCH,
+                        reasoning=state.query_analysis.search_reasoning or ""
+                    )
+
+                    self.classifier_feedback.record_outcome(
+                        query=request.query,
+                        classification=pseudo_classification,
+                        confidence=confidence_score,
+                        iteration_count=state.iteration,
+                        source_count=len(state.raw_results),
+                        execution_time_ms=execution_time_ms,
+                        was_successful=response.success
+                    )
+                    logger.debug(f"[{request_id}] Classifier outcome recorded for feedback loop")
+                except Exception as fb_err:
+                    logger.debug(f"[{request_id}] Classifier feedback failed: {fb_err}")
+
             return response
 
         except Exception as e:
@@ -930,6 +1121,9 @@ class AgenticOrchestrator:
             )
 
             search_trace = []
+
+            # Emit scratchpad initialization event
+            await emitter.emit(events.scratchpad_initialized(request_id, [request.query]))
 
             # STEP 1: ANALYZE
             if request.analyze_query:
@@ -1018,6 +1212,9 @@ class AgenticOrchestrator:
             }
             scratchpad.set_mission(decomposed_qs, completion_criteria)
 
+            # Emit scratchpad update with decomposed questions
+            await emitter.emit(events.scratchpad_initialized(request_id, decomposed_qs))
+
             await emitter.emit(events.search_planned(
                 request_id,
                 initial_queries,
@@ -1038,14 +1235,13 @@ class AgenticOrchestrator:
             for iteration in range(request.max_iterations):
                 state.iteration = iteration + 1
 
-                # Emit iteration start
-                await emitter.emit(SearchEvent(
-                    event_type=EventType.ITERATION_START,
-                    request_id=request_id,
-                    message=f"Iteration {state.iteration}/{request.max_iterations}",
-                    iteration=state.iteration,
-                    max_iterations=request.max_iterations,
-                    sources_count=state.sources_consulted
+                # Emit detailed iteration start
+                await emitter.emit(events.iteration_start_detailed(
+                    request_id,
+                    state.iteration,
+                    request.max_iterations,
+                    len(state.pending_queries),
+                    state.sources_consulted
                 ))
 
                 # ACT: Execute pending searches
@@ -1102,6 +1298,68 @@ class AgenticOrchestrator:
                         "unique_domains": len(state.unique_domains),
                         "scratchpad_progress": sp_status['overall']
                     })
+
+                # CRAG: Pre-synthesis retrieval quality evaluation
+                if state.raw_results and iteration == 0:
+                    try:
+                        await emitter.emit(events.crag_evaluating(request_id, len(state.raw_results)))
+
+                        retrieval_eval = await self.retrieval_evaluator.evaluate(
+                            query=request.query,
+                            search_results=[
+                                {"title": r.title, "snippet": r.snippet, "url": r.url}
+                                for r in state.raw_results[:10]
+                            ],
+                            decomposed_questions=list(scratchpad.questions.keys()) if scratchpad.questions else None
+                        )
+
+                        await emitter.emit(events.crag_evaluation_complete(
+                            request_id,
+                            retrieval_eval.quality.value,
+                            retrieval_eval.overall_relevance,
+                            retrieval_eval.recommended_action.value
+                        ))
+
+                        logger.info(
+                            f"[{request_id}] CRAG result: quality={retrieval_eval.quality.value}, "
+                            f"relevance={retrieval_eval.overall_relevance:.2f}, "
+                            f"action={retrieval_eval.recommended_action.value}"
+                        )
+
+                        search_trace.append({
+                            "step": "crag_evaluation",
+                            "iteration": iteration + 1,
+                            "quality": retrieval_eval.quality.value,
+                            "relevance": retrieval_eval.overall_relevance,
+                            "coverage": retrieval_eval.query_coverage,
+                            "action": retrieval_eval.recommended_action.value
+                        })
+
+                        # Take corrective action if needed
+                        if retrieval_eval.recommended_action == CorrectiveAction.REFINE_QUERY:
+                            refined_queries = retrieval_eval.refined_queries[:3]
+                            for refined_q in refined_queries:
+                                if refined_q not in state.executed_queries:
+                                    state.pending_queries.append(refined_q)
+                            await emitter.emit(events.crag_refining(request_id, refined_queries))
+                            logger.info(f"[{request_id}] CRAG: Added {len(refined_queries)} refined queries")
+
+                        elif retrieval_eval.recommended_action == CorrectiveAction.DECOMPOSE:
+                            for sub_q in retrieval_eval.decomposed_questions[:4]:
+                                if sub_q not in scratchpad.questions:
+                                    scratchpad.add_question(sub_q)
+                            await emitter.emit(events.crag_refining(request_id, retrieval_eval.decomposed_questions[:4]))
+                            logger.info(f"[{request_id}] CRAG: Decomposed into {len(retrieval_eval.decomposed_questions)} sub-questions")
+
+                        elif retrieval_eval.recommended_action == CorrectiveAction.WEB_FALLBACK:
+                            for fallback_q in retrieval_eval.refined_queries[:3]:
+                                if fallback_q not in state.executed_queries:
+                                    state.pending_queries.append(fallback_q)
+                            await emitter.emit(events.web_search_fallback(request_id, "CRAG", "refined_search", "low relevance"))
+                            logger.info(f"[{request_id}] CRAG: Web fallback with {len(retrieval_eval.refined_queries)} alternative queries")
+
+                    except Exception as e:
+                        logger.warning(f"[{request_id}] CRAG evaluation failed (non-fatal): {e}")
 
                 # VERIFY
                 if (request.verification_level != VerificationLevel.NONE and
@@ -1168,8 +1426,8 @@ class AgenticOrchestrator:
 
             # STEP 4: INTELLIGENT URL EVALUATION, SCRAPING, AND COVERAGE CHECK
             # This step may loop back to search if content coverage is insufficient
-            # OPTIMIZATION: Reduced from 2 to 1 refinement (saves ~30s per search)
-            max_scrape_refinements = 1
+            # Use configurable scrape refinements from request (default 3)
+            max_scrape_refinements = getattr(request, 'max_scrape_refinements', 3)
             scrape_refinement = 0
             scraped_content = []
 
@@ -1254,11 +1512,8 @@ class AgenticOrchestrator:
 
                     logger.info(f"[{request_id}] Evaluating content coverage (refinement {scrape_refinement})...")
 
-                    # Emit progress event for coverage check
-                    await emitter.emit(events.progress_update(
-                        request_id, 75 + scrape_refinement * 5,
-                        f"Evaluating content coverage... (round {scrape_refinement + 1})"
-                    ))
+                    # Emit coverage evaluation event
+                    await emitter.emit(events.coverage_evaluating(request_id))
 
                     # TTL pin cache during LLM analysis
                     async with ToolCallContext(request_id, ToolType.OLLAMA_GENERATE, manager=self.ttl_manager):
@@ -1267,6 +1522,14 @@ class AgenticOrchestrator:
                             decomposed_questions=state.search_plan.decomposed_questions,
                             scraped_content=scraped_content
                         )
+
+                    # Emit coverage evaluation result
+                    await emitter.emit(events.coverage_evaluated(
+                        request_id,
+                        coverage.get("coverage_score", 0),
+                        coverage.get("is_sufficient", True),
+                        coverage.get("information_gaps", [])
+                    ))
 
                     search_trace.append({
                         "step": "coverage_check",
@@ -1288,10 +1551,10 @@ class AgenticOrchestrator:
                         logger.info(f"[{request_id}] Gaps: {coverage.get('information_gaps', [])}")
                         logger.info(f"[{request_id}] Adding {len(new_queries)} refined queries: {new_queries}")
 
-                        await emitter.emit(events.progress_update(
-                            request_id, 78 + scrape_refinement * 5,
-                            f"Searching for missing information: {', '.join(new_queries[:2])}..."
-                        ))
+                        # Emit coverage insufficient and refinement events
+                        await emitter.emit(events.coverage_insufficient(request_id, coverage.get("information_gaps", [])))
+                        await emitter.emit(events.refinement_cycle_start(request_id, scrape_refinement + 1, max_scrape_refinements))
+                        await emitter.emit(events.refinement_queries_generated(request_id, new_queries))
 
                         # Add new queries and perform additional search iteration
                         state.add_pending_queries(new_queries)
@@ -1384,6 +1647,67 @@ class AgenticOrchestrator:
                 interim_confidence
             ))
 
+            # STEP 6: SELF-RAG REFLECTION - Check synthesis quality before returning
+            logger.info(f"[{request_id}] Performing Self-RAG reflection on synthesis...")
+            reflection_result = None
+            try:
+                await emitter.emit(events.self_rag_reflecting(request_id, len(synthesis)))
+
+                sources_for_reflection = [
+                    {"title": r.title, "snippet": r.snippet, "url": r.url}
+                    for r in state.raw_results[:10]
+                ]
+                reflection_result = await self.reflector.reflect(
+                    query=request.query,
+                    synthesis=synthesis,
+                    sources=sources_for_reflection,
+                    scraped_content=scraped_content
+                )
+
+                # Emit reflection complete event
+                await emitter.emit(events.self_rag_complete(
+                    request_id,
+                    reflection_result.relevance_score,
+                    reflection_result.support_level.value,
+                    reflection_result.usefulness_score,
+                    len(reflection_result.temporal_conflicts)
+                ))
+
+                logger.info(
+                    f"[{request_id}] Reflection: relevance={reflection_result.relevance_score:.2f}, "
+                    f"support={reflection_result.support_level.value}, "
+                    f"usefulness={reflection_result.usefulness_score:.2f}, "
+                    f"temporal_conflicts={len(reflection_result.temporal_conflicts)}"
+                )
+
+                # If reflection finds issues, attempt to refine synthesis
+                if reflection_result.needs_refinement:
+                    logger.warning(
+                        f"[{request_id}] Synthesis needs refinement: "
+                        f"suggestions={reflection_result.refinement_suggestions}"
+                    )
+                    # Only refine if we have temporal conflicts (most serious issue)
+                    if reflection_result.temporal_conflicts:
+                        await emitter.emit(events.self_rag_refining(request_id, "temporal conflicts detected"))
+
+                        refined_synthesis = await self.reflector.refine_synthesis(
+                            synthesis,
+                            reflection_result,
+                            sources_for_reflection
+                        )
+                        if refined_synthesis != synthesis:
+                            logger.info(f"[{request_id}] Synthesis refined to fix temporal issues")
+                            synthesis = refined_synthesis
+
+                # Add reflection to search trace
+                search_trace.append({
+                    "step": "self_reflection",
+                    "reflection": reflection_result.to_dict()
+                })
+
+            except Exception as e:
+                logger.warning(f"[{request_id}] Self-reflection failed (non-fatal): {e}")
+
             # Get final scratchpad status
             final_scratchpad_status = scratchpad.get_completion_status()
 
@@ -1403,16 +1727,37 @@ class AgenticOrchestrator:
 
             # Calculate final metrics with multiple signals
             scraped_count = len(scraped_content) if scraped_content else 0
-            confidence_score = self.verifier.calculate_overall_confidence(
+            base_confidence = self.verifier.calculate_overall_confidence(
                 state.verified_claims,
                 source_count=len(state.raw_results),
                 unique_domains=len(state.unique_domains),
                 synthesis_length=len(synthesis),
                 scraped_sources=scraped_count
             )
+
+            # Blend base confidence with reflection-based confidence (if available)
+            if reflection_result is not None:
+                reflection_confidence = reflection_result.overall_confidence
+                confidence_score = (base_confidence * 0.6) + (reflection_confidence * 0.4)
+                logger.info(
+                    f"[{request_id}] Blended confidence: base={base_confidence:.2f}, "
+                    f"reflection={reflection_confidence:.2f}, final={confidence_score:.2f}"
+                )
+            else:
+                confidence_score = base_confidence
+
             confidence_level = self.synthesizer.determine_confidence_level(
                 state.verified_claims, len(state.raw_results)
             )
+
+            # Emit corpus quality assessment event
+            await emitter.emit(events.corpus_quality_assessed(
+                request_id,
+                confidence_score,
+                len(state.raw_results),
+                len(state.unique_domains),
+                state.iteration
+            ))
 
             if request.verification_level == VerificationLevel.NONE:
                 verification_status = "skipped"
@@ -1455,6 +1800,60 @@ class AgenticOrchestrator:
             # Cache results
             if request.cache_results:
                 self._cache[cache_key] = response
+
+            # Experience distillation: Capture successful searches for template learning
+            if response.success and confidence_score >= 0.75:
+                try:
+                    query_type = "research"  # default
+                    if state.query_analysis:
+                        query_type = state.query_analysis.query_type
+                    decomposed = list(scratchpad.questions.keys()) if scratchpad else []
+
+                    await self.experience_distiller.capture_experience(
+                        query=request.query,
+                        response=response,
+                        query_type=query_type,
+                        decomposed_questions=decomposed
+                    )
+                    await emitter.emit(events.experience_captured(request_id, query_type, confidence_score))
+                    logger.debug(f"[{request_id}] Experience captured for template distillation")
+                except Exception as exp_err:
+                    logger.debug(f"[{request_id}] Experience capture failed: {exp_err}")
+
+            # Classifier feedback: Record outcome for adaptive learning
+            if state.query_analysis:
+                try:
+                    from .query_classifier import QueryClassification, QueryCategory, RecommendedPipeline, QueryComplexity
+
+                    pseudo_classification = QueryClassification(
+                        category=QueryCategory(state.query_analysis.query_type),
+                        capabilities=["web_search"] if state.query_analysis.requires_search else [],
+                        complexity=QueryComplexity.MODERATE,
+                        urgency="medium",
+                        use_thinking_model=False,
+                        recommended_pipeline=RecommendedPipeline.AGENTIC_SEARCH,
+                        reasoning=state.query_analysis.search_reasoning or ""
+                    )
+
+                    outcome = self.classifier_feedback.record_outcome(
+                        query=request.query,
+                        classification=pseudo_classification,
+                        confidence=confidence_score,
+                        iteration_count=state.iteration,
+                        source_count=len(state.raw_results),
+                        execution_time_ms=execution_time_ms,
+                        was_successful=response.success
+                    )
+                    await emitter.emit(events.outcome_recorded(
+                        request_id,
+                        outcome.predicted_category,
+                        outcome.outcome_quality.value,
+                        outcome.was_overkill,
+                        outcome.was_underkill
+                    ))
+                    logger.debug(f"[{request_id}] Classifier outcome recorded for feedback loop")
+                except Exception as fb_err:
+                    logger.debug(f"[{request_id}] Classifier feedback failed: {fb_err}")
 
             return response
 

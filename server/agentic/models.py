@@ -67,9 +67,9 @@ class SearchRequest(BaseModel):
         description="Additional context (conversation history, preferences)"
     )
     max_iterations: int = Field(
-        default=5,
+        default=10,  # Increased from 5 for thorough multi-direction exploration
         ge=1,
-        le=50,  # Increased to allow extensive search
+        le=50,  # Allows extensive search when needed
         description="Maximum ReAct loop iterations (higher for ADAPTIVE/EXHAUSTIVE modes)"
     )
     search_mode: SearchMode = Field(
@@ -89,16 +89,28 @@ class SearchRequest(BaseModel):
         description="Whether to cache results in memory service"
     )
     min_sources: int = Field(
-        default=3,
+        default=5,  # Increased from 3 for better corpus quality
         ge=1,
-        le=20,
+        le=30,
         description="Minimum number of sources to consult before stopping (for ADAPTIVE mode)"
     )
     max_sources: int = Field(
-        default=15,
+        default=25,  # Increased from 15 for comprehensive research
         ge=3,
         le=50,
         description="Maximum number of sources to consult"
+    )
+    min_confidence: float = Field(
+        default=0.70,  # Minimum confidence threshold for sufficient corpus
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence score required to consider corpus sufficient"
+    )
+    max_scrape_refinements: int = Field(
+        default=3,  # Allow multiple refinement cycles
+        ge=0,
+        le=10,
+        description="Maximum scrape refinement cycles to improve corpus quality"
     )
 
 

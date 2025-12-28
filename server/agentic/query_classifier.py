@@ -313,6 +313,20 @@ class QueryClassifier:
         )
 
 
+# Singleton instance for reuse
+_classifier_instance: Optional[QueryClassifier] = None
+
+
+def get_query_classifier(
+    ollama_url: str = "http://localhost:11434"
+) -> QueryClassifier:
+    """Get or create singleton QueryClassifier instance."""
+    global _classifier_instance
+    if _classifier_instance is None:
+        _classifier_instance = QueryClassifier(ollama_url=ollama_url)
+    return _classifier_instance
+
+
 # Convenience function for quick classification
 async def classify_query(
     query: str,
@@ -330,5 +344,5 @@ async def classify_query(
     Returns:
         QueryClassification result
     """
-    classifier = QueryClassifier(ollama_url=ollama_url)
+    classifier = get_query_classifier(ollama_url)
     return await classifier.classify(query, context)
