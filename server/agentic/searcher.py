@@ -72,7 +72,11 @@ class SearXNGSearchProvider(SearchProvider):
         # Linux/sysadmin
         "linux": "askubuntu,unix_stackexchange,serverfault,arch_linux_wiki,gentoo,reddit,bing",
         # Package/library search
-        "packages": "pypi,npm,crates,pkg_go_dev,dockerhub"
+        "packages": "pypi,npm,crates,pkg_go_dev,dockerhub",
+        # Injection Molding Machines (IMM) / Euromap
+        "imm": "reddit,brave,bing,startpage,wikipedia",
+        "euromap": "reddit,brave,bing,startpage,wikipedia",
+        "plastics": "reddit,brave,bing,startpage,wikipedia",
     }
 
     # Patterns to detect academic queries
@@ -113,6 +117,32 @@ class SearXNGSearchProvider(SearchProvider):
         r"\brobot\s+arm\b", r"\bend\s+effector\b", r"\btool\s+center\s+point\b"
     ]
 
+    # Patterns to detect Injection Molding Machine (IMM) queries
+    IMM_PATTERNS = [
+        # Euromap protocols
+        r"\beuromap\s*(6[7-9]|7\d|8\d)", r"\bem\s*6[7-9]", r"\bspi\s+interface",
+        # Machine manufacturers
+        r"\bkraussmaffei\b", r"\bmilacron\b", r"\bcincinnati\b", r"\bvan\s*dorn\b",
+        r"\bsumitomo\b", r"\bdemag\b", r"\bel-exis\b", r"\bintellect\b",
+        # Control systems
+        r"\bmc[3456]\b", r"\bmosaic\+?\b", r"\bpathfinder\b", r"\bacramatic\b",
+        # Machine models
+        r"\bvista\s+toggle\b", r"\barrow\b.*\bimm\b", r"\bhawk\s*\d+",
+        r"\bmx\s*\d{3,4}\b", r"\bcx\s*\d+\b", r"\bgx\s*\d+\b", r"\bpx\s*\d+\b",
+        # Process terms
+        r"\binjection\s+mold", r"\bmoulding\s+machine\b", r"\bimm\b",
+        r"\bclamp\s+tonnage\b", r"\bshot\s+size\b", r"\bplasticiz",
+        r"\bscrew\s+(tip|check\s+ring|recovery)", r"\bbarrel\s+(heater|zone)",
+        # Defects
+        r"\bshort\s+shot\b", r"\bsink\s+mark\b", r"\bweld\s+line\b",
+        r"\bflash\b.*\bmold", r"\bburn\s+mark\b", r"\bwarpage\b", r"\bvoid\b",
+        # Scientific molding
+        r"\bdecoupled\s+(molding|i+)\b", r"\bcavity\s+pressure\b",
+        r"\brjg\b", r"\bedart\b", r"\bcopilot\b",
+        # Euromap signals
+        r"\bmould\s+(open|close)", r"\brobot\s+ready\b", r"\bcycle\s+start\b",
+    ]
+
     def __init__(self, base_url: str = "http://localhost:8888"):
         self.base_url = base_url.rstrip("/")
         self._available = None  # Cache availability check
@@ -127,13 +157,17 @@ class SearXNGSearchProvider(SearchProvider):
         """
         Detect query type based on patterns.
 
-        Returns: 'fanuc', 'academic', 'technical', or 'general'
+        Returns: 'fanuc', 'imm', 'academic', 'technical', or 'general'
         """
         query_lower = query.lower()
 
         # Count pattern matches for each category
         fanuc_score = sum(
             1 for p in self.FANUC_PATTERNS
+            if re.search(p, query_lower, re.IGNORECASE)
+        )
+        imm_score = sum(
+            1 for p in self.IMM_PATTERNS
             if re.search(p, query_lower, re.IGNORECASE)
         )
         academic_score = sum(
@@ -149,6 +183,11 @@ class SearXNGSearchProvider(SearchProvider):
         if fanuc_score >= 1:
             logger.info(f"Detected FANUC query (score={fanuc_score}): {query[:50]}")
             return "fanuc"
+
+        # IMM/Euromap queries are also very specific
+        if imm_score >= 1:
+            logger.info(f"Detected IMM query (score={imm_score}): {query[:50]}")
+            return "imm"
 
         # Determine type based on scores
         if academic_score >= 2:
@@ -820,6 +859,38 @@ class SearcherAgent:
         "eevblog.com",
         "allaboutcircuits.com",
 
+        # ===== Injection Molding / Plastics (Premium for IMM) =====
+        "ptonline.com",                # Plastics Technology
+        "plasticstoday.com",
+        "plasticsnews.com",
+        "rjginc.com",                  # RJG Scientific Molding
+        "traininteractive.com",
+        "aim.institute",               # American Injection Molding Institute
+        "4spe.org",                    # Society of Plastics Engineers
+        "injectionmoldingonline.com",  # IM Forums
+
+        # ===== Machine Manufacturers (Premium for IMM) =====
+        "kraussmaffei.com",
+        "milacron.com",
+        "sumitomo-shi-demag.us",
+        "sumitomo-shi-demag.eu",
+        "euromap.org",                 # Euromap Standards (Critical)
+        "robot-forum.com",             # FANUC Integration
+        "plctalk.net",                 # PLC Programming
+        "practicalmachinist.com",
+        "eng-tips.com",
+
+        # ===== Material Suppliers (Technical Data) =====
+        "plastics-rubber.basf.com",
+        "dupont.com",
+        "sabic.com",
+        "covestro.com",
+
+        # ===== Parts & Service =====
+        "mcspt.com",
+        "industrialmanuals.com",
+        "controlrepair.com",
+
         # ===== Reference (Trusted) =====
         "wikipedia.org",
         "wikimedia.org",
@@ -855,7 +926,10 @@ class SearcherAgent:
         "docs.python.org", "developer.mozilla.org", "kubernetes.io",
         "pytorch.org", "tensorflow.org", "huggingface.co",
         # Standards
-        "nist.gov", "ietf.org", "w3.org", "rfc-editor.org"
+        "nist.gov", "ietf.org", "w3.org", "rfc-editor.org",
+        # Injection Molding / Euromap (Premium for IMM queries)
+        "euromap.org", "ptonline.com", "rjginc.com",
+        "kraussmaffei.com", "milacron.com", "sumitomo-shi-demag.us",
     }
 
     # Common stopwords to exclude from keyword matching
