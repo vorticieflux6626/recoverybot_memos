@@ -66,6 +66,10 @@ MODEL_PATTERNS = {
     r"granite3\.2-vision:2b": (ModelCapability.VISION, ModelCapability.TEXT, 2, 8192),
     r"qwen3-vl:2b": (ModelCapability.VISION, ModelCapability.TEXT, 1, 32768),
 
+    # Llama 4 MoE Models (Mixture of Experts - huge but efficient)
+    r"llama4:128x17b": (ModelCapability.TEXT, ModelCapability.REASONING, 5, 1048576),  # 1M context!
+    r"llama4:16x17b": (ModelCapability.TEXT, ModelCapability.REASONING, 5, 262144),   # 256K context
+
     # Large Text Models
     r"llama3\.3:70b": (ModelCapability.TEXT, ModelCapability.REASONING, 5, 131072),
     r"qwen3:32b": (ModelCapability.TEXT, ModelCapability.REASONING, 5, 32768),
@@ -82,6 +86,14 @@ MODEL_PATTERNS = {
     r"ministral.*:8b": (ModelCapability.TEXT, None, 3, 32768),
     r"deepseek-r1:8b": (ModelCapability.TEXT, ModelCapability.REASONING, 3, 65536),
 
+    # Llama 3.2 Text Models (efficient small models)
+    r"llama3\.2:3b-instruct-fp16": (ModelCapability.TEXT, None, 3, 131072),  # Full precision instruct
+    r"llama3\.2:3b-text-fp16": (ModelCapability.TEXT, None, 3, 131072),      # Full precision base
+    r"llama3\.2:3b": (ModelCapability.TEXT, None, 2, 131072),                # Quantized 3B
+    r"llama3\.2:1b-instruct-fp16": (ModelCapability.TEXT, None, 2, 131072),  # Full precision 1B instruct
+    r"llama3\.2:1b-text-fp16": (ModelCapability.TEXT, None, 2, 131072),      # Full precision 1B base
+    r"llama3\.2:1b": (ModelCapability.TEXT, None, 1, 131072),                # Quantized 1B
+
     # Small Text Models
     r"phi4-mini:3\.8b": (ModelCapability.TEXT, None, 2, 16384),
     r"gemma3:4b": (ModelCapability.TEXT, None, 2, 8192),
@@ -91,6 +103,7 @@ MODEL_PATTERNS = {
     r"mxbai-embed": (ModelCapability.EMBEDDING, None, 3, 512),
     r"snowflake-arctic-embed": (ModelCapability.EMBEDDING, None, 3, 512),
     r"granite-embedding": (ModelCapability.EMBEDDING, None, 2, 512),
+    r"qwen3-embedding": (ModelCapability.EMBEDDING, None, 4, 40960),  # High quality, long context
 
     # Function/Tool Models
     r"functiongemma": (ModelCapability.FUNCTION, ModelCapability.TEXT, 2, 8192),

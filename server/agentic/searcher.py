@@ -56,7 +56,10 @@ class SearXNGSearchProvider(SearchProvider):
         "academic": "arxiv,semantic_scholar,google_scholar,pubmed,base,crossref,wikipedia",
         "technical": "github,stackoverflow,pypi,npm,dockerhub,google,bing",
         "news": "google_news,bing_news,duckduckgo",
-        "all": "google,bing,duckduckgo,brave,wikipedia,arxiv,semantic_scholar,github,stackoverflow"
+        "all": "google,bing,duckduckgo,brave,wikipedia,arxiv,semantic_scholar,github,stackoverflow",
+        # FANUC/Industrial robotics - includes Reddit for community troubleshooting
+        "fanuc": "reddit,hackernews,github,google,bing,arxiv",
+        "robotics": "reddit,hackernews,github,arxiv,google_scholar,google,bing"
     }
 
     # Patterns to detect academic queries
@@ -78,6 +81,25 @@ class SearXNGSearchProvider(SearchProvider):
         r"\bpip\b", r"\bcargo\b", r"\bdependenc"
     ]
 
+    # Patterns to detect FANUC/industrial robotics queries
+    FANUC_PATTERNS = [
+        # FANUC alarm codes
+        r"\bsrvo-\d+", r"\bsyst-\d+", r"\balrm-\d+", r"\bcomm-\d+",
+        r"\bintp-\d+", r"\bvisi-\d+", r"\bprio-\d+", r"\bsrio-\d+",
+        # Brand and model names
+        r"\bfanuc\b", r"\br-30i[ab]\b", r"\br-2000i[abc]\b", r"\bm-\d+i[abc]",
+        r"\blr\s*mate\b", r"\barc\s*mate\b", r"\bpaint\s*mate\b",
+        # Components and procedures
+        r"\bpulsecoder\b", r"\bservo\s+amplifier\b", r"\bteach\s+pendant\b",
+        r"\bmastering\b", r"\brcal\b", r"\bcollision\s+detect",
+        r"\bkarl\b", r"\bkarl\s+program", r"\btp\s+program",
+        # Parameters and system variables
+        r"\$mcr\.", r"\$param", r"\$spc_reset", r"\$master",
+        # Industrial terms in robotics context
+        r"\bovertravel\b", r"\bjoint\s*\d+\b", r"\baxis\s*\d+\b",
+        r"\brobot\s+arm\b", r"\bend\s+effector\b", r"\btool\s+center\s+point\b"
+    ]
+
     def __init__(self, base_url: str = "http://localhost:8888"):
         self.base_url = base_url.rstrip("/")
         self._available = None  # Cache availability check
@@ -92,11 +114,15 @@ class SearXNGSearchProvider(SearchProvider):
         """
         Detect query type based on patterns.
 
-        Returns: 'academic', 'technical', or 'general'
+        Returns: 'fanuc', 'academic', 'technical', or 'general'
         """
         query_lower = query.lower()
 
-        # Count pattern matches
+        # Count pattern matches for each category
+        fanuc_score = sum(
+            1 for p in self.FANUC_PATTERNS
+            if re.search(p, query_lower, re.IGNORECASE)
+        )
         academic_score = sum(
             1 for p in self.ACADEMIC_PATTERNS
             if re.search(p, query_lower, re.IGNORECASE)
@@ -105,6 +131,11 @@ class SearXNGSearchProvider(SearchProvider):
             1 for p in self.TECHNICAL_PATTERNS
             if re.search(p, query_lower, re.IGNORECASE)
         )
+
+        # FANUC queries take priority - they're very specific
+        if fanuc_score >= 1:
+            logger.info(f"Detected FANUC query (score={fanuc_score}): {query[:50]}")
+            return "fanuc"
 
         # Determine type based on scores
         if academic_score >= 2:
@@ -120,19 +151,35 @@ class SearXNGSearchProvider(SearchProvider):
 
     def get_engines_for_query(self, query: str, query_type: Optional[str] = None) -> str:
         """
-        Get appropriate engines for a query.
+        Get appropriate engines for a query, filtering out rate-limited engines.
 
         Args:
             query: The search query
             query_type: Optional override ('academic', 'technical', 'general', 'all')
 
         Returns:
-            Comma-separated engine list
+            Comma-separated engine list (rate-limited engines excluded)
         """
         if query_type is None:
             query_type = self.detect_query_type(query)
 
-        return self.ENGINE_GROUPS.get(query_type, self.ENGINE_GROUPS["general"])
+        base_engines = self.ENGINE_GROUPS.get(query_type, self.ENGINE_GROUPS["general"])
+        engine_list = [e.strip() for e in base_engines.split(",")]
+
+        # Filter out engines in backoff using metrics
+        metrics = get_search_metrics()
+        available_engines, skipped = metrics.get_available_engines(engine_list)
+
+        if skipped:
+            for engine, reason in skipped.items():
+                logger.info(f"Skipping engine {engine}: {reason}")
+
+        if not available_engines:
+            # All engines in backoff - use original list (will likely fail but try anyway)
+            logger.warning(f"All engines in backoff, using original list: {engine_list}")
+            return base_engines
+
+        return ",".join(available_engines)
 
     async def check_availability(self) -> bool:
         """Check if SearXNG server is responding (with TTL cache)"""
@@ -222,6 +269,22 @@ class SearXNGSearchProvider(SearchProvider):
                     data = response.json()
                     page_results = data.get("results", [])
                     logger.debug(f"SearXNG page {page} returned {len(page_results)} results")
+
+                    # Process unresponsive engines (rate limits, CAPTCHAs, timeouts)
+                    unresponsive = data.get("unresponsive_engines", [])
+                    if unresponsive:
+                        metrics.record_unresponsive_engines(unresponsive)
+                        logger.info(f"SearXNG unresponsive engines: {unresponsive}")
+
+                    # Record successful engines based on results
+                    engine_result_counts = {}
+                    for item in page_results:
+                        item_engines = item.get("engines", [])
+                        for eng in item_engines:
+                            engine_result_counts[eng] = engine_result_counts.get(eng, 0) + 1
+
+                    for eng, count in engine_result_counts.items():
+                        metrics.record_engine_result(eng, success=True, results_count=count)
 
                     for item in page_results:
                         url = item.get("url", "")

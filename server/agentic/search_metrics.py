@@ -102,6 +102,39 @@ class DomainStats:
         return int(self.total_content_chars / self.successful_scrapes)
 
 
+@dataclass
+class EngineStats:
+    """Statistics for a SearXNG internal engine (google, bing, etc.)"""
+    name: str
+    total_queries: int = 0
+    successful_queries: int = 0
+    failed_queries: int = 0
+    total_results: int = 0
+    last_error: Optional[str] = None
+    last_error_time: Optional[datetime] = None
+    backoff_until: Optional[datetime] = None
+
+    @property
+    def success_rate(self) -> float:
+        if self.total_queries == 0:
+            return 1.0  # Assume available if never used
+        return self.successful_queries / self.total_queries
+
+    def is_in_backoff(self) -> bool:
+        if self.backoff_until is None:
+            return False
+        return datetime.now() < self.backoff_until
+
+    def get_backoff_duration(self) -> int:
+        """Calculate backoff based on recent failures"""
+        if self.failed_queries == 0:
+            return 0
+        # Base: 30s for CAPTCHA, 60s for timeout, doubles each consecutive failure
+        # Max 10 minutes
+        base = 30
+        return min(base * (2 ** min(self.failed_queries - 1, 4)), 600)
+
+
 class SearchMetrics:
     """
     Thread-safe metrics tracking for search and scrape operations.
@@ -109,6 +142,7 @@ class SearchMetrics:
     Features:
     - Per-provider search statistics
     - Rate limit tracking with exponential backoff
+    - Per-engine tracking for SearXNG internal engines
     - Per-domain scrape success/failure rates
     - Query logging for debugging
     - Provider selection recommendations
@@ -118,6 +152,7 @@ class SearchMetrics:
         self._lock = threading.Lock()
         self._providers: Dict[str, ProviderStats] = {}
         self._domains: Dict[str, DomainStats] = {}
+        self._engines: Dict[str, EngineStats] = {}  # SearXNG internal engines
         self._recent_queries: List[Dict] = []  # Rolling log of recent queries
         self._max_recent_queries = 100
         self._start_time = datetime.now()
@@ -125,6 +160,12 @@ class SearchMetrics:
         # Initialize known providers
         for name in ["searxng", "duckduckgo", "brave"]:
             self._providers[name] = ProviderStats(name=name)
+
+        # Initialize known SearXNG engines
+        for name in ["google", "bing", "duckduckgo", "brave", "wikipedia",
+                     "arxiv", "semantic_scholar", "google_scholar", "pubmed",
+                     "github", "stackoverflow", "pypi", "npm", "dockerhub"]:
+            self._engines[name] = EngineStats(name=name)
 
     def record_search(
         self,
@@ -263,6 +304,111 @@ class SearchMetrics:
 
             return True, "available"
 
+    def record_engine_result(
+        self,
+        engine: str,
+        success: bool,
+        results_count: int = 0,
+        error: Optional[str] = None
+    ) -> None:
+        """Record a SearXNG internal engine result"""
+        with self._lock:
+            if engine not in self._engines:
+                self._engines[engine] = EngineStats(name=engine)
+
+            stats = self._engines[engine]
+            stats.total_queries += 1
+
+            if success:
+                stats.successful_queries += 1
+                stats.total_results += results_count
+                # Clear backoff on success
+                stats.backoff_until = None
+                # Decay failure counter
+                if stats.failed_queries > 0:
+                    stats.failed_queries = max(0, stats.failed_queries - 1)
+            else:
+                stats.failed_queries += 1
+                stats.last_error = error
+                stats.last_error_time = datetime.now()
+                # Set backoff
+                backoff = stats.get_backoff_duration()
+                stats.backoff_until = datetime.now() + timedelta(seconds=backoff)
+
+                logger.warning(
+                    f"[ENGINE] {engine} failed: {error}, backing off {backoff}s"
+                )
+
+    def record_unresponsive_engines(
+        self,
+        unresponsive: List[List[str]]
+    ) -> None:
+        """
+        Process SearXNG's unresponsive_engines list.
+
+        Format: [['engine_name', 'error_reason'], ...]
+        Example: [['duckduckgo', 'CAPTCHA'], ['google', 'timeout']]
+        """
+        for item in unresponsive:
+            if len(item) >= 2:
+                engine_name, error_reason = item[0], item[1]
+                self.record_engine_result(engine_name, success=False, error=error_reason)
+
+    def get_available_engines(
+        self,
+        requested_engines: List[str] = None
+    ) -> Tuple[List[str], Dict[str, str]]:
+        """
+        Get list of engines that are not in backoff.
+
+        Args:
+            requested_engines: List of engines to filter
+
+        Returns:
+            (available_engines, skipped_reasons)
+        """
+        if requested_engines is None:
+            requested_engines = list(self._engines.keys())
+
+        available = []
+        skipped = {}
+
+        with self._lock:
+            for engine in requested_engines:
+                if engine not in self._engines:
+                    available.append(engine)  # Unknown engine, assume available
+                    continue
+
+                stats = self._engines[engine]
+                if stats.is_in_backoff():
+                    remaining = (stats.backoff_until - datetime.now()).seconds
+                    skipped[engine] = f"in backoff ({remaining}s remaining, last error: {stats.last_error})"
+                elif stats.success_rate < 0.3 and stats.total_queries >= 5:
+                    skipped[engine] = f"low success rate ({stats.success_rate:.0%})"
+                else:
+                    available.append(engine)
+
+        return available, skipped
+
+    def get_engine_stats(self, engine: str) -> Optional[Dict]:
+        """Get stats for a specific SearXNG engine"""
+        with self._lock:
+            if engine not in self._engines:
+                return None
+
+            stats = self._engines[engine]
+            return {
+                "name": stats.name,
+                "total_queries": stats.total_queries,
+                "successful": stats.successful_queries,
+                "failed": stats.failed_queries,
+                "success_rate": f"{stats.success_rate:.1%}",
+                "total_results": stats.total_results,
+                "last_error": stats.last_error,
+                "is_in_backoff": stats.is_in_backoff(),
+                "backoff_seconds": (stats.backoff_until - datetime.now()).seconds if stats.is_in_backoff() else 0
+            }
+
     def get_best_provider(
         self,
         preferred_order: List[str] = None
@@ -355,9 +501,28 @@ class SearchMetrics:
                 sorted(domain_stats.items(), key=lambda x: x[1]["attempts"], reverse=True)[:20]
             )
 
+            # Engine stats (SearXNG internal engines)
+            engine_stats = {}
+            for name, stats in self._engines.items():
+                if stats.total_queries > 0:  # Only include used engines
+                    engine_stats[name] = {
+                        "total_queries": stats.total_queries,
+                        "success_rate": f"{stats.success_rate:.1%}",
+                        "total_results": stats.total_results,
+                        "failed": stats.failed_queries,
+                        "last_error": stats.last_error,
+                        "is_in_backoff": stats.is_in_backoff()
+                    }
+
+            # Sort engines by usage
+            engine_stats = dict(
+                sorted(engine_stats.items(), key=lambda x: x[1]["total_queries"], reverse=True)
+            )
+
             return {
                 "uptime_seconds": round(uptime),
                 "providers": provider_stats,
+                "engines": engine_stats,  # SearXNG internal engines
                 "top_domains": domain_stats,
                 "recent_queries": self._recent_queries[-10:]
             }
