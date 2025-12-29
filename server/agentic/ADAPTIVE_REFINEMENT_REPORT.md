@@ -551,15 +551,65 @@ After implementation, target:
 | Synthesis Quality | Good | Good (unchanged) |
 | Sources | 10 | 10 (unchanged) |
 
+### ✅ Phase 2 & 3: Adaptive Refinement Loop & Decision Router (COMPLETED 2025-12-29)
+
+**New Module Created:** `adaptive_refinement.py`
+
+**Components Implemented:**
+
+1. **AdaptiveRefinementEngine** - Core engine for iterative refinement
+   - `identify_gaps()`: LLM-based gap identification using FAIR-RAG's Structured Evidence Assessment
+   - `grade_answer()`: Answer quality grading (1-5 scale) based on AT-RAG
+   - `decide_refinement_action()`: CRAG-style decision routing
+   - `generate_refinement_queries()`: Targeted query generation for gap filling
+   - `decompose_query()`: Complex query decomposition
+
+2. **Decision Router** - Based on CRAG three-tier confidence system:
+   - `COMPLETE`: Confidence ≥ 0.7, answer sufficient
+   - `REFINE_QUERY`: Confidence 0.4-0.7 with gaps, generate targeted queries
+   - `WEB_FALLBACK`: Confidence < 0.4, few sources, fresh search needed
+   - `DECOMPOSE`: Complex query, low confidence, break into sub-questions
+   - `ACCEPT_BEST`: Max iterations reached, accept best result
+
+3. **Answer Grading** (AT-RAG style):
+   - `EXCELLENT` (5): Fully answers with specific, actionable details
+   - `GOOD` (4): Mostly answers, minor gaps
+   - `PARTIAL` (3): Partially answers, significant gaps
+   - `TANGENTIAL` (2): Only tangentially relevant
+   - `INADEQUATE` (1): Does not meaningfully answer
+
+4. **SSE Events** for visibility:
+   - `adaptive_refinement_start`: Loop initiated
+   - `gaps_identified`: Gaps found in synthesis
+   - `answer_graded`: Answer quality assessed
+   - `adaptive_refinement_decision`: Routing decision made
+   - `refinement_queries_generated`: New queries created
+   - `adaptive_refinement_complete`: Loop finished
+
+5. **Configuration Options** (in `FeatureConfig`):
+   ```python
+   enable_adaptive_refinement: bool = True   # Enable/disable loop
+   enable_answer_grading: bool = True        # Answer quality assessment
+   enable_gap_detection: bool = True         # Structured gap identification
+   min_confidence_threshold: float = 0.5    # Minimum acceptable confidence
+   max_refinement_attempts: int = 3         # Max refinement iterations
+   ```
+
+**Presets:**
+- `minimal`: Adaptive refinement disabled
+- `balanced`: Adaptive refinement enabled (default threshold 0.5)
+- `enhanced`/`research`/`full`: Adaptive refinement enabled
+
 ### Remaining Phases
 
 1. ~~**Immediate** (Phase 1): Fix confidence calculation~~ ✅ DONE
-2. **Short-term** (Phase 2): Adaptive refinement loop
-3. **Medium-term** (Phase 3): Decision router
-4. **Future** (Phase 4): Full answer grading
+2. ~~**Short-term** (Phase 2): Adaptive refinement loop~~ ✅ DONE
+3. ~~**Medium-term** (Phase 3): Decision router~~ ✅ DONE
+4. **Future** (Phase 4): Full iterative loop execution (currently generates queries but doesn't re-execute)
 
 ---
 
 *Report generated: 2025-12-29*
-*Module version: 0.28.0*
+*Module version: 0.28.1*
 *Phase 1 completed: 2025-12-29*
+*Phase 2 & 3 completed: 2025-12-29*

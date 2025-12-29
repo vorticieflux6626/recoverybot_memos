@@ -118,6 +118,14 @@ from .kv_cache_service import KVCacheService, get_kv_cache_service
 from .memory_tiers import MemoryTierManager, get_memory_tier_manager
 from .artifacts import ArtifactStore, get_artifact_store, ArtifactType
 from .content_cache import get_content_cache
+from .adaptive_refinement import (
+    AdaptiveRefinementEngine,
+    RefinementDecision,
+    GapAnalysis,
+    AnswerAssessment,
+    RefinementResult,
+    get_adaptive_refinement_engine
+)
 from .context_limits import (
     calculate_context_budget,
     get_synthesizer_limits,
@@ -233,6 +241,13 @@ class FeatureConfig:
     enable_experience_distillation: bool = True
     enable_classifier_feedback: bool = True
 
+    # Adaptive Refinement (Layer 1.5)
+    enable_adaptive_refinement: bool = True     # Iterative gap-filling loop
+    enable_answer_grading: bool = True          # Answer quality assessment
+    enable_gap_detection: bool = True           # Structured gap identification
+    min_confidence_threshold: float = 0.5       # Minimum acceptable confidence
+    max_refinement_attempts: int = 3            # Max refinement iterations
+
     # Performance (Layer 2)
     enable_content_cache: bool = True
     enable_semantic_cache: bool = True
@@ -294,6 +309,9 @@ PRESET_CONFIGS = {
         enable_positional_optimization=False,
         enable_experience_distillation=False,
         enable_classifier_feedback=False,
+        enable_adaptive_refinement=False,  # Disabled in minimal
+        enable_answer_grading=False,
+        enable_gap_detection=False,
         enable_semantic_cache=False,
         enable_ttl_pinning=False,
         enable_metrics=False
@@ -451,6 +469,13 @@ class UniversalOrchestrator(BaseSearchPipeline):
         self.experience_distiller = get_experience_distiller()
         self.classifier_feedback = get_classifier_feedback()
         self.context_classifier = get_sufficient_context_classifier()
+
+        # Adaptive refinement engine (Phase 2)
+        self.adaptive_refinement = get_adaptive_refinement_engine(
+            ollama_url=ollama_url,
+            min_confidence_threshold=self.config.min_confidence_threshold,
+            max_refinement_attempts=self.config.max_refinement_attempts
+        )
 
         # Lazy-loaded components (initialized on demand based on config)
         self._hyde_expander: Optional[HyDEExpander] = None
@@ -1042,6 +1067,77 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         )
 
                 await emitter.emit(graph_node_completed(request_id, "reflect", True, graph, reflect_ms))
+
+            # PHASE 8: Adaptive Refinement (if enabled and confidence below threshold)
+            if self.config.enable_adaptive_refinement and confidence < self.config.min_confidence_threshold:
+                refine_start = time.time()
+                initial_confidence = confidence
+
+                await emitter.emit(events.adaptive_refinement_start(
+                    request_id, confidence, self.config.min_confidence_threshold,
+                    self.config.max_refinement_attempts
+                ))
+
+                # Identify gaps in synthesis
+                gap_analysis = None
+                if self.config.enable_gap_detection and synthesis:
+                    gap_analysis = await self.adaptive_refinement.identify_gaps(
+                        request.query, synthesis, sources
+                    )
+                    await emitter.emit(events.gaps_identified(
+                        request_id, gap_analysis.gaps, gap_analysis.coverage_score
+                    ))
+
+                # Grade answer quality
+                answer_assessment = None
+                if self.config.enable_answer_grading and synthesis:
+                    answer_assessment = await self.adaptive_refinement.grade_answer(
+                        request.query, synthesis
+                    )
+                    await emitter.emit(events.answer_graded(
+                        request_id,
+                        answer_assessment.grade.value,
+                        answer_assessment.score,
+                        answer_assessment.gaps
+                    ))
+
+                # Decide refinement action
+                decision = self.adaptive_refinement.decide_refinement_action(
+                    confidence=confidence,
+                    source_count=len(sources),
+                    query_complexity=state.query_analysis.complexity.value if state.query_analysis else "medium",
+                    iteration=0,
+                    gap_analysis=gap_analysis,
+                    answer_assessment=answer_assessment
+                )
+
+                await emitter.emit(events.adaptive_refinement_decision(
+                    request_id, decision.value, confidence, 0,
+                    f"Gap count: {len(gap_analysis.gaps) if gap_analysis else 0}, "
+                    f"Grade: {answer_assessment.grade.value if answer_assessment else 'N/A'}"
+                ))
+
+                # If decision is to refine, generate queries (but don't execute in this iteration)
+                if decision == RefinementDecision.REFINE_QUERY and gap_analysis:
+                    refinement_queries = await self.adaptive_refinement.generate_refinement_queries(
+                        request.query, gap_analysis.gaps, synthesis
+                    )
+                    if refinement_queries:
+                        await emitter.emit(events.refinement_queries_generated(
+                            request_id, refinement_queries
+                        ))
+                        # Store for potential future use
+                        search_trace.append({
+                            "step": "adaptive_refinement",
+                            "decision": decision.value,
+                            "gaps": gap_analysis.gaps if gap_analysis else [],
+                            "refinement_queries": refinement_queries
+                        })
+
+                refine_ms = int((time.time() - refine_start) * 1000)
+                await emitter.emit(events.adaptive_refinement_complete(
+                    request_id, decision.value, initial_confidence, confidence, 1, refine_ms
+                ))
 
             # Build final response
             execution_time_ms = int((time.time() - start_time) * 1000)

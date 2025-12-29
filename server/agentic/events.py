@@ -121,6 +121,14 @@ class EventType(str, Enum):
     REFINEMENT_CYCLE_COMPLETE = "refinement_cycle_complete"
     REFINEMENT_QUERIES_GENERATED = "refinement_queries_generated"
 
+    # Adaptive Refinement (Phase 2)
+    ADAPTIVE_REFINEMENT_START = "adaptive_refinement_start"
+    ADAPTIVE_REFINEMENT_DECISION = "adaptive_refinement_decision"
+    GAPS_IDENTIFIED = "gaps_identified"
+    ANSWER_GRADED = "answer_graded"
+    QUERY_DECOMPOSED = "query_decomposed"
+    ADAPTIVE_REFINEMENT_COMPLETE = "adaptive_refinement_complete"
+
     # Reasoning DAG (Graph of Thoughts)
     REASONING_BRANCH_CREATED = "reasoning_branch_created"
     REASONING_NODE_VERIFIED = "reasoning_node_verified"
@@ -898,6 +906,130 @@ def refinement_queries_generated(request_id: str, queries: list) -> SearchEvent:
         message=f"Generated {len(queries)} refinement queries",
         queries=queries,
         data={"count": len(queries)}
+    )
+
+
+# =============================================================================
+# Adaptive Refinement Events (Phase 2)
+# =============================================================================
+
+def adaptive_refinement_start(
+    request_id: str,
+    current_confidence: float,
+    threshold: float,
+    max_attempts: int
+) -> SearchEvent:
+    """Adaptive refinement loop started"""
+    return SearchEvent(
+        event_type=EventType.ADAPTIVE_REFINEMENT_START,
+        request_id=request_id,
+        message=f"Starting adaptive refinement (confidence {current_confidence:.1%} < {threshold:.1%} threshold)",
+        data={
+            "current_confidence": current_confidence,
+            "threshold": threshold,
+            "max_attempts": max_attempts
+        }
+    )
+
+
+def adaptive_refinement_decision(
+    request_id: str,
+    decision: str,
+    confidence: float,
+    iteration: int,
+    reason: str = ""
+) -> SearchEvent:
+    """Adaptive refinement decision made"""
+    return SearchEvent(
+        event_type=EventType.ADAPTIVE_REFINEMENT_DECISION,
+        request_id=request_id,
+        message=f"Refinement decision: {decision} (confidence: {confidence:.1%}, iteration: {iteration})",
+        data={
+            "decision": decision,
+            "confidence": confidence,
+            "iteration": iteration,
+            "reason": reason
+        }
+    )
+
+
+def gaps_identified(
+    request_id: str,
+    gaps: list,
+    coverage_score: float
+) -> SearchEvent:
+    """Information gaps identified in synthesis"""
+    return SearchEvent(
+        event_type=EventType.GAPS_IDENTIFIED,
+        request_id=request_id,
+        message=f"Identified {len(gaps)} gaps (coverage: {coverage_score:.1%})",
+        data={
+            "gaps": gaps[:5],  # Limit to 5 for display
+            "coverage_score": coverage_score,
+            "gap_count": len(gaps)
+        }
+    )
+
+
+def answer_graded(
+    request_id: str,
+    grade: str,
+    score: int,
+    gaps: list = None
+) -> SearchEvent:
+    """Answer quality graded"""
+    return SearchEvent(
+        event_type=EventType.ANSWER_GRADED,
+        request_id=request_id,
+        message=f"Answer grade: {grade} ({score}/5)",
+        data={
+            "grade": grade,
+            "score": score,
+            "gaps": gaps or []
+        }
+    )
+
+
+def query_decomposed(
+    request_id: str,
+    original_query: str,
+    sub_queries: list
+) -> SearchEvent:
+    """Complex query decomposed into sub-questions"""
+    return SearchEvent(
+        event_type=EventType.QUERY_DECOMPOSED,
+        request_id=request_id,
+        message=f"Decomposed query into {len(sub_queries)} sub-questions",
+        query=original_query,
+        data={
+            "sub_queries": sub_queries,
+            "count": len(sub_queries)
+        }
+    )
+
+
+def adaptive_refinement_complete(
+    request_id: str,
+    final_decision: str,
+    initial_confidence: float,
+    final_confidence: float,
+    iterations: int,
+    total_duration_ms: int
+) -> SearchEvent:
+    """Adaptive refinement loop completed"""
+    improvement = final_confidence - initial_confidence
+    return SearchEvent(
+        event_type=EventType.ADAPTIVE_REFINEMENT_COMPLETE,
+        request_id=request_id,
+        message=f"Refinement complete: {final_decision} ({improvement:+.1%} confidence in {iterations} iterations)",
+        data={
+            "final_decision": final_decision,
+            "initial_confidence": initial_confidence,
+            "final_confidence": final_confidence,
+            "confidence_improvement": improvement,
+            "iterations": iterations,
+            "total_duration_ms": total_duration_ms
+        }
     )
 
 

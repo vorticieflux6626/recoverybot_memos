@@ -274,6 +274,16 @@ from .ragas import (
     get_ragas_evaluator,
     create_ragas_evaluator
 )
+from .adaptive_refinement import (
+    AdaptiveRefinementEngine,
+    RefinementDecision,
+    AnswerGrade,
+    GapAnalysis,
+    AnswerAssessment,
+    RefinementResult,
+    get_adaptive_refinement_engine,
+    create_adaptive_refinement_engine
+)
 from . import events
 from .events import (
     AgentGraphState,
@@ -559,6 +569,15 @@ __all__ = [
     "create_unified_orchestrator",  # DEPRECATED
     # Base Pipeline (December 2025)
     "BaseSearchPipeline",
+    # Adaptive Refinement (December 2025)
+    "AdaptiveRefinementEngine",
+    "RefinementDecision",
+    "AnswerGrade",
+    "GapAnalysis",
+    "AnswerAssessment",
+    "RefinementResult",
+    "get_adaptive_refinement_engine",
+    "create_adaptive_refinement_engine",
     # Universal Orchestrator (December 2025) - SINGLE SOURCE OF TRUTH
     # (Also exported at top of __all__ for visibility)
     # "UniversalOrchestrator",
@@ -567,4 +586,4 @@ __all__ = [
     # "PRESET_CONFIGS",
 ]
 
-__version__ = "0.28.0"  # Phase 1 Adaptive Refinement: Heuristic baseline confidence for meaningful scores without evaluation features
+__version__ = "0.28.1"  # Phase 2 Adaptive Refinement: Gap identification, answer grading, decision router
