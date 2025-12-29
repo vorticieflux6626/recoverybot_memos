@@ -49,3 +49,4 @@ server/cache/
 server/test_*.py
 !server/test_endpoint.sh
 !server/test_tts.sh
+!server/test_research_preset.py
