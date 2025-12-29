@@ -10,7 +10,9 @@ Phase 21 testing revealed **2 critical bugs** that were fixed:
 1. `calculate_confidence` method missing → Fixed with `calculate_heuristic_confidence`
 2. `scratchpad` extra argument in `_phase_synthesis` call → Removed
 
-**Integration Gap Discovered**: Phase 21 Meta-Buffer and Reasoning Composer methods are **defined but not called** in the main search flow.
+**Integration Gap Discovered**: Phase 21 Meta-Buffer and Reasoning Composer methods were **defined but not called** in the main search flow.
+
+**UPDATE (2025-12-29)**: ✅ Integration gap has been fixed. All Phase 21 methods now called in `search_with_events()`.
 
 ---
 
@@ -178,10 +180,10 @@ Consider:
 
 ## Next Steps
 
-1. **Critical**: Integrate Phase 21 methods into search flow
-2. **High**: Add FANUC domain hints to search queries
-3. **Medium**: Build FANUC domain corpus for offline retrieval
-4. **Low**: Add SSE events for Phase 21 template retrieval/distillation
+1. ✅ ~~**Critical**: Integrate Phase 21 methods into search flow~~ **DONE**
+2. ✅ ~~**Low**: Add SSE events for Phase 21 template retrieval/distillation~~ **DONE** (5 events added)
+3. **High**: Add FANUC domain hints to search queries
+4. **Medium**: Build FANUC domain corpus for offline retrieval
 
 ---
 

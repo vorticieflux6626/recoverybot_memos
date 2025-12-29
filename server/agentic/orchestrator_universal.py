@@ -1332,7 +1332,11 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 try:
                     composed_strategy = await self._compose_reasoning_strategy(request.query)
                     if composed_strategy:
-                        logger.info(f"[{request_id}] Reasoning Composer: Strategy composed with {len(composed_strategy.selected_modules)} modules")
+                        module_names = [m.name for m in composed_strategy.selected_modules] if hasattr(composed_strategy, 'selected_modules') else []
+                        logger.info(f"[{request_id}] Reasoning Composer: Strategy composed with {len(module_names)} modules")
+                        await emitter.emit(events.reasoning_strategy_composed(
+                            request_id, len(module_names), module_names
+                        ))
                         # Store strategy for use in synthesis
                         state.composed_reasoning_strategy = composed_strategy
                 except Exception as e:

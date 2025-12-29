@@ -102,6 +102,9 @@ class EventType(str, Enum):
     THOUGHT_TEMPLATE_MATCHED = "thought_template_matched"
     THOUGHT_TEMPLATE_APPLIED = "thought_template_applied"
 
+    # Reasoning Composer (Self-Discover)
+    REASONING_STRATEGY_COMPOSED = "reasoning_strategy_composed"
+
     # Experience Distillation
     EXPERIENCE_CAPTURED = "experience_captured"
     EXPERIENCE_DISTILLING = "experience_distilling"
@@ -1214,6 +1217,24 @@ def experience_distilling(request_id: str, experience_count: int) -> SearchEvent
         message=f"Distilling {experience_count} experiences into templates...",
         progress_percent=97,
         data={"experience_count": experience_count}
+    )
+
+
+def reasoning_strategy_composed(
+    request_id: str,
+    module_count: int,
+    modules: list
+) -> SearchEvent:
+    """Self-Discover reasoning strategy composed"""
+    return SearchEvent(
+        event_type=EventType.REASONING_STRATEGY_COMPOSED,
+        request_id=request_id,
+        message=f"Reasoning Composer: Strategy composed with {module_count} modules",
+        progress_percent=13,
+        data={
+            "module_count": module_count,
+            "modules": modules[:5]  # Limit to first 5 for brevity
+        }
     )
 
 
