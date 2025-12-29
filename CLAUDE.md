@@ -48,6 +48,41 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 13** | Universal Orchestrator + Bug Fixes | ✅ **COMPLETE** |
 | **Phase 14** | Context Utilization Tracking | ✅ **COMPLETE** |
 
+#### ✅ Phase 15: Orchestrator Consolidation (Completed 2025-12-28)
+
+Consolidated all orchestrators into UniversalOrchestrator as the single source of truth:
+
+**DEPRECATED Orchestrators:**
+| Class | Replacement |
+|-------|-------------|
+| `AgenticOrchestrator` | `UniversalOrchestrator(preset=OrchestratorPreset.BALANCED)` |
+| `EnhancedAgenticOrchestrator` | `UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED)` |
+| `DynamicOrchestrator` | `UniversalOrchestrator(enable_dynamic_planning=True)` |
+| `GraphEnhancedOrchestrator` | `UniversalOrchestrator(enable_graph_cache=True)` |
+| `UnifiedOrchestrator` | `UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED)` |
+
+**Code Reduction:**
+- 5 deprecated orchestrator files (~5,342 lines)
+- Single source of truth: `orchestrator_universal.py`
+- 38+ feature flags via presets
+
+**API Changes:**
+- `get_orchestrator()` → redirects to `get_universal_orchestrator("balanced")`
+- `get_enhanced_orchestrator()` → redirects to `get_universal_orchestrator("enhanced")`
+- `get_graph_orchestrator()` → redirects to `get_universal_orchestrator("research")`
+- `get_unified_orchestrator_instance()` → redirects to `get_universal_orchestrator("enhanced")`
+
+**Preset Quick Reference:**
+| Preset | Features | Use Case |
+|--------|----------|----------|
+| `minimal` | 8 | Fast, simple queries |
+| `balanced` | 18 | Default for most queries |
+| `enhanced` | 28 | Complex research |
+| `research` | 35 | Academic/thorough |
+| `full` | 38+ | Maximum capability |
+
+**Module Version**: `agentic/__init__.py` → v0.27.0
+
 #### ✅ Phase 14: Context Utilization Tracking (Completed 2025-12-28)
 
 Comprehensive instrumentation for tracking context window utilization across all agentic pipeline agents:

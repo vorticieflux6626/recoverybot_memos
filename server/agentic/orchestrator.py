@@ -1,6 +1,16 @@
 """
 Agentic Search Orchestrator
 
+DEPRECATED: This module is deprecated. Use UniversalOrchestrator instead.
+
+    from agentic import UniversalOrchestrator, OrchestratorPreset
+    orchestrator = UniversalOrchestrator(preset=OrchestratorPreset.BALANCED)
+
+The AgenticOrchestrator functionality is fully available in UniversalOrchestrator
+with the 'balanced' preset.
+
+---
+
 Coordinates the multi-agent search pipeline:
 Analyzer → Planner → Searcher → Verifier → Synthesizer
 
@@ -11,6 +21,7 @@ Implements an enhanced ReAct (Reasoning + Acting) pattern with:
 """
 
 import asyncio
+import warnings
 import logging
 import time
 from datetime import datetime
@@ -99,6 +110,8 @@ class AgenticOrchestrator:
     """
     Main orchestrator for agentic search.
 
+    DEPRECATED: Use UniversalOrchestrator instead.
+
     Coordinates the multi-agent pipeline and implements
     the ReAct loop for iterative refinement.
     """
@@ -110,6 +123,11 @@ class AgenticOrchestrator:
         brave_api_key: Optional[str] = None,
         memory_service: Optional[Any] = None  # Optional memOS memory service
     ):
+        warnings.warn(
+            "AgenticOrchestrator is deprecated. Use UniversalOrchestrator(preset=OrchestratorPreset.BALANCED) instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.ollama_url = ollama_url
         self.mcp_url = mcp_url
 

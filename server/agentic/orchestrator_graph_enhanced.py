@@ -1,6 +1,17 @@
 """
 Graph-Enhanced Agentic Search Orchestrator
 
+DEPRECATED: This module is deprecated. Use UniversalOrchestrator instead.
+
+    from agentic import UniversalOrchestrator, OrchestratorPreset
+    orchestrator = UniversalOrchestrator(
+        preset=OrchestratorPreset.RESEARCH,
+        enable_graph_cache=True,
+        enable_prefetching=True
+    )
+
+---
+
 This module extends the base orchestrator with graph-based KV cache optimization:
 - Agent Step Graph for workflow-aware cache management (KVFlow-inspired)
 - Scratchpad Cache for intermediate result caching (ROG-inspired)
@@ -12,6 +23,7 @@ with the existing orchestrator interface.
 """
 
 import asyncio
+import warnings
 import logging
 import time
 from datetime import datetime
@@ -63,6 +75,8 @@ class GraphEnhancedOrchestrator:
     """
     Graph-enhanced agentic search orchestrator.
 
+    DEPRECATED: Use UniversalOrchestrator with enable_graph_cache=True instead.
+
     Extends base orchestrator with:
     1. Agent Step Graph for workflow-aware eviction
     2. Scratchpad Cache for intermediate caching
@@ -77,6 +91,11 @@ class GraphEnhancedOrchestrator:
         brave_api_key: Optional[str] = None,
         memory_service: Optional[Any] = None
     ):
+        warnings.warn(
+            "GraphEnhancedOrchestrator is deprecated. Use UniversalOrchestrator with enable_graph_cache=True instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.ollama_url = ollama_url
         self.mcp_url = mcp_url
 

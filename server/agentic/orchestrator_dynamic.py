@@ -1,6 +1,17 @@
 """
 Dynamic Orchestrator with AIME-Style Task Planning
 
+DEPRECATED: This module is deprecated. Use UniversalOrchestrator instead.
+
+    from agentic import UniversalOrchestrator, OrchestratorPreset
+    orchestrator = UniversalOrchestrator(
+        preset=OrchestratorPreset.FULL,
+        enable_dynamic_planning=True,
+        enable_progress_tracking=True
+    )
+
+---
+
 Integrates the DynamicPlanner for dual strategic/tactical outputs,
 enabling hierarchical task management and adaptive replanning.
 
@@ -26,6 +37,7 @@ Usage:
 """
 
 import asyncio
+import warnings
 import logging
 import time
 from datetime import datetime, timezone
@@ -64,6 +76,8 @@ class DynamicOrchestrator:
     """
     Orchestrator using AIME-style DynamicPlanner for hierarchical task execution.
 
+    DEPRECATED: Use UniversalOrchestrator with enable_dynamic_planning=True instead.
+
     This orchestrator differs from the standard one by:
     1. Using DynamicPlanner for task decomposition and replanning
     2. Tracking progress via task hierarchy (not just iteration count)
@@ -77,6 +91,11 @@ class DynamicOrchestrator:
         brave_api_key: Optional[str] = None,
         memory_service: Optional[Any] = None
     ):
+        warnings.warn(
+            "DynamicOrchestrator is deprecated. Use UniversalOrchestrator with enable_dynamic_planning=True instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.ollama_url = ollama_url
 
         # Core agents

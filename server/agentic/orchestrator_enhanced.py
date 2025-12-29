@@ -1,6 +1,19 @@
 """
 Enhanced Agentic Search Orchestrator
 
+DEPRECATED: This module is deprecated. Use UniversalOrchestrator instead.
+
+    from agentic import UniversalOrchestrator, OrchestratorPreset
+    orchestrator = UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED)
+
+All enhanced features are available in UniversalOrchestrator:
+- enable_pre_act_planning=True
+- enable_stuck_detection=True
+- enable_contradiction_detection=True
+- enable_parallel_execution=True
+
+---
+
 Integrates research-backed improvements with the base orchestrator:
 1. Pre-Act Pattern - Multi-step planning before acting
 2. Self-Reflection Loop - Critique and refinement
@@ -13,6 +26,7 @@ backward compatibility with existing API endpoints.
 """
 
 import asyncio
+import warnings
 import logging
 import time
 from datetime import datetime
@@ -65,6 +79,8 @@ class EnhancedAgenticOrchestrator:
     """
     Enhanced orchestrator with research-backed improvements.
 
+    DEPRECATED: Use UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED) instead.
+
     Key improvements over base orchestrator:
     - Pre-Act planning for better action sequences
     - Self-reflection for synthesis quality
@@ -85,6 +101,11 @@ class EnhancedAgenticOrchestrator:
         enable_contradiction_detection: bool = True,
         max_reflection_iterations: int = 2
     ):
+        warnings.warn(
+            "EnhancedAgenticOrchestrator is deprecated. Use UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED) instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.ollama_url = ollama_url
         self.mcp_url = mcp_url
 

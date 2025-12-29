@@ -1,6 +1,20 @@
 """
 Unified Agentic Orchestrator
 
+DEPRECATED: This module is deprecated. Use UniversalOrchestrator instead.
+
+    from agentic import UniversalOrchestrator, OrchestratorPreset
+    orchestrator = UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED)
+
+All unified features are available in UniversalOrchestrator with 'enhanced' preset:
+- enable_hyde=True
+- enable_hybrid_reranking=True
+- enable_ragas=True
+- enable_entity_tracking=True
+- enable_thought_library=True
+
+---
+
 Integrates ALL available agentic features into a single enhanced pipeline:
 
 QUERY UNDERSTANDING:
@@ -32,6 +46,7 @@ This module is designed as a gateway for all user messages, not just search-spec
 """
 
 import asyncio
+import warnings
 import logging
 import time
 import hashlib
@@ -122,6 +137,8 @@ class UnifiedOrchestrator:
     """
     Unified orchestrator integrating all agentic features.
 
+    DEPRECATED: Use UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED) instead.
+
     This is designed as the main gateway for ALL user messages,
     treating the system as a general AI agent rather than just a search tool.
     """
@@ -142,6 +159,11 @@ class UnifiedOrchestrator:
         enable_metrics: bool = True,
         db_path: Optional[str] = None
     ):
+        warnings.warn(
+            "UnifiedOrchestrator is deprecated. Use UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED) instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.ollama_url = ollama_url
         self.mcp_url = mcp_url
 

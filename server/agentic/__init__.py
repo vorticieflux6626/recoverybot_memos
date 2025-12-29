@@ -14,9 +14,30 @@ Performance optimizations:
 
 This module is isolated from core memOS services and can be
 enabled/disabled independently.
+
+=============================================================================
+ORCHESTRATOR CONSOLIDATION (December 2025)
+=============================================================================
+UniversalOrchestrator is the SINGLE SOURCE OF TRUTH for all orchestrator needs.
+
+DEPRECATED orchestrators (maintained for backward compatibility):
+- AgenticOrchestrator -> Use UniversalOrchestrator(preset=OrchestratorPreset.BALANCED)
+- EnhancedAgenticOrchestrator -> Use UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED)
+- DynamicOrchestrator -> Use UniversalOrchestrator with enable_dynamic_planning=True
+- GraphEnhancedOrchestrator -> Use UniversalOrchestrator with enable_graph_cache=True
+- UnifiedOrchestrator -> Use UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED)
+
+Presets:
+- minimal: 8 features - fast, simple queries
+- balanced: 18 features - default for most queries
+- enhanced: 28 features - complex research
+- research: 35 features - academic/thorough
+- full: 38+ features - maximum capability
+=============================================================================
 """
 
-from .orchestrator import AgenticOrchestrator
+# DEPRECATED: Use UniversalOrchestrator instead
+from .orchestrator import AgenticOrchestrator  # DEPRECATED
 from .models import (
     SearchRequest,
     SearchResponse,
@@ -288,8 +309,18 @@ from .orchestrator_universal import (
 )
 
 __all__ = [
-    # Core orchestration
-    "AgenticOrchestrator",
+    # ==========================================================================
+    # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
+    # ==========================================================================
+    "UniversalOrchestrator",
+    "OrchestratorPreset",
+    "FeatureConfig",
+    "PRESET_CONFIGS",
+
+    # ==========================================================================
+    # DEPRECATED Orchestrators (maintained for backward compatibility)
+    # ==========================================================================
+    "AgenticOrchestrator",  # DEPRECATED: Use UniversalOrchestrator(preset=BALANCED)
     "SearchRequest",
     "SearchResponse",
     "SearchResult",
@@ -363,9 +394,9 @@ __all__ = [
     "ProgressUpdate",
     "ProgressTool",
     "PROGRESS_TOOL_PROMPT",
-    # Dynamic Orchestrator
-    "DynamicOrchestrator",
-    "create_dynamic_orchestrator",
+    # Dynamic Orchestrator (DEPRECATED: Use UniversalOrchestrator with enable_dynamic_planning=True)
+    "DynamicOrchestrator",  # DEPRECATED
+    "create_dynamic_orchestrator",  # DEPRECATED
     # GSW-Style Entity Tracking (Phase 2 Enhancement)
     "EntityTracker",
     "EntityState",
@@ -515,17 +546,18 @@ __all__ = [
     "get_sufficient_context_classifier",
     "get_positional_optimizer",
     "get_dynamic_allocator",
-    # Unified Orchestrator (December 2025)
-    "UnifiedOrchestrator",
-    "get_unified_orchestrator",
-    "create_unified_orchestrator",
+    # Unified Orchestrator (DEPRECATED: Use UniversalOrchestrator with preset=ENHANCED)
+    "UnifiedOrchestrator",  # DEPRECATED
+    "get_unified_orchestrator",  # DEPRECATED
+    "create_unified_orchestrator",  # DEPRECATED
     # Base Pipeline (December 2025)
     "BaseSearchPipeline",
-    # Universal Orchestrator (December 2025)
-    "UniversalOrchestrator",
-    "FeatureConfig",
-    "OrchestratorPreset",
-    "PRESET_CONFIGS",
+    # Universal Orchestrator (December 2025) - SINGLE SOURCE OF TRUTH
+    # (Also exported at top of __all__ for visibility)
+    # "UniversalOrchestrator",
+    # "FeatureConfig",
+    # "OrchestratorPreset",
+    # "PRESET_CONFIGS",
 ]
 
-__version__ = "0.25.0"  # Full feature integration: 40+ features across 15+ phases with TTL pinning, KV cache, memory tiers, vision analysis, reasoning DAG, and dynamic planning
+__version__ = "0.27.0"  # Orchestrator consolidation: UniversalOrchestrator as single source of truth, deprecated legacy orchestrators

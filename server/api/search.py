@@ -22,7 +22,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from agentic import AgenticOrchestrator
+from agentic import UniversalOrchestrator, OrchestratorPreset, AgenticOrchestrator
 from agentic.models import (
     SearchRequest,
     SearchResponse,
@@ -31,6 +31,19 @@ from agentic.models import (
     SearchMode
 )
 from agentic.multi_agent import MultiAgentOrchestrator
+
+# =============================================================================
+# DEPRECATION NOTICE: Legacy Orchestrators
+# =============================================================================
+# The following orchestrators are DEPRECATED and will be removed in a future release:
+# - AgenticOrchestrator → Use UniversalOrchestrator(preset=OrchestratorPreset.BALANCED)
+# - EnhancedAgenticOrchestrator → Use UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED)
+# - GraphEnhancedOrchestrator → Use UniversalOrchestrator(preset=OrchestratorPreset.RESEARCH)
+# - UnifiedOrchestrator → Use UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED)
+# - DynamicOrchestrator → Use UniversalOrchestrator with enable_dynamic_planning=True
+#
+# SINGLE SOURCE OF TRUTH: UniversalOrchestrator with preset-based configuration
+# =============================================================================
 from agentic.events import (
     get_event_manager,
     EventType,
@@ -68,63 +81,101 @@ class ClassifyResponse(BaseModel):
 
 router = APIRouter(prefix="/api/v1/search", tags=["Search"])
 
-# Global orchestrator instances (initialized on first use)
-_orchestrator: Optional[AgenticOrchestrator] = None
-_graph_orchestrator = None  # GraphEnhancedOrchestrator
-_enhanced_orchestrator = None  # EnhancedAgenticOrchestrator
+# =============================================================================
+# UNIFIED ORCHESTRATOR SYSTEM
+# =============================================================================
+# All orchestrators are now consolidated into UniversalOrchestrator with presets.
+# Legacy getters are maintained for backward compatibility but redirect to Universal.
+# =============================================================================
+
+# Cache of UniversalOrchestrator instances by preset
+_universal_orchestrators: Dict[str, UniversalOrchestrator] = {}
+
+# Legacy orchestrator instances (DEPRECATED - use get_universal_orchestrator instead)
+_orchestrator: Optional[AgenticOrchestrator] = None  # DEPRECATED
+_graph_orchestrator = None  # DEPRECATED
+_enhanced_orchestrator = None  # DEPRECATED
 _multi_orchestrator: Optional[MultiAgentOrchestrator] = None
 
 
-async def get_orchestrator() -> AgenticOrchestrator:
-    """Get or create the orchestrator instance"""
-    global _orchestrator
-    if _orchestrator is None:
+async def get_universal_orchestrator(preset: str = "balanced") -> UniversalOrchestrator:
+    """
+    Get or create a UniversalOrchestrator for the given preset.
+
+    This is the SINGLE SOURCE OF TRUTH for all orchestrator access.
+
+    Args:
+        preset: One of 'minimal', 'balanced', 'enhanced', 'research', 'full'
+
+    Returns:
+        UniversalOrchestrator instance configured with the specified preset
+    """
+    global _universal_orchestrators
+
+    if preset not in _universal_orchestrators:
         import os
-        _orchestrator = AgenticOrchestrator(
-            ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-            mcp_url=os.getenv("MCP_URL", "http://localhost:7777"),
-            brave_api_key=os.getenv("BRAVE_API_KEY")
-        )
-        await _orchestrator.initialize()
-        logger.info("Agentic search orchestrator initialized")
-    return _orchestrator
-
-
-async def get_graph_orchestrator():
-    """Get or create the graph-enhanced orchestrator instance"""
-    global _graph_orchestrator
-    if _graph_orchestrator is None:
-        import os
-        from agentic.orchestrator_graph_enhanced import GraphEnhancedOrchestrator
-        _graph_orchestrator = GraphEnhancedOrchestrator(
-            ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-            mcp_url=os.getenv("MCP_URL", "http://localhost:7777"),
-            brave_api_key=os.getenv("BRAVE_API_KEY")
-        )
-        await _graph_orchestrator.initialize()
-        logger.info("Graph-enhanced orchestrator initialized")
-    return _graph_orchestrator
-
-
-async def get_enhanced_orchestrator():
-    """Get or create the enhanced agentic orchestrator instance"""
-    global _enhanced_orchestrator
-    if _enhanced_orchestrator is None:
-        import os
-        from agentic.orchestrator_enhanced import EnhancedAgenticOrchestrator
-        _enhanced_orchestrator = EnhancedAgenticOrchestrator(
+        preset_enum = OrchestratorPreset(preset) if preset in [p.value for p in OrchestratorPreset] else OrchestratorPreset.BALANCED
+        _universal_orchestrators[preset] = UniversalOrchestrator(
             ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
             mcp_url=os.getenv("MCP_URL", "http://localhost:7777"),
             brave_api_key=os.getenv("BRAVE_API_KEY"),
-            enable_reflection=True,
-            enable_pre_act=True,
-            enable_stuck_detection=True,
-            enable_contradiction_detection=True,
-            max_reflection_iterations=2
+            preset=preset_enum,
+            db_path="/home/sparkone/sdd/Recovery_Bot/memOS/data"
         )
-        await _enhanced_orchestrator.initialize()
-        logger.info("Enhanced agentic orchestrator initialized")
-    return _enhanced_orchestrator
+        await _universal_orchestrators[preset].initialize()
+        logger.info(f"UniversalOrchestrator initialized with preset: {preset}")
+    return _universal_orchestrators[preset]
+
+
+async def get_orchestrator() -> UniversalOrchestrator:
+    """
+    DEPRECATED: Use get_universal_orchestrator('balanced') instead.
+
+    Maintained for backward compatibility - redirects to UniversalOrchestrator.
+    """
+    import warnings
+    warnings.warn(
+        "get_orchestrator() is deprecated. Use get_universal_orchestrator('balanced') instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return await get_universal_orchestrator("balanced")
+
+
+async def get_graph_orchestrator() -> UniversalOrchestrator:
+    """
+    DEPRECATED: Use get_universal_orchestrator('research') instead.
+
+    GraphEnhancedOrchestrator features are available via:
+    - enable_graph_cache=True
+    - enable_prefetching=True
+    """
+    import warnings
+    warnings.warn(
+        "get_graph_orchestrator() is deprecated. Use get_universal_orchestrator('research') instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return await get_universal_orchestrator("research")
+
+
+async def get_enhanced_orchestrator() -> UniversalOrchestrator:
+    """
+    DEPRECATED: Use get_universal_orchestrator('enhanced') instead.
+
+    EnhancedAgenticOrchestrator features are available via:
+    - enable_pre_act_planning=True
+    - enable_stuck_detection=True
+    - enable_contradiction_detection=True
+    - enable_parallel_execution=True
+    """
+    import warnings
+    warnings.warn(
+        "get_enhanced_orchestrator() is deprecated. Use get_universal_orchestrator('enhanced') instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return await get_universal_orchestrator("enhanced")
 
 
 # Global classifier instance
@@ -529,23 +580,26 @@ async def _execute_enhanced_streaming_search(
 
 
 # =============================================================================
-# UNIFIED ORCHESTRATOR ENDPOINTS
+# UNIFIED ORCHESTRATOR ENDPOINTS (DEPRECATED - Use /universal instead)
 # =============================================================================
 
-_unified_orchestrator = None
+async def get_unified_orchestrator_instance() -> UniversalOrchestrator:
+    """
+    DEPRECATED: Use get_universal_orchestrator('enhanced') instead.
 
-
-async def get_unified_orchestrator_instance():
-    """Get or create the unified orchestrator instance."""
-    global _unified_orchestrator
-    if _unified_orchestrator is None:
-        from agentic.orchestrator_unified import create_unified_orchestrator
-        _unified_orchestrator = await create_unified_orchestrator(
-            ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-            db_path="/home/sparkone/sdd/Recovery_Bot/memOS/data"
-        )
-        logger.info("Unified orchestrator initialized")
-    return _unified_orchestrator
+    UnifiedOrchestrator features are available via the 'enhanced' preset:
+    - enable_hyde=True
+    - enable_hybrid_reranking=True
+    - enable_ragas=True
+    - enable_entity_tracking=True
+    """
+    import warnings
+    warnings.warn(
+        "get_unified_orchestrator_instance() is deprecated. Use get_universal_orchestrator('enhanced') instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return await get_universal_orchestrator("enhanced")
 
 
 @router.post("/unified", response_model=SearchResponse)
@@ -638,27 +692,9 @@ async def get_unified_stats():
 # ============================================================================
 # UNIVERSAL ORCHESTRATOR - Consolidates ALL orchestrators with feature flags
 # ============================================================================
-
-_universal_orchestrators: Dict[str, Any] = {}  # Preset -> instance cache
-
-
-async def get_universal_orchestrator(preset: str = "balanced") -> Any:
-    """Get or create a universal orchestrator for the given preset."""
-    from agentic import UniversalOrchestrator, OrchestratorPreset
-
-    if preset not in _universal_orchestrators:
-        preset_enum = OrchestratorPreset(preset) if preset in [p.value for p in OrchestratorPreset] else OrchestratorPreset.BALANCED
-        _universal_orchestrators[preset] = UniversalOrchestrator(
-            ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-            mcp_url=os.getenv("MCP_URL", "http://localhost:7777"),
-            brave_api_key=os.getenv("BRAVE_API_KEY"),
-            preset=preset_enum,
-            db_path="/home/sparkone/sdd/Recovery_Bot/memOS/data"
-        )
-        await _universal_orchestrators[preset].initialize()
-        logger.info(f"Universal orchestrator initialized with preset: {preset}")
-    return _universal_orchestrators[preset]
-
+# NOTE: get_universal_orchestrator is defined at the top of this file (line ~101)
+# This section contains only the API endpoints and models for the universal search.
+# ============================================================================
 
 class UniversalSearchRequest(BaseModel):
     """Request model for universal search."""
