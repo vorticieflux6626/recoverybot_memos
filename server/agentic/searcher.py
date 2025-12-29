@@ -529,6 +529,189 @@ class DuckDuckGoProvider(SearchProvider):
         return results
 
 
+class PDFDocumentProvider(SearchProvider):
+    """
+    PDF Extraction Tools API provider for FANUC technical documentation.
+
+    Searches the local PDF knowledge base via the PDF Extraction Tools API
+    running on port 8002. Results are converted to WebSearchResult format
+    for seamless integration with the search pipeline.
+
+    Features:
+    - PathRAG traversal for troubleshooting paths
+    - Entity-aware search (error codes, components, parameters)
+    - Circuit breaker pattern for graceful degradation
+    - Result caching with configurable TTL
+    """
+
+    def __init__(
+        self,
+        api_url: str = "http://localhost:8002",
+        timeout: float = 30.0,
+        enabled: bool = True
+    ):
+        self.api_url = api_url.rstrip("/")
+        self.timeout = timeout
+        self.enabled = enabled
+        self._client: Optional[httpx.AsyncClient] = None
+        self._available: Optional[bool] = None
+        self._last_check: float = 0
+        self._failure_count: int = 0
+        self._max_failures: int = 3
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create HTTP client with connection pooling."""
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                base_url=self.api_url,
+                timeout=self.timeout,
+                limits=httpx.Limits(max_connections=10)
+            )
+        return self._client
+
+    async def is_available(self) -> bool:
+        """Check if PDF API is available with caching."""
+        if not self.enabled:
+            return False
+
+        # Circuit breaker: too many failures
+        if self._failure_count >= self._max_failures:
+            # Reset after 5 minutes
+            if time.time() - self._last_check > 300:
+                self._failure_count = 0
+            else:
+                return False
+
+        # Cache availability for 60 seconds
+        if self._available is not None and time.time() - self._last_check < 60:
+            return self._available
+
+        try:
+            client = await self._get_client()
+            response = await client.get("/health", timeout=5.0)
+            self._available = response.status_code == 200
+            self._last_check = time.time()
+            if self._available:
+                self._failure_count = 0
+            return self._available
+        except Exception as e:
+            logger.warning(f"PDF API health check failed: {e}")
+            self._available = False
+            self._last_check = time.time()
+            self._failure_count += 1
+            return False
+
+    async def search(self, query: str, max_results: int = 10) -> List[WebSearchResult]:
+        """
+        Search FANUC technical documentation.
+
+        Args:
+            query: Search query (may include error codes)
+            max_results: Maximum number of results
+
+        Returns:
+            List of WebSearchResult from PDF documents
+        """
+        if not await self.is_available():
+            logger.debug("PDF API not available, skipping")
+            return []
+
+        try:
+            client = await self._get_client()
+
+            # Search the PDF knowledge base
+            response = await client.post(
+                "/search",
+                json={
+                    "query": query,
+                    "max_results": max_results,
+                    "include_context": True
+                }
+            )
+
+            if response.status_code != 200:
+                logger.warning(f"PDF API search failed: {response.status_code}")
+                self._failure_count += 1
+                return []
+
+            data = response.json()
+            results = []
+
+            for doc in data.get("results", []):
+                # Convert PDF result to WebSearchResult format
+                results.append(WebSearchResult(
+                    title=doc.get("title", "FANUC Technical Document"),
+                    url=doc.get("source_url", f"pdf://{doc.get('document_id', 'unknown')}"),
+                    snippet=doc.get("content", doc.get("snippet", ""))[:500],
+                    source_domain="fanuc.pdf.local",
+                    relevance_score=doc.get("score", 0.8),
+                    # Mark as technical documentation
+                    metadata={
+                        "source_type": "technical_documentation",
+                        "document_type": doc.get("document_type", "manual"),
+                        "page_number": doc.get("page_number"),
+                        "section": doc.get("section")
+                    }
+                ))
+
+            logger.info(f"PDF API returned {len(results)} results for: {query[:50]}")
+            return results
+
+        except Exception as e:
+            logger.error(f"PDF API search error: {e}")
+            self._failure_count += 1
+            return []
+
+    async def get_troubleshooting_path(
+        self,
+        error_code: str,
+        context: Optional[str] = None
+    ) -> List[dict]:
+        """
+        Get step-by-step troubleshooting path for an error code.
+
+        Uses PathRAG traversal to build resolution steps.
+
+        Args:
+            error_code: FANUC error code (e.g., SRVO-063)
+            context: Optional context for better path selection
+
+        Returns:
+            List of troubleshooting steps with sources
+        """
+        if not await self.is_available():
+            return []
+
+        try:
+            client = await self._get_client()
+
+            response = await client.post(
+                "/traverse",
+                json={
+                    "error_code": error_code,
+                    "context": context,
+                    "max_depth": 5
+                }
+            )
+
+            if response.status_code != 200:
+                logger.warning(f"PDF API traverse failed: {response.status_code}")
+                return []
+
+            data = response.json()
+            return data.get("steps", [])
+
+        except Exception as e:
+            logger.error(f"PDF API traverse error: {e}")
+            return []
+
+    async def close(self):
+        """Close the HTTP client."""
+        if self._client:
+            await self._client.aclose()
+            self._client = None
+
+
 class SearcherAgent:
     """
     Main searcher agent that orchestrates web search across providers.

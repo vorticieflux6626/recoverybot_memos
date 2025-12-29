@@ -743,6 +743,283 @@ Remedy: {info.remedy}
 
         return await self.retriever.get_troubleshooting_path(error_code)
 
+    # ============================================
+    # PDF EXTRACTION TOOLS INTEGRATION
+    # ============================================
+
+    async def sync_with_pdf_api(
+        self,
+        pdf_api_url: str = "http://localhost:8002",
+        error_codes: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Sync entities from PDF Extraction Tools API to local corpus.
+
+        This pulls structured data from the PDF knowledge base and merges
+        it with the local corpus, enabling cross-referencing between
+        web-sourced knowledge and official documentation.
+
+        Args:
+            pdf_api_url: URL of PDF Extraction Tools API
+            error_codes: Optional list of specific codes to sync (syncs all if None)
+
+        Returns:
+            Sync statistics including entities synced, new, and updated
+        """
+        stats = {
+            "synced": 0,
+            "new": 0,
+            "updated": 0,
+            "failed": 0,
+            "pdf_api_available": False
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Check if PDF API is available
+                try:
+                    health = await client.get(f"{pdf_api_url}/health")
+                    stats["pdf_api_available"] = health.status_code == 200
+                except Exception:
+                    logger.warning("PDF API not available for sync")
+                    return stats
+
+                if not stats["pdf_api_available"]:
+                    return stats
+
+                # Determine which codes to sync
+                codes_to_sync = error_codes or []
+
+                # If no specific codes, get list from PDF API
+                if not codes_to_sync:
+                    try:
+                        response = await client.get(f"{pdf_api_url}/entities?type=error_code&limit=1000")
+                        if response.status_code == 200:
+                            data = response.json()
+                            codes_to_sync = [e["name"] for e in data.get("entities", [])]
+                    except Exception as e:
+                        logger.warning(f"Failed to get entity list from PDF API: {e}")
+
+                # Sync each code
+                for code in codes_to_sync:
+                    try:
+                        response = await client.get(f"{pdf_api_url}/entities/{code}")
+                        if response.status_code != 200:
+                            stats["failed"] += 1
+                            continue
+
+                        pdf_entity = response.json()
+
+                        # Check if entity exists locally
+                        existing = self.corpus.find_entity_by_name(code)
+
+                        if existing:
+                            # Update existing entity with PDF metadata
+                            existing.metadata = existing.metadata or {}
+                            existing.metadata["pdf_node_id"] = pdf_entity.get("node_id")
+                            existing.metadata["pdf_synced"] = datetime.now(timezone.utc).isoformat()
+                            existing.metadata["pdf_confidence"] = pdf_entity.get("confidence", 0.9)
+                            self.corpus.update_entity(existing)
+                            stats["updated"] += 1
+                        else:
+                            # Create new entity from PDF data
+                            new_entity = DomainEntity(
+                                entity_id=f"pdf_{code}",
+                                entity_type=TroubleshootingEntityType.ERROR_CODE,
+                                name=code,
+                                description=pdf_entity.get("description", ""),
+                                attributes={
+                                    "category": pdf_entity.get("category"),
+                                    "severity": pdf_entity.get("severity"),
+                                    "source": "pdf_extraction_tools"
+                                },
+                                metadata={
+                                    "pdf_node_id": pdf_entity.get("node_id"),
+                                    "pdf_synced": datetime.now(timezone.utc).isoformat()
+                                }
+                            )
+                            self.corpus.add_entity(new_entity)
+                            stats["new"] += 1
+
+                        stats["synced"] += 1
+
+                    except Exception as e:
+                        logger.error(f"Failed to sync {code}: {e}")
+                        stats["failed"] += 1
+
+                logger.info(f"PDF sync complete: {stats}")
+                return stats
+
+        except Exception as e:
+            logger.error(f"PDF sync failed: {e}")
+            stats["error"] = str(e)
+            return stats
+
+    async def enrich_from_pdf_api(
+        self,
+        error_code: str,
+        pdf_api_url: str = "http://localhost:8002"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Enrich an existing corpus entity with data from PDF API.
+
+        Fetches troubleshooting path and related entities from the PDF
+        knowledge base and adds them as relations in the local corpus.
+
+        Args:
+            error_code: The error code to enrich
+            pdf_api_url: URL of PDF Extraction Tools API
+
+        Returns:
+            Enrichment result with added relations, or None if failed
+        """
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Get troubleshooting path from PDF API
+                response = await client.post(
+                    f"{pdf_api_url}/traverse",
+                    json={"error_code": error_code, "max_depth": 5}
+                )
+
+                if response.status_code != 200:
+                    return None
+
+                path_data = response.json()
+                steps = path_data.get("steps", [])
+
+                if not steps:
+                    return None
+
+                result = {
+                    "error_code": error_code,
+                    "steps_added": 0,
+                    "relations_added": 0
+                }
+
+                # Ensure error code entity exists locally
+                error_entity = self.corpus.find_entity_by_name(error_code)
+                if not error_entity:
+                    await self.ingest_alarm_code(error_code)
+                    error_entity = self.corpus.find_entity_by_name(error_code)
+
+                if not error_entity:
+                    return None
+
+                # Add each step as a relation
+                prev_entity = error_entity
+                for idx, step in enumerate(steps):
+                    step_name = step.get("action", step.get("title", f"Step {idx + 1}"))
+                    step_type = step.get("type", "procedure")
+
+                    # Create or find step entity
+                    step_entity = self.corpus.find_entity_by_name(step_name)
+                    if not step_entity:
+                        step_entity = DomainEntity(
+                            entity_id=f"pdf_step_{error_code}_{idx}",
+                            entity_type=TroubleshootingEntityType.PROCEDURE,
+                            name=step_name,
+                            description=step.get("description", ""),
+                            attributes={
+                                "step_order": idx + 1,
+                                "source": "pdf_extraction_tools"
+                            },
+                            metadata={
+                                "pdf_step_id": step.get("step_id"),
+                                "pdf_enriched": datetime.now(timezone.utc).isoformat()
+                            }
+                        )
+                        self.corpus.add_entity(step_entity)
+                        result["steps_added"] += 1
+
+                    # Add relation from previous to this step
+                    relation = DomainRelation(
+                        relation_id=f"pdf_rel_{error_code}_{idx}",
+                        source_id=prev_entity.entity_id,
+                        target_id=step_entity.entity_id,
+                        relation_type=TroubleshootingRelationType.RESOLVES if idx == len(steps) - 1 else TroubleshootingRelationType.RELATED,
+                        confidence=step.get("confidence", 0.85),
+                        metadata={
+                            "source": "pdf_extraction_tools",
+                            "step_order": idx + 1
+                        }
+                    )
+                    self.corpus.add_relation(relation)
+                    result["relations_added"] += 1
+
+                    prev_entity = step_entity
+
+                logger.info(f"Enriched {error_code} from PDF API: {result}")
+                return result
+
+        except Exception as e:
+            logger.error(f"Failed to enrich {error_code} from PDF API: {e}")
+            return None
+
+    async def cross_reference_pdf_nodes(
+        self,
+        pdf_api_url: str = "http://localhost:8002"
+    ) -> Dict[str, Any]:
+        """
+        Create cross-references between local corpus entities and PDF graph nodes.
+
+        This enables queries to seamlessly blend local knowledge with
+        PDF documentation by linking equivalent entities.
+
+        Returns:
+            Statistics on cross-references created
+        """
+        stats = {
+            "entities_checked": 0,
+            "cross_refs_created": 0,
+            "already_linked": 0
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Get all local error code entities
+                error_codes = [
+                    e for e in self.corpus.entities.values()
+                    if e.entity_type == TroubleshootingEntityType.ERROR_CODE
+                ]
+
+                for entity in error_codes:
+                    stats["entities_checked"] += 1
+
+                    # Skip if already linked
+                    if entity.metadata and entity.metadata.get("pdf_node_id"):
+                        stats["already_linked"] += 1
+                        continue
+
+                    # Try to find matching PDF node
+                    try:
+                        response = await client.get(
+                            f"{pdf_api_url}/entities/search",
+                            params={"name": entity.name, "type": "error_code"}
+                        )
+
+                        if response.status_code == 200:
+                            matches = response.json().get("matches", [])
+                            if matches:
+                                # Link to best match
+                                best_match = matches[0]
+                                entity.metadata = entity.metadata or {}
+                                entity.metadata["pdf_node_id"] = best_match.get("node_id")
+                                entity.metadata["pdf_match_score"] = best_match.get("score", 1.0)
+                                entity.metadata["pdf_cross_ref"] = datetime.now(timezone.utc).isoformat()
+                                self.corpus.update_entity(entity)
+                                stats["cross_refs_created"] += 1
+
+                    except Exception as e:
+                        logger.debug(f"Failed to cross-ref {entity.name}: {e}")
+
+                logger.info(f"PDF cross-referencing complete: {stats}")
+                return stats
+
+        except Exception as e:
+            logger.error(f"PDF cross-referencing failed: {e}")
+            stats["error"] = str(e)
+            return stats
+
     def get_stats(self) -> Dict[str, Any]:
         """Get corpus builder statistics"""
         corpus_stats = self.corpus.get_stats()
