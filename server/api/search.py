@@ -4575,6 +4575,7 @@ class ChatGatewayRequest(BaseModel):
     conversation_history: Optional[List[Dict[str, str]]] = None
     force_agentic: bool = False  # Force agentic search even if classifier says otherwise
     model: str = "qwen3:8b"  # LLM model for direct responses
+    preset: str = "full"  # UniversalOrchestrator preset: minimal, balanced, enhanced, research, full
 
 
 class ChatGatewayResponse(BaseModel):
@@ -4834,12 +4835,13 @@ async def _execute_simple_search(
     emitter,
     graph_state
 ):
-    """Execute simple web search with synthesis using UniversalOrchestrator (full preset)."""
+    """Execute simple web search with synthesis using UniversalOrchestrator."""
     from agentic import events
     import time
 
-    # Use "full" preset for maximum features and detailed SSE events
-    preset = "full"
+    # Use preset from request (defaults to "full" for maximum features)
+    preset = request.preset
+    logger.info(f"[{request_id}] Simple search using preset: {preset}")
     orchestrator = await get_universal_orchestrator(preset)
 
     # Pass the event emitter to the orchestrator for detailed phase events
@@ -4916,9 +4918,10 @@ async def _execute_agentic_pipeline(
     from agentic import events
     import time
 
-    # Use the UniversalOrchestrator with "full" preset for maximum strength
-    # This provides 38 features including HyDE, CRAG, Self-RAG, and experience distillation
-    preset = "full"
+    # Use preset from request (defaults to "full" for maximum features)
+    # Full provides 38 features including HyDE, CRAG, Self-RAG, and experience distillation
+    preset = request.preset
+    logger.info(f"[{request_id}] Agentic pipeline using preset: {preset}")
     orchestrator = await get_universal_orchestrator(preset)
 
     # Pass the event emitter to the orchestrator so it can emit detailed phase events
