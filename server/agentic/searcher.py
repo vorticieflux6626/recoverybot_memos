@@ -150,6 +150,22 @@ class SearXNGSearchProvider(SearchProvider):
         self.base_url = base_url.rstrip("/")
         self._available = None  # Cache availability check
         self._available_checked_at = 0  # Timestamp of last check
+        self._client: Optional[httpx.AsyncClient] = None  # Shared HTTP client
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create the shared HTTP client with connection pooling."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=30.0,
+                limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
+            )
+        return self._client
+
+    async def close(self) -> None:
+        """Close the HTTP client and release resources."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     @property
     def available(self) -> bool:
@@ -251,16 +267,17 @@ class SearXNGSearchProvider(SearchProvider):
                 return self._available
 
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(
-                    f"{self.base_url}/search",
-                    params={"q": "test", "format": "json"}
-                )
-                self._available = response.status_code == 200
-                self._available_checked_at = current_time
-                if self._available:
-                    logger.info(f"SearXNG available at {self.base_url}")
-        except Exception as e:
+            client = await self._get_client()
+            response = await client.get(
+                f"{self.base_url}/search",
+                params={"q": "test", "format": "json"},
+                timeout=5.0  # Override timeout for availability check
+            )
+            self._available = response.status_code == 200
+            self._available_checked_at = current_time
+            if self._available:
+                logger.info(f"SearXNG available at {self.base_url}")
+        except (httpx.HTTPError, httpx.TimeoutException) as e:
             logger.warning(f"SearXNG not available: {e}")
             self._available = False
             self._available_checked_at = current_time
@@ -296,91 +313,91 @@ class SearXNGSearchProvider(SearchProvider):
                 detected_type = query_type or self.detect_query_type(query)
                 logger.info(f"Query type detected: {detected_type}, using engines: {engines}")
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                # SearXNG aggregates multiple pages if we request more results
-                # Each page typically has 10 results, so we may need multiple pages
-                all_results = []
-                seen_urls = set()
+            client = await self._get_client()
+            # SearXNG aggregates multiple pages if we request more results
+            # Each page typically has 10 results, so we may need multiple pages
+            all_results = []
+            seen_urls = set()
 
-                # Request up to 3 pages if needed to get max_results
-                pages_needed = min(3, (max_results + 9) // 10)
+            # Request up to 3 pages if needed to get max_results
+            pages_needed = min(3, (max_results + 9) // 10)
 
-                for page in range(1, pages_needed + 1):
-                    response = await client.get(
-                        f"{self.base_url}/search",
-                        params={
-                            "q": query,
-                            "format": "json",
-                            "engines": engines,
-                            "language": "en-US",
-                            "pageno": page
-                        }
-                    )
-
-                    if response.status_code != 200:
-                        logger.warning(f"SearXNG page {page} failed: {response.status_code}")
-                        break
-
-                    data = response.json()
-                    page_results = data.get("results", [])
-                    logger.debug(f"SearXNG page {page} returned {len(page_results)} results")
-
-                    # Process unresponsive engines (rate limits, CAPTCHAs, timeouts)
-                    unresponsive = data.get("unresponsive_engines", [])
-                    if unresponsive:
-                        metrics.record_unresponsive_engines(unresponsive)
-                        logger.info(f"SearXNG unresponsive engines: {unresponsive}")
-
-                    # Record successful engines based on results
-                    engine_result_counts = {}
-                    for item in page_results:
-                        item_engines = item.get("engines", [])
-                        for eng in item_engines:
-                            engine_result_counts[eng] = engine_result_counts.get(eng, 0) + 1
-
-                    for eng, count in engine_result_counts.items():
-                        metrics.record_engine_result(eng, success=True, results_count=count)
-
-                    for item in page_results:
-                        url = item.get("url", "")
-                        if url and url not in seen_urls:
-                            seen_urls.add(url)
-                            all_results.append(item)
-                            if len(all_results) >= max_results:
-                                break
-
-                    if len(all_results) >= max_results:
-                        break
-
-                # Convert to WebSearchResult objects
-                results = []
-                for item in all_results[:max_results]:
-                    url = item.get("url", "")
-                    domain = urlparse(url).netloc.replace("www.", "")
-
-                    # Calculate score based on position and engine count
-                    engines = item.get("engines", ["searxng"])
-                    # SearXNG can return scores > 1, cap to 0.9 to leave room for boost
-                    base_score = min(0.9, item.get("score", 0.7))
-
-                    # Boost for multi-engine results (cap total at 1.0)
-                    if len(engines) > 1:
-                        base_score = min(1.0, base_score + 0.05 * len(engines))
-
-                    results.append(WebSearchResult(
-                        title=item.get("title", ""),
-                        url=url,
-                        snippet=item.get("content", ""),
-                        source_domain=domain,
-                        relevance_score=base_score
-                    ))
-
-                duration_ms = (time.time() - start_time) * 1000
-                metrics.record_search(
-                    "searxng", query, len(results), duration_ms, success=True
+            for page in range(1, pages_needed + 1):
+                response = await client.get(
+                    f"{self.base_url}/search",
+                    params={
+                        "q": query,
+                        "format": "json",
+                        "engines": engines,
+                        "language": "en-US",
+                        "pageno": page
+                    }
                 )
-                logger.info(f"SearXNG returned {len(results)} results for: {query[:50]}")
-                return results
+
+                if response.status_code != 200:
+                    logger.warning(f"SearXNG page {page} failed: {response.status_code}")
+                    break
+
+                data = response.json()
+                page_results = data.get("results", [])
+                logger.debug(f"SearXNG page {page} returned {len(page_results)} results")
+
+                # Process unresponsive engines (rate limits, CAPTCHAs, timeouts)
+                unresponsive = data.get("unresponsive_engines", [])
+                if unresponsive:
+                    metrics.record_unresponsive_engines(unresponsive)
+                    logger.info(f"SearXNG unresponsive engines: {unresponsive}")
+
+                # Record successful engines based on results
+                engine_result_counts = {}
+                for item in page_results:
+                    item_engines = item.get("engines", [])
+                    for eng in item_engines:
+                        engine_result_counts[eng] = engine_result_counts.get(eng, 0) + 1
+
+                for eng, count in engine_result_counts.items():
+                    metrics.record_engine_result(eng, success=True, results_count=count)
+
+                for item in page_results:
+                    url = item.get("url", "")
+                    if url and url not in seen_urls:
+                        seen_urls.add(url)
+                        all_results.append(item)
+                        if len(all_results) >= max_results:
+                            break
+
+                if len(all_results) >= max_results:
+                    break
+
+            # Convert to WebSearchResult objects
+            results = []
+            for item in all_results[:max_results]:
+                url = item.get("url", "")
+                domain = urlparse(url).netloc.replace("www.", "")
+
+                # Calculate score based on position and engine count
+                engines = item.get("engines", ["searxng"])
+                # SearXNG can return scores > 1, cap to 0.9 to leave room for boost
+                base_score = min(0.9, item.get("score", 0.7))
+
+                # Boost for multi-engine results (cap total at 1.0)
+                if len(engines) > 1:
+                    base_score = min(1.0, base_score + 0.05 * len(engines))
+
+                results.append(WebSearchResult(
+                    title=item.get("title", ""),
+                    url=url,
+                    snippet=item.get("content", ""),
+                    source_domain=domain,
+                    relevance_score=base_score
+                ))
+
+            duration_ms = (time.time() - start_time) * 1000
+            metrics.record_search(
+                "searxng", query, len(results), duration_ms, success=True
+            )
+            logger.info(f"SearXNG returned {len(results)} results for: {query[:50]}")
+            return results
 
         except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
@@ -407,6 +424,22 @@ class BraveSearchProvider(SearchProvider):
         import os
         self.api_key = api_key or os.getenv("BRAVE_API_KEY")
         self.available = bool(self.api_key)
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create the shared HTTP client."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=15.0,
+                limits=httpx.Limits(max_connections=50, max_keepalive_connections=10)
+            )
+        return self._client
+
+    async def close(self) -> None:
+        """Close the HTTP client and release resources."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     async def search(self, query: str, max_results: int = 5) -> List[WebSearchResult]:
         if not self.available:
@@ -424,32 +457,32 @@ class BraveSearchProvider(SearchProvider):
                 "safesearch": "moderate"
             }
 
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.get(
-                    self.BASE_URL,
-                    headers=headers,
-                    params=params
-                )
+            client = await self._get_client()
+            response = await client.get(
+                self.BASE_URL,
+                headers=headers,
+                params=params
+            )
 
-                if response.status_code == 200:
-                    data = response.json()
-                    results = []
+            if response.status_code == 200:
+                data = response.json()
+                results = []
 
-                    for item in data.get("web", {}).get("results", [])[:max_results]:
-                        domain = urlparse(item.get("url", "")).netloc
-                        results.append(WebSearchResult(
-                            title=item.get("title", ""),
-                            url=item.get("url", ""),
-                            snippet=item.get("description", ""),
-                            source_domain=domain,
-                            relevance_score=0.8  # Brave results are generally high quality
-                        ))
+                for item in data.get("web", {}).get("results", [])[:max_results]:
+                    domain = urlparse(item.get("url", "")).netloc
+                    results.append(WebSearchResult(
+                        title=item.get("title", ""),
+                        url=item.get("url", ""),
+                        snippet=item.get("description", ""),
+                        source_domain=domain,
+                        relevance_score=0.8  # Brave results are generally high quality
+                    ))
 
-                    logger.info(f"Brave search returned {len(results)} results for: {query[:50]}")
-                    return results
-                else:
-                    logger.warning(f"Brave search failed: {response.status_code}")
-                    return []
+                logger.info(f"Brave search returned {len(results)} results for: {query[:50]}")
+                return results
+            else:
+                logger.warning(f"Brave search failed: {response.status_code}")
+                return []
 
         except Exception as e:
             logger.error(f"Brave search error: {e}")
@@ -468,6 +501,24 @@ class DuckDuckGoProvider(SearchProvider):
     BASE_URL = "https://html.duckduckgo.com/html/"
     MAX_RETRIES = 2
 
+    def __init__(self):
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create the shared HTTP client."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=15.0,
+                limits=httpx.Limits(max_connections=50, max_keepalive_connections=10)
+            )
+        return self._client
+
+    async def close(self) -> None:
+        """Close the HTTP client and release resources."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
+
     async def search(self, query: str, max_results: int = 5) -> List[WebSearchResult]:
         metrics = get_search_metrics()
         start_time = time.time()
@@ -485,45 +536,45 @@ class DuckDuckGoProvider(SearchProvider):
                 }
                 data = {"q": query}
 
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    response = await client.post(
-                        self.BASE_URL,
-                        headers=headers,
-                        data=data,
-                        follow_redirects=True
+                client = await self._get_client()
+                response = await client.post(
+                    self.BASE_URL,
+                    headers=headers,
+                    data=data,
+                    follow_redirects=True
+                )
+
+                duration_ms = (time.time() - start_time) * 1000
+
+                if response.status_code == 200:
+                    html = response.text
+                    results = self._parse_results(html, max_results)
+                    metrics.record_search(
+                        "duckduckgo", query, len(results), duration_ms, success=True
                     )
+                    metrics.reset_rate_limit("duckduckgo")
+                    return results
 
-                    duration_ms = (time.time() - start_time) * 1000
+                elif response.status_code == 202:
+                    backoff = metrics.record_rate_limit("duckduckgo")
+                    if attempt < self.MAX_RETRIES:
+                        wait_time = min(backoff, 10)  # Max 10s wait between retries
+                        logger.info(f"DuckDuckGo rate limited, retrying in {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                        start_time = time.time()  # Reset timer for next attempt
+                        continue
+                    metrics.record_search(
+                        "duckduckgo", query, 0, duration_ms, success=False,
+                        error="rate_limited"
+                    )
+                    return []
 
-                    if response.status_code == 200:
-                        html = response.text
-                        results = self._parse_results(html, max_results)
-                        metrics.record_search(
-                            "duckduckgo", query, len(results), duration_ms, success=True
-                        )
-                        metrics.reset_rate_limit("duckduckgo")
-                        return results
-
-                    elif response.status_code == 202:
-                        backoff = metrics.record_rate_limit("duckduckgo")
-                        if attempt < self.MAX_RETRIES:
-                            wait_time = min(backoff, 10)  # Max 10s wait between retries
-                            logger.info(f"DuckDuckGo rate limited, retrying in {wait_time}s...")
-                            await asyncio.sleep(wait_time)
-                            start_time = time.time()  # Reset timer for next attempt
-                            continue
-                        metrics.record_search(
-                            "duckduckgo", query, 0, duration_ms, success=False,
-                            error="rate_limited"
-                        )
-                        return []
-
-                    else:
-                        metrics.record_search(
-                            "duckduckgo", query, 0, duration_ms, success=False,
-                            error=f"http_{response.status_code}"
-                        )
-                        return []
+                else:
+                    metrics.record_search(
+                        "duckduckgo", query, 0, duration_ms, success=False,
+                        error=f"http_{response.status_code}"
+                    )
+                    return []
 
             except Exception as e:
                 duration_ms = (time.time() - start_time) * 1000

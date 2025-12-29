@@ -356,55 +356,56 @@ class ContentScraper:
                 import fitz  # PyMuPDF
 
                 doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-                text_parts = []
+                try:
+                    text_parts = []
 
-                for page_num in range(min(doc.page_count, 50)):  # Limit to 50 pages
-                    page = doc[page_num]
-                    text = page.get_text()
-                    if text.strip():
-                        text_parts.append(f"--- Page {page_num + 1} ---\n{text}")
+                    for page_num in range(min(doc.page_count, 50)):  # Limit to 50 pages
+                        page = doc[page_num]
+                        text = page.get_text()
+                        if text.strip():
+                            text_parts.append(f"--- Page {page_num + 1} ---\n{text}")
 
-                    # Extract images from this page
-                    if extract_images and PILLOW_AVAILABLE:
-                        try:
-                            image_list = page.get_images(full=True)
-                            for img_idx, img_info in enumerate(image_list[:5]):  # Max 5 images per page
-                                xref = img_info[0]
-                                try:
-                                    base_image = doc.extract_image(xref)
-                                    image_bytes = base_image["image"]
-                                    image_ext = base_image["ext"]
+                        # Extract images from this page
+                        if extract_images and PILLOW_AVAILABLE:
+                            try:
+                                image_list = page.get_images(full=True)
+                                for img_idx, img_info in enumerate(image_list[:5]):  # Max 5 images per page
+                                    xref = img_info[0]
+                                    try:
+                                        base_image = doc.extract_image(xref)
+                                        image_bytes = base_image["image"]
+                                        image_ext = base_image["ext"]
 
-                                    # Convert to PIL Image for processing
-                                    img = Image.open(io.BytesIO(image_bytes))
+                                        # Convert to PIL Image for processing
+                                        img = Image.open(io.BytesIO(image_bytes))
 
-                                    # Skip very small images (likely icons/bullets)
-                                    if img.width < 100 or img.height < 100:
-                                        continue
+                                        # Skip very small images (likely icons/bullets)
+                                        if img.width < 100 or img.height < 100:
+                                            continue
 
-                                    # Convert to base64 for vision model
-                                    buffered = io.BytesIO()
-                                    img_format = "PNG" if image_ext.lower() in ["png"] else "JPEG"
-                                    if img.mode in ("RGBA", "P"):
-                                        img = img.convert("RGB")
-                                    img.save(buffered, format=img_format, quality=85)
-                                    img_base64 = base64.b64encode(buffered.getvalue()).decode()
+                                        # Convert to base64 for vision model
+                                        buffered = io.BytesIO()
+                                        img_format = "PNG" if image_ext.lower() in ["png"] else "JPEG"
+                                        if img.mode in ("RGBA", "P"):
+                                            img = img.convert("RGB")
+                                        img.save(buffered, format=img_format, quality=85)
+                                        img_base64 = base64.b64encode(buffered.getvalue()).decode()
 
-                                    images.append({
-                                        "page": page_num + 1,
-                                        "index": img_idx,
-                                        "width": img.width,
-                                        "height": img.height,
-                                        "format": img_format.lower(),
-                                        "base64": img_base64,
-                                        "description": f"Image from page {page_num + 1}"
-                                    })
-                                except Exception as e:
-                                    logger.debug(f"Failed to extract image {img_idx} from page {page_num + 1}: {e}")
-                        except Exception as e:
-                            logger.debug(f"Failed to get images from page {page_num + 1}: {e}")
-
-                doc.close()
+                                        images.append({
+                                            "page": page_num + 1,
+                                            "index": img_idx,
+                                            "width": img.width,
+                                            "height": img.height,
+                                            "format": img_format.lower(),
+                                            "base64": img_base64,
+                                            "description": f"Image from page {page_num + 1}"
+                                        })
+                                    except Exception as e:
+                                        logger.debug(f"Failed to extract image {img_idx} from page {page_num + 1}: {e}")
+                            except Exception as e:
+                                logger.debug(f"Failed to get images from page {page_num + 1}: {e}")
+                finally:
+                    doc.close()
                 content = "\n\n".join(text_parts)
 
                 # Truncate if too long
