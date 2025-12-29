@@ -567,4 +567,4 @@ __all__ = [
     # "PRESET_CONFIGS",
 ]
 
-__version__ = "0.27.2"  # Fix _metrics lazy init, FANUC 10-query test suite, AGENTIC_OVERVIEW.md documentation
+__version__ = "0.28.0"  # Phase 1 Adaptive Refinement: Heuristic baseline confidence for meaningful scores without evaluation features

@@ -21,6 +21,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
 import uuid
 
+from urllib.parse import urlparse
 from .models import (
     SearchRequest,
     SearchResponse,
@@ -249,6 +250,93 @@ class BaseSearchPipeline(ABC):
             confidence += min(content_depth * 0.05, 0.05)
 
         return min(1.0, max(0.0, confidence))
+
+    def calculate_heuristic_confidence(
+        self,
+        sources: List[Dict[str, Any]],
+        synthesis: str,
+        query: str,
+        max_sources: int = 10
+    ) -> float:
+        """
+        Calculate confidence without requiring evaluation features.
+
+        This is used as a baseline when reflection, RAGAS, and other
+        evaluation features are disabled (e.g., minimal preset).
+
+        Based on observable metrics that don't require LLM evaluation:
+        - Source coverage (how many sources found)
+        - Domain diversity and trust
+        - Content depth (synthesis length)
+        - Query term coverage
+
+        Returns a confidence score between 0.0 and 1.0.
+        """
+        # Source coverage (0-0.30): More sources = higher confidence
+        source_count = len(sources)
+        source_score = min(source_count / max_sources, 1.0) * 0.30
+
+        # Domain diversity and trust (0-0.25)
+        trusted_domains = {
+            'robot-forum.com', 'fanucamerica.com', 'fanuc.co.jp',
+            'stackoverflow.com', 'github.com', 'arxiv.org', 'reddit.com',
+            'wikipedia.org', 'docs.python.org', 'developer.mozilla.org',
+            'learn.microsoft.com', 'cloud.google.com', 'aws.amazon.com',
+            'huggingface.co', 'pytorch.org', 'tensorflow.org',
+            'medium.com', 'towardsdatascience.com', 'ieee.org'
+        }
+
+        domains = set()
+        trusted_count = 0
+        for src in sources:
+            url = src.get('url', '') or src.get('link', '')
+            if url:
+                try:
+                    netloc = urlparse(url).netloc.lower()
+                    # Remove www. prefix
+                    if netloc.startswith('www.'):
+                        netloc = netloc[4:]
+                    domains.add(netloc)
+                    # Check if it's a trusted domain
+                    if any(trusted in netloc for trusted in trusted_domains):
+                        trusted_count += 1
+                except:
+                    pass
+
+        # Domain diversity score (unique domains / total sources)
+        diversity = len(domains) / max(source_count, 1)
+        # Trust score (trusted sources / total sources)
+        trust = trusted_count / max(source_count, 1)
+        # Combined diversity score
+        diversity_score = (diversity * 0.5 + trust * 0.5) * 0.25
+
+        # Content depth (0-0.25): Longer synthesis suggests more thorough answer
+        expected_length = 2000  # chars for a good response
+        synthesis_length = len(synthesis) if synthesis else 0
+        # Allow up to 1.5x expected to cap bonus
+        depth_ratio = min(synthesis_length / expected_length, 1.5) / 1.5
+        depth_score = depth_ratio * 0.25
+
+        # Query term coverage (0-0.20): How many query terms appear in synthesis
+        if synthesis and query:
+            # Simple word-based coverage
+            query_terms = set(word.lower() for word in query.split() if len(word) > 2)
+            synthesis_lower = synthesis.lower()
+            covered = sum(1 for term in query_terms if term in synthesis_lower)
+            coverage = covered / max(len(query_terms), 1)
+        else:
+            coverage = 0.0
+        coverage_score = coverage * 0.20
+
+        total = source_score + diversity_score + depth_score + coverage_score
+
+        logger.debug(
+            f"Heuristic confidence: sources={source_score:.2f}, "
+            f"diversity={diversity_score:.2f}, depth={depth_score:.2f}, "
+            f"coverage={coverage_score:.2f}, total={total:.2f}"
+        )
+
+        return min(1.0, max(0.0, total))
 
     def get_confidence_level(self, score: float) -> ConfidenceLevel:
         """Map confidence score to confidence level."""

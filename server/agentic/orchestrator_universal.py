@@ -985,9 +985,24 @@ class UniversalOrchestrator(BaseSearchPipeline):
             )
             synthesis_ms = int((time.time() - synthesis_start) * 1000)
 
-            # Calculate base confidence from source diversity
+            # Calculate confidence using heuristic baseline
+            # This provides meaningful scores even when evaluation features are disabled
             source_diversity = len(state.unique_domains) / max(request.max_sources, 1)
-            confidence = 0.5 + (0.3 * min(source_diversity, 1.0))  # Base confidence 0.5-0.8
+            sources = self._get_sources(state)
+
+            # Use heuristic confidence as baseline (works without LLM evaluation)
+            heuristic_conf = self.calculate_heuristic_confidence(
+                sources=sources,
+                synthesis=synthesis or "",
+                query=request.query,
+                max_sources=request.max_sources
+            )
+
+            # Simple confidence as fallback
+            simple_conf = 0.5 + (0.3 * min(source_diversity, 1.0))
+
+            # Use the better of heuristic or simple confidence
+            confidence = max(heuristic_conf, simple_conf)
 
             await emitter.emit(events.synthesis_complete(
                 request_id, len(synthesis) if synthesis else 0, confidence
@@ -1354,9 +1369,25 @@ class UniversalOrchestrator(BaseSearchPipeline):
         ragas_score = ragas_result.overall_score if ragas_result else None
         source_diversity = len(state.unique_domains) / max(request.max_sources, 1)
 
-        final_confidence = self.calculate_blended_confidence(
-            verifier_conf, reflection_conf, ragas_score, source_diversity
+        # Calculate heuristic confidence as baseline (works without LLM evaluation)
+        sources = self._get_sources(state)
+        heuristic_conf = self.calculate_heuristic_confidence(
+            sources=sources,
+            synthesis=synthesis or "",
+            query=request.query,
+            max_sources=request.max_sources
         )
+
+        # Use heuristic as floor for confidence when evaluation features are disabled
+        if reflection_conf is None and ragas_score is None:
+            # No evaluation features - use max of heuristic and verifier
+            final_confidence = max(heuristic_conf, verifier_conf)
+        else:
+            # Evaluation features enabled - blend normally, but ensure floor
+            blended = self.calculate_blended_confidence(
+                verifier_conf, reflection_conf, ragas_score, source_diversity
+            )
+            final_confidence = max(heuristic_conf, blended)
 
         # PHASE 12: Learning (if enabled)
         if self.config.enable_experience_distillation and final_confidence >= 0.75:
