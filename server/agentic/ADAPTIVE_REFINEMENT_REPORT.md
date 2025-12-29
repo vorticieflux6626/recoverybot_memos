@@ -605,11 +605,66 @@ After implementation, target:
 1. ~~**Immediate** (Phase 1): Fix confidence calculation~~ ✅ DONE
 2. ~~**Short-term** (Phase 2): Adaptive refinement loop~~ ✅ DONE
 3. ~~**Medium-term** (Phase 3): Decision router~~ ✅ DONE
-4. **Future** (Phase 4): Full iterative loop execution (currently generates queries but doesn't re-execute)
+4. ~~**Final** (Phase 4): Full iterative loop execution~~ ✅ DONE
+
+### ✅ Phase 4: Full Iterative Loop Execution (COMPLETED 2025-12-29)
+
+**Implementation Details:**
+
+The adaptive refinement loop now fully executes refinement queries when confidence is below threshold:
+
+1. **Iterative Loop Structure**:
+   - Loops up to `max_refinement_attempts` (default: 3) times
+   - Breaks early if confidence reaches `min_confidence_threshold` (default: 0.5)
+   - Tracks best result across all iterations
+
+2. **Per-Iteration Steps**:
+   - Identify gaps using FAIR-RAG Structured Evidence Assessment
+   - Grade answer quality (1-5 scale, AT-RAG style)
+   - Decide refinement action (COMPLETE/REFINE_QUERY/WEB_FALLBACK/DECOMPOSE/ACCEPT_BEST)
+   - Execute chosen action
+
+3. **REFINE_QUERY Action**:
+   - Generates targeted gap-filling queries
+   - Executes web searches for new queries
+   - Scrapes new URLs (avoids duplicates)
+   - Accumulates all scraped content
+   - Re-synthesizes with combined content
+   - Re-calculates confidence
+
+4. **WEB_FALLBACK Action**:
+   - Reformulates query with "detailed technical information"
+   - Triggers fresh web search
+
+5. **DECOMPOSE Action**:
+   - Breaks complex query into 3 sub-questions
+   - Searches each sub-question independently
+
+6. **Best Result Tracking**:
+   - Tracks best synthesis, confidence, and sources across iterations
+   - Falls back to best result if final iteration is worse
+
+**SSE Events Emitted:**
+- `adaptive_refinement_start`: Loop initiated with threshold and max attempts
+- `gaps_identified`: Per-iteration gaps found
+- `answer_graded`: Per-iteration quality grade
+- `adaptive_refinement_decision`: Routing decision made
+- `refinement_queries_generated`: New queries created
+- `iteration_start_detailed`: Search iteration progress
+- `search_results`: New search results
+- `evaluating_urls` / `urls_evaluated`: URL scraping progress
+- `graph_node_entered/completed`: Synthesis phase tracking
+- `adaptive_refinement_complete`: Final result with confidence delta
+
+**Integration:**
+- Orchestrator Phase 8 now runs full loop instead of single-pass
+- All content accumulated across refinement iterations
+- Best result preserved even if final iteration regresses
 
 ---
 
 *Report generated: 2025-12-29*
-*Module version: 0.28.1*
+*Module version: 0.29.0*
 *Phase 1 completed: 2025-12-29*
 *Phase 2 & 3 completed: 2025-12-29*
+*Phase 4 completed: 2025-12-29*

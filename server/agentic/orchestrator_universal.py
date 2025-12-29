@@ -60,6 +60,10 @@ from .self_reflection import SelfReflectionAgent, ReflectionResult, get_self_ref
 from .retrieval_evaluator import RetrievalEvaluator, RetrievalEvaluation, CorrectiveAction
 from .experience_distiller import ExperienceDistiller, get_experience_distiller
 from .classifier_feedback import ClassifierFeedback, get_classifier_feedback
+from .adaptive_refinement import (
+    AdaptiveRefinementEngine, RefinementDecision, GapAnalysis, AnswerAssessment,
+    get_adaptive_refinement_engine
+)
 from .sufficient_context import (
     SufficientContextClassifier,
     get_sufficient_context_classifier
@@ -1068,76 +1072,199 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
                 await emitter.emit(graph_node_completed(request_id, "reflect", True, graph, reflect_ms))
 
-            # PHASE 8: Adaptive Refinement (if enabled and confidence below threshold)
+            # PHASE 8: Adaptive Refinement Loop (if enabled and confidence below threshold)
+            logger.info(f"[{request_id}] Adaptive refinement check: enabled={self.config.enable_adaptive_refinement}, "
+                       f"confidence={confidence:.2%}, threshold={self.config.min_confidence_threshold:.2%}, "
+                       f"trigger={self.config.enable_adaptive_refinement and confidence < self.config.min_confidence_threshold}")
             if self.config.enable_adaptive_refinement and confidence < self.config.min_confidence_threshold:
-                refine_start = time.time()
+                refine_loop_start = time.time()
                 initial_confidence = confidence
+                refinement_attempt = 0
+                all_scraped_content = scraped_content.copy()  # Accumulate all content
+                best_synthesis = synthesis
+                best_confidence = confidence
+                best_sources = sources.copy()
 
                 await emitter.emit(events.adaptive_refinement_start(
                     request_id, confidence, self.config.min_confidence_threshold,
                     self.config.max_refinement_attempts
                 ))
 
-                # Identify gaps in synthesis
-                gap_analysis = None
-                if self.config.enable_gap_detection and synthesis:
-                    gap_analysis = await self.adaptive_refinement.identify_gaps(
-                        request.query, synthesis, sources
+                decision = RefinementDecision.REFINE_QUERY  # Default decision
+
+                # Iterative refinement loop
+                while (refinement_attempt < self.config.max_refinement_attempts and
+                       confidence < self.config.min_confidence_threshold):
+
+                    refinement_attempt += 1
+                    refine_iter_start = time.time()
+
+                    logger.info(f"[{request_id}] Refinement attempt {refinement_attempt}/{self.config.max_refinement_attempts}, "
+                               f"current confidence: {confidence:.2%}")
+
+                    # Step 1: Identify gaps in synthesis
+                    gap_analysis = None
+                    if self.config.enable_gap_detection and synthesis:
+                        gap_analysis = await self.adaptive_refinement.identify_gaps(
+                            request.query, synthesis, sources
+                        )
+                        await emitter.emit(events.gaps_identified(
+                            request_id, gap_analysis.gaps, gap_analysis.coverage_score
+                        ))
+
+                    # Step 2: Grade answer quality
+                    answer_assessment = None
+                    if self.config.enable_answer_grading and synthesis:
+                        answer_assessment = await self.adaptive_refinement.grade_answer(
+                            request.query, synthesis
+                        )
+                        await emitter.emit(events.answer_graded(
+                            request_id,
+                            answer_assessment.grade.value,
+                            answer_assessment.score,
+                            answer_assessment.gaps
+                        ))
+
+                    # Step 3: Decide refinement action
+                    decision = self.adaptive_refinement.decide_refinement_action(
+                        confidence=confidence,
+                        source_count=len(sources),
+                        query_complexity=state.query_analysis.complexity.value if state.query_analysis else "medium",
+                        iteration=refinement_attempt,
+                        gap_analysis=gap_analysis,
+                        answer_assessment=answer_assessment
                     )
-                    await emitter.emit(events.gaps_identified(
-                        request_id, gap_analysis.gaps, gap_analysis.coverage_score
+
+                    await emitter.emit(events.adaptive_refinement_decision(
+                        request_id, decision.value, confidence, refinement_attempt,
+                        f"Gap count: {len(gap_analysis.gaps) if gap_analysis else 0}, "
+                        f"Grade: {answer_assessment.grade.value if answer_assessment else 'N/A'}"
                     ))
 
-                # Grade answer quality
-                answer_assessment = None
-                if self.config.enable_answer_grading and synthesis:
-                    answer_assessment = await self.adaptive_refinement.grade_answer(
-                        request.query, synthesis
-                    )
-                    await emitter.emit(events.answer_graded(
-                        request_id,
-                        answer_assessment.grade.value,
-                        answer_assessment.score,
-                        answer_assessment.gaps
-                    ))
+                    # Step 4: Execute refinement based on decision
+                    if decision == RefinementDecision.COMPLETE:
+                        logger.info(f"[{request_id}] Refinement complete - confidence sufficient")
+                        break
 
-                # Decide refinement action
-                decision = self.adaptive_refinement.decide_refinement_action(
-                    confidence=confidence,
-                    source_count=len(sources),
-                    query_complexity=state.query_analysis.complexity.value if state.query_analysis else "medium",
-                    iteration=0,
-                    gap_analysis=gap_analysis,
-                    answer_assessment=answer_assessment
-                )
+                    elif decision == RefinementDecision.ACCEPT_BEST:
+                        logger.info(f"[{request_id}] Accepting best result after {refinement_attempt} attempts")
+                        synthesis = best_synthesis
+                        confidence = best_confidence
+                        sources = best_sources
+                        break
 
-                await emitter.emit(events.adaptive_refinement_decision(
-                    request_id, decision.value, confidence, 0,
-                    f"Gap count: {len(gap_analysis.gaps) if gap_analysis else 0}, "
-                    f"Grade: {answer_assessment.grade.value if answer_assessment else 'N/A'}"
-                ))
+                    elif decision == RefinementDecision.REFINE_QUERY and gap_analysis and gap_analysis.gaps:
+                        # Generate and execute gap-filling queries
+                        refinement_queries = await self.adaptive_refinement.generate_refinement_queries(
+                            request.query, gap_analysis.gaps, synthesis
+                        )
 
-                # If decision is to refine, generate queries (but don't execute in this iteration)
-                if decision == RefinementDecision.REFINE_QUERY and gap_analysis:
-                    refinement_queries = await self.adaptive_refinement.generate_refinement_queries(
-                        request.query, gap_analysis.gaps, synthesis
-                    )
-                    if refinement_queries:
+                        if not refinement_queries:
+                            logger.info(f"[{request_id}] No refinement queries generated, accepting current result")
+                            break
+
                         await emitter.emit(events.refinement_queries_generated(
                             request_id, refinement_queries
                         ))
-                        # Store for potential future use
-                        search_trace.append({
-                            "step": "adaptive_refinement",
-                            "decision": decision.value,
-                            "gaps": gap_analysis.gaps if gap_analysis else [],
-                            "refinement_queries": refinement_queries
-                        })
 
-                refine_ms = int((time.time() - refine_start) * 1000)
+                        # Execute searches for refinement queries
+                        await emitter.emit(events.iteration_start_detailed(
+                            request_id, refinement_attempt, self.config.max_refinement_attempts,
+                            len(refinement_queries), state.sources_consulted
+                        ))
+
+                        # Add refinement queries to pending and execute
+                        state.pending_queries = refinement_queries
+                        await self._phase_search_execution(
+                            request, state, scratchpad, search_trace, request_id, pre_act_plan=None
+                        )
+
+                        await emitter.emit(events.search_results(
+                            request_id, len(state.raw_results), state.sources_consulted
+                        ))
+
+                        # Scrape new URLs (only new ones not already scraped)
+                        new_urls = [r.url for r in state.raw_results[-10:] if hasattr(r, 'url') and r.url]
+                        scraped_urls = {getattr(r, 'url', '') for r in state.raw_results[:-10] if hasattr(r, 'url')}
+                        urls_to_scrape = [u for u in new_urls if u not in scraped_urls][:5]
+
+                        if urls_to_scrape:
+                            await emitter.emit(events.evaluating_urls(request_id, len(urls_to_scrape)))
+                            new_scraped = await self._phase_content_scraping(
+                                request, state, scratchpad, search_trace, request_id
+                            )
+                            all_scraped_content.extend(new_scraped)
+                            await emitter.emit(events.urls_evaluated(
+                                request_id, len(new_scraped), len(urls_to_scrape)
+                            ))
+
+                        # Re-synthesize with all accumulated content
+                        if all_scraped_content:
+                            await emitter.emit(graph_node_entered(request_id, "synthesize", graph))
+                            synth_start = time.time()
+                            synthesis = await self._phase_synthesis(
+                                request, state, all_scraped_content, scratchpad, search_trace, request_id
+                            )
+                            synth_ms = int((time.time() - synth_start) * 1000)
+                            await emitter.emit(graph_node_completed(request_id, "synthesize", True, graph, synth_ms))
+
+                            # Re-calculate confidence with new synthesis
+                            sources = self._get_sources(state)
+                            confidence = self.calculate_confidence(synthesis, sources, request.query)
+
+                            # Track best result
+                            if confidence > best_confidence:
+                                best_synthesis = synthesis
+                                best_confidence = confidence
+                                best_sources = sources.copy()
+
+                            logger.info(f"[{request_id}] Refinement {refinement_attempt}: new confidence {confidence:.2%} "
+                                       f"(best: {best_confidence:.2%})")
+
+                    elif decision == RefinementDecision.WEB_FALLBACK:
+                        # Trigger fresh web search with reformulated query
+                        reformulated = f"{request.query} detailed technical information"
+                        state.pending_queries = [reformulated]
+                        await self._phase_search_execution(
+                            request, state, scratchpad, search_trace, request_id, pre_act_plan=None
+                        )
+                        logger.info(f"[{request_id}] Web fallback executed")
+
+                    elif decision == RefinementDecision.DECOMPOSE:
+                        # Decompose into sub-questions and search each
+                        sub_questions = await self.adaptive_refinement.decompose_query(request.query)
+                        if sub_questions:
+                            state.pending_queries = sub_questions[:3]
+                            await self._phase_search_execution(
+                                request, state, scratchpad, search_trace, request_id, pre_act_plan=None
+                            )
+                            logger.info(f"[{request_id}] Query decomposed into {len(sub_questions)} sub-questions")
+
+                    search_trace.append({
+                        "step": f"adaptive_refinement_{refinement_attempt}",
+                        "decision": decision.value,
+                        "gaps": gap_analysis.gaps if gap_analysis else [],
+                        "confidence_before": initial_confidence if refinement_attempt == 1 else confidence,
+                        "confidence_after": confidence
+                    })
+
+                    refine_iter_ms = int((time.time() - refine_iter_start) * 1000)
+                    logger.debug(f"[{request_id}] Refinement iteration {refinement_attempt} took {refine_iter_ms}ms")
+
+                # Use best result if current is worse
+                if best_confidence > confidence:
+                    synthesis = best_synthesis
+                    confidence = best_confidence
+                    sources = best_sources
+
+                refine_total_ms = int((time.time() - refine_loop_start) * 1000)
                 await emitter.emit(events.adaptive_refinement_complete(
-                    request_id, decision.value, initial_confidence, confidence, 1, refine_ms
+                    request_id, decision.value,
+                    initial_confidence, confidence, refinement_attempt, refine_total_ms
                 ))
+
+                logger.info(f"[{request_id}] Adaptive refinement complete: {initial_confidence:.2%} → {confidence:.2%} "
+                           f"in {refinement_attempt} attempts ({refine_total_ms}ms)")
 
             # Build final response
             execution_time_ms = int((time.time() - start_time) * 1000)
@@ -1484,6 +1611,147 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 verifier_conf, reflection_conf, ragas_score, source_diversity
             )
             final_confidence = max(heuristic_conf, blended)
+
+        # PHASE 11.5: Adaptive Refinement Loop (if enabled and confidence below threshold)
+        logger.info(f"[{request_id}] Adaptive refinement check: enabled={self.config.enable_adaptive_refinement}, "
+                   f"confidence={final_confidence:.2%}, threshold={self.config.min_confidence_threshold:.2%}")
+
+        if self.config.enable_adaptive_refinement and final_confidence < self.config.min_confidence_threshold:
+            refine_loop_start = time.time()
+            initial_confidence = final_confidence
+            refinement_attempt = 0
+            all_scraped_content = scraped_content.copy()
+            best_synthesis = synthesis
+            best_confidence = final_confidence
+            best_sources = sources.copy()
+
+            logger.info(f"[{request_id}] Starting adaptive refinement loop "
+                       f"(confidence {final_confidence:.2%} < threshold {self.config.min_confidence_threshold:.2%})")
+
+            decision = RefinementDecision.REFINE_QUERY  # Default
+
+            while (refinement_attempt < self.config.max_refinement_attempts and
+                   final_confidence < self.config.min_confidence_threshold):
+
+                refinement_attempt += 1
+
+                logger.info(f"[{request_id}] Refinement attempt {refinement_attempt}/{self.config.max_refinement_attempts}")
+
+                # Identify gaps
+                gap_analysis = None
+                if self.config.enable_gap_detection and synthesis:
+                    gap_analysis = await self.adaptive_refinement.identify_gaps(
+                        request.query, synthesis, sources
+                    )
+
+                # Grade answer
+                answer_assessment = None
+                if self.config.enable_answer_grading and synthesis:
+                    answer_assessment = await self.adaptive_refinement.grade_answer(
+                        request.query, synthesis
+                    )
+
+                # Decide action
+                decision = self.adaptive_refinement.decide_refinement_action(
+                    confidence=final_confidence,
+                    source_count=len(sources),
+                    query_complexity=query_analysis.complexity.value if query_analysis else "medium",
+                    iteration=refinement_attempt,
+                    gap_analysis=gap_analysis,
+                    answer_assessment=answer_assessment
+                )
+
+                logger.info(f"[{request_id}] Refinement decision: {decision.value}")
+
+                if decision == RefinementDecision.COMPLETE:
+                    break
+
+                elif decision == RefinementDecision.ACCEPT_BEST:
+                    synthesis = best_synthesis
+                    final_confidence = best_confidence
+                    sources = best_sources
+                    break
+
+                elif decision == RefinementDecision.REFINE_QUERY and gap_analysis and gap_analysis.gaps:
+                    refinement_queries = await self.adaptive_refinement.generate_refinement_queries(
+                        request.query, gap_analysis.gaps, synthesis
+                    )
+
+                    if not refinement_queries:
+                        break
+
+                    # Execute refinement searches
+                    state.pending_queries = refinement_queries
+                    await self._phase_search_execution(
+                        request, state, scratchpad, search_trace, request_id, pre_act_plan=None
+                    )
+
+                    # Scrape new content
+                    new_scraped = await self._phase_content_scraping(
+                        request, state, scratchpad, search_trace, request_id
+                    )
+                    all_scraped_content.extend(new_scraped)
+
+                    # Re-synthesize
+                    synthesis = await self._phase_synthesis(
+                        request, state, all_scraped_content, search_trace, request_id,
+                        thought_context=thought_context, domain_context=domain_context
+                    )
+
+                    # Re-calculate confidence
+                    sources = self._get_sources(state)
+                    heuristic_conf = self.calculate_heuristic_confidence(
+                        sources, synthesis or "", request.query, request.max_sources
+                    )
+                    final_confidence = max(heuristic_conf, verifier_conf)
+
+                    if final_confidence > best_confidence:
+                        best_synthesis = synthesis
+                        best_confidence = final_confidence
+                        best_sources = sources.copy()
+
+                    logger.info(f"[{request_id}] Refinement {refinement_attempt}: "
+                               f"confidence {final_confidence:.2%} (best: {best_confidence:.2%})")
+
+                elif decision == RefinementDecision.WEB_FALLBACK:
+                    state.pending_queries = [f"{request.query} detailed technical information"]
+                    await self._phase_search_execution(
+                        request, state, scratchpad, search_trace, request_id, pre_act_plan=None
+                    )
+
+                elif decision == RefinementDecision.DECOMPOSE:
+                    sub_questions = await self.adaptive_refinement.decompose_query(request.query)
+                    if sub_questions:
+                        state.pending_queries = sub_questions[:3]
+                        await self._phase_search_execution(
+                            request, state, scratchpad, search_trace, request_id, pre_act_plan=None
+                        )
+
+                search_trace.append({
+                    "step": f"adaptive_refinement_{refinement_attempt}",
+                    "decision": decision.value,
+                    "gaps": gap_analysis.gaps if gap_analysis else [],
+                    "confidence_before": initial_confidence if refinement_attempt == 1 else final_confidence,
+                    "confidence_after": final_confidence
+                })
+
+            # Use best result
+            if best_confidence > final_confidence:
+                synthesis = best_synthesis
+                final_confidence = best_confidence
+                sources = best_sources
+
+            refine_total_ms = int((time.time() - refine_loop_start) * 1000)
+            logger.info(f"[{request_id}] Adaptive refinement complete: {initial_confidence:.2%} → {final_confidence:.2%} "
+                       f"in {refinement_attempt} attempts ({refine_total_ms}ms)")
+
+            enhancement_metadata["adaptive_refinement"] = {
+                "enabled": True,
+                "attempts": refinement_attempt,
+                "initial_confidence": initial_confidence,
+                "final_confidence": final_confidence,
+                "duration_ms": refine_total_ms
+            }
 
         # PHASE 12: Learning (if enabled)
         if self.config.enable_experience_distillation and final_confidence >= 0.75:

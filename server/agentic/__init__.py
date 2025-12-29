@@ -586,4 +586,4 @@ __all__ = [
     # "PRESET_CONFIGS",
 ]
 
-__version__ = "0.28.1"  # Phase 2 Adaptive Refinement: Gap identification, answer grading, decision router
+__version__ = "0.29.0"  # Phase 4 Adaptive Refinement: Full iterative loop execution
