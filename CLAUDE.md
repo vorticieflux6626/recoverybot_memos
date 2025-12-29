@@ -49,6 +49,52 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 14** | Context Utilization Tracking | ✅ **COMPLETE** |
 | **Phase 15** | Orchestrator Consolidation | ✅ **COMPLETE** |
 | **Phase 16** | Android SSE Streaming Integration | ✅ **COMPLETE** |
+| **Phase 17** | Context Curation Pipeline | ✅ **COMPLETE** |
+
+#### ✅ Phase 17: Context Curation Pipeline (Completed 2025-12-29)
+
+Implemented InfoGain-RAG and Context-Picker inspired context curation for high-quality retrieval:
+
+**New Modules:**
+- **`information_gain.py`**: Document Information Gain (DIG) scoring
+  - Measures document utility by impact on generation confidence
+  - Categories: positive, neutral, negative
+  - Based on Kuaishou InfoGain-RAG (+17.9% over naive RAG)
+- **`redundancy_detector.py`**: Semantic similarity clustering
+  - Agglomerative clustering with 0.85 similarity threshold
+  - Selection methods: central, quality, authority, DIG, length
+- **`context_curator.py`**: Main curation pipeline
+  - 4 presets: fast, balanced, thorough, technical
+  - Two-stage filtering (recall-oriented → precision prune)
+  - Coverage analysis against decomposed questions
+
+**Key Features:**
+- **DIG Scoring**: LLM-evaluated document relevance, quality, novelty, and contradiction detection
+- **Redundancy Detection**: Embedding-based clustering with best representative selection
+- **Coverage Analysis**: Tracks which decomposed questions are answered by curated content
+- **Confidence Estimation**: Combined metric from DIG scores and coverage ratio
+
+**Orchestrator Integration:**
+- New feature flag: `enable_context_curation` (default: False)
+- New config: `context_curation_preset` ("fast", "balanced", "thorough", "technical")
+- Enabled by default in ENHANCED, RESEARCH, FULL presets
+- Runs between scraping and verification phases
+
+**Preset Configuration:**
+| Preset | enable_context_curation | context_curation_preset |
+|--------|------------------------|-------------------------|
+| minimal | False | balanced |
+| balanced | False | balanced |
+| enhanced | True | balanced |
+| research | True | thorough |
+| full | True | technical |
+
+**Research Basis:**
+- InfoGain-RAG: Document utility measurement (+17.9% improvement)
+- Context-Picker (arXiv 2512.14465): Two-stage filtering with Leave-One-Out pruning
+- RAGAS: Deduplication patterns
+
+**Module Version**: `agentic/__init__.py` → v0.30.0
 
 #### ✅ Phase 16: Android SSE Streaming Integration (Completed 2025-12-29)
 
