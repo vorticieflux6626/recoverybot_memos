@@ -54,6 +54,73 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 19** | Enhanced Query Generation (FLARE, RQ-RAG) | ✅ **COMPLETE** |
 | **Phase 20** | Scratchpad Enhancement (A-MEM, RAISE) | ✅ **COMPLETE** |
 | **Phase 21** | Template Reuse Optimization (Meta-Buffer, Self-Discover) | ✅ **COMPLETE** |
+| **Phase 22** | PDF Extraction Tools Integration | ✅ **COMPLETE** |
+
+#### ✅ Phase 22: PDF Extraction Tools Integration (Completed 2025-12-29)
+
+Integrated PDF Extraction Tools API for FANUC technical documentation RAG:
+
+**New Components:**
+- **`core/document_graph_service.py`**: Bridge to PDF Extraction Tools API
+  - Async HTTP client with connection pooling (aiohttp)
+  - Circuit breaker pattern with health check
+  - In-memory caching with configurable TTL
+  - Graceful degradation when API unavailable
+- **`agentic/schemas/fanuc_schema.py`**: FANUC entity extraction patterns
+  - 15+ error code pattern categories (SRVO, MOTN, SYST, INTP, HOST, etc.)
+  - Component patterns (axes J1-J9, motors, encoders, cables)
+  - Parameter patterns ($PARAM_GROUP, etc.)
+  - Helper functions: `is_fanuc_query()`, `extract_error_codes()`, `get_error_category()`
+
+**API Endpoints:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/search/technical/health` | GET | Check PDF API health status |
+| `/api/v1/search/technical/search` | POST | Search FANUC technical documentation |
+| `/api/v1/search/technical/troubleshoot` | POST | Get troubleshooting path for error code |
+| `/api/v1/search/technical/context` | GET | Get formatted context for RAG injection |
+
+**Configuration Settings (config/settings.py):**
+```python
+pdf_api_url: str = "http://localhost:8002"
+pdf_api_timeout: int = 30
+pdf_api_enabled: bool = True
+pdf_api_max_results: int = 10
+pdf_api_cache_ttl: int = 300  # 5 minutes
+```
+
+**Feature Flag:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `enable_technical_docs` | False | FANUC manual RAG via PDF API |
+
+**Preset Configuration:**
+| Preset | enable_technical_docs |
+|--------|----------------------|
+| minimal | False |
+| balanced | False |
+| enhanced | True |
+| research | True |
+| full | True |
+
+**Orchestrator Integration:**
+- `_document_graph_service`: Lazy-loaded service component
+- `_get_document_graph_service()`: Getter for lazy initialization
+- `_search_technical_docs()`: Helper method for automatic FANUC query detection
+
+**Key Features:**
+- **Automatic Detection**: Uses regex patterns to detect FANUC-related queries
+- **Error Code Extraction**: Extracts error codes like SRVO-063, MOTN-023
+- **PathRAG Traversal**: Builds troubleshooting paths through document graph
+- **Context Formatting**: Returns LLM-ready context strings with source citations
+- **Circuit Breaker**: Prevents cascade failures when PDF API is down
+
+**External Dependency:**
+- **PDF Extraction Tools API** running on port 8002
+- Location: `/home/sparkone/sdd/PDF_Extraction_Tools`
+- Integration plan: `PDF_Extraction_Tools/MEMOS_INTEGRATION_PLAN.md`
+
+**Module Version**: `agentic/__init__.py` → v0.35.0
 
 #### ✅ Phase 21: Template Reuse Optimization (Completed 2025-12-29)
 

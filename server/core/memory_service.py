@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from dataclasses import dataclass
 
-from mem0 import Memory as Mem0Client
+from mem0 import Memory as Mem0Memory
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func, and_, or_
 from sqlalchemy.orm import selectinload
@@ -50,6 +50,9 @@ class MemoryService:
         self.encryption_service = EncryptionService()
         
         # Initialize Mem0 client
+        # Note: Mem0 0.1.114+ requires specific config structure
+        # - Use ollama_base_url (not base_url) for Ollama provider
+        # - Use Memory.from_config() instead of Memory(config=)
         self.mem0_config = {
             "vector_store": {
                 "provider": "pgvector",
@@ -65,20 +68,21 @@ class MemoryService:
                 "provider": "ollama",
                 "config": {
                     "model": self.settings.ollama_embedding_model,
-                    "base_url": self.settings.ollama_base_url,
+                    "ollama_base_url": self.settings.ollama_base_url,
                 }
             },
             "llm": {
-                "provider": "ollama", 
+                "provider": "ollama",
                 "config": {
                     "model": self.settings.ollama_model,
-                    "base_url": self.settings.ollama_base_url,
+                    "ollama_base_url": self.settings.ollama_base_url,
                 }
-            }
+            },
+            "version": "v1.1"
         }
-        
+
         try:
-            self.mem0_client = Mem0Client(config=self.mem0_config)
+            self.mem0_client = Mem0Memory.from_config(config_dict=self.mem0_config)
             logger.info("Mem0 client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize Mem0 client: {e}")

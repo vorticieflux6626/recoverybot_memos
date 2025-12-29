@@ -21,7 +21,9 @@ from models.quest import (
 )
 from models.user import UserMemorySettings
 from config.settings import get_settings
-from core.memory_service_fixed import memory_service_fixed
+# NOTE: Bug fixed 2025-12-29 - Mem0 now works, use real memory_service
+# Previously used memory_service_fixed due to Mem0 initialization failure
+from core.memory_service import memory_service
 from config.logging_config import get_audit_logger
 
 logger = logging.getLogger(__name__)
@@ -36,7 +38,7 @@ class QuestServiceFixed:
     """
     
     def __init__(self):
-        self.memory_service = memory_service_fixed
+        self.memory_service = memory_service
         
     async def _get_user_completed_quest_ids(self, session: AsyncSession, user_id: str) -> List[UUID]:
         """Get list of quest IDs the user has completed"""
@@ -345,23 +347,23 @@ class QuestServiceFixed:
             stats.level = self._calculate_level(stats.total_points)
             
             # Store as memory milestone
+            # NOTE: memory_service creates its own session, so we don't pass one
             try:
+                from models.memory import MemoryType
                 await self.memory_service.store_memory(
-                    session,
                     user_id=user_quest.user_id,
                     content=f"Completed quest: {user_quest.quest.title}",
-                    memory_type="milestone",
+                    memory_type=MemoryType.MILESTONE,
                     metadata={
                         "quest_id": str(user_quest.quest_id),
                         "quest_title": user_quest.quest.title,
                         "points_earned": user_quest.points_earned,
-                        "category": user_quest.quest.category.value,
-                        "therapeutic_relevance": 0.8,  # Quest completions are highly relevant
-                        "crisis_level": 0.0,
-                        "consent_given": True,  # Assume consent for quest tracking
-                        "recovery_stage": "maintenance"  # Quest completion implies progress
+                        "category": user_quest.quest.category.value
                     },
-                    is_milestone=True
+                    therapeutic_relevance=0.8,  # Quest completions are highly relevant
+                    recovery_stage="maintenance",  # Quest completion implies progress
+                    consent_given=True,  # Assume consent for quest tracking
+                    tags=["milestone", "quest_completion", user_quest.quest.category.value]
                 )
             except Exception as e:
                 logger.error(f"Failed to store quest completion memory: {e}")

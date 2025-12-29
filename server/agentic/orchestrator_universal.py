@@ -117,6 +117,15 @@ from .actor_factory import (
 )
 from .multi_agent import MultiAgentOrchestrator
 from .scraper import VisionAnalyzer, DeepReader
+
+# PDF Extraction Tools integration
+from core.document_graph_service import (
+    DocumentGraphService,
+    get_document_graph_service,
+    DocumentSearchResult,
+    TroubleshootingStep
+)
+from .schemas.fanuc_schema import is_fanuc_query, extract_error_codes
 from .scratchpad import AgenticScratchpad, FindingType, QuestionStatus
 from .ttl_cache_manager import get_ttl_cache_manager, ToolType, ToolCallContext
 from .kv_cache_service import KVCacheService, get_kv_cache_service
@@ -362,6 +371,9 @@ class FeatureConfig:
     enable_domain_corpus: bool = False     # Domain-specific knowledge
     enable_embedding_aggregator: bool = False  # Domain routing
 
+    # Technical Documentation (Layer 3) - PDF Extraction Tools integration
+    enable_technical_docs: bool = False    # FANUC manual RAG via PDF API
+
     # Enhanced patterns (Layer 3)
     enable_pre_act_planning: bool = False  # Multi-step planning
     enable_stuck_detection: bool = False   # Loop recovery
@@ -428,7 +440,9 @@ PRESET_CONFIGS = {
         enable_thought_library=True,
         enable_domain_corpus=True,
         enable_embedding_aggregator=True,
-        enable_deep_reading=True
+        enable_deep_reading=True,
+        # Layer 3 technical documentation (PDF API)
+        enable_technical_docs=True
     ),
     OrchestratorPreset.RESEARCH: FeatureConfig(
         # All enhanced features
@@ -473,7 +487,9 @@ PRESET_CONFIGS = {
         enable_progress_tracking=True,
         # Graph cache (workflow-aware KV cache optimization)
         enable_graph_cache=True,
-        enable_prefetching=True
+        enable_prefetching=True,
+        # Layer 3 technical documentation (PDF API)
+        enable_technical_docs=True
     ),
     OrchestratorPreset.FULL: FeatureConfig(
         # ALL features enabled
@@ -528,7 +544,9 @@ PRESET_CONFIGS = {
         enable_graph_cache=True,
         enable_prefetching=True,
         # Layer 4 - Debug
-        enable_llm_debug=True
+        enable_llm_debug=True,
+        # Layer 3 technical documentation (PDF API)
+        enable_technical_docs=True
     )
 }
 
@@ -618,6 +636,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
         self._graph_cache: Optional[GraphCacheIntegration] = None
         self._agent_graph = None
         self._scratchpad_cache = None
+        self._document_graph_service: Optional[DocumentGraphService] = None
 
         # Additional feature instances
         self._mixed_precision_service: Optional[MixedPrecisionEmbeddingService] = None
@@ -1202,6 +1221,52 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 ollama_url=self.ollama_url
             )
         return self._reasoning_composer
+
+    def _get_document_graph_service(self) -> DocumentGraphService:
+        """Lazy initialize document graph service for PDF API integration."""
+        if self._document_graph_service is None:
+            self._document_graph_service = get_document_graph_service()
+        return self._document_graph_service
+
+    async def _search_technical_docs(self, query: str) -> Optional[str]:
+        """
+        Search technical documentation via PDF API if enabled and relevant.
+
+        Returns formatted context string if FANUC-related content found,
+        None otherwise.
+        """
+        if not self.config.enable_technical_docs:
+            return None
+
+        # Check if query is FANUC-related
+        if not is_fanuc_query(query):
+            return None
+
+        try:
+            doc_service = self._get_document_graph_service()
+
+            # Extract error codes for troubleshooting path
+            error_codes = extract_error_codes(query)
+
+            if error_codes:
+                # Use PathRAG for error resolution
+                context = await doc_service.get_context_for_rag(
+                    query=query,
+                    error_code=error_codes[0],  # Primary error code
+                    max_results=5
+                )
+            else:
+                # General documentation search
+                context = await doc_service.get_context_for_rag(
+                    query=query,
+                    max_results=5
+                )
+
+            return context if context else None
+
+        except Exception as e:
+            logger.warning(f"Technical docs search failed: {e}")
+            return None
 
     async def _retrieve_template(self, query: str, template_type: TemplateType = None):
         """

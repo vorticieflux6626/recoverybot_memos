@@ -771,4 +771,4 @@ __all__ = [
     "get_reasoning_composer",
 ]
 
-__version__ = "0.34.0"  # Phase 5 Template Reuse: Cross-session meta-buffer, Self-Discover reasoning composition
+__version__ = "0.35.0"  # Phase 22: PDF Extraction Tools integration for FANUC technical documentation RAG

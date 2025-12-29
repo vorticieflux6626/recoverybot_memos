@@ -5259,3 +5259,249 @@ async def _execute_agentic_pipeline(
         },
         graph_line=graph_state.to_line_simple()
     ))
+
+
+# =============================================================================
+# TECHNICAL DOCUMENTATION ENDPOINTS (PDF Extraction Tools Integration)
+# =============================================================================
+# These endpoints provide access to FANUC technical documentation via the
+# PDF Extraction Tools API running on port 8002.
+# =============================================================================
+
+from core.document_graph_service import (
+    DocumentGraphService,
+    get_document_graph_service,
+    DocumentSearchResult,
+    TroubleshootingStep
+)
+from agentic.schemas.fanuc_schema import (
+    is_fanuc_query,
+    extract_error_codes,
+    get_error_category
+)
+
+
+class TechnicalSearchRequest(BaseModel):
+    """Request model for technical documentation search."""
+    query: str
+    max_results: int = 10
+    include_related: bool = True
+
+
+class TechnicalSearchResponse(BaseModel):
+    """Response model for technical documentation search."""
+    success: bool
+    results: List[dict]
+    total_results: int
+    query: str
+    is_fanuc_query: bool
+    error_codes_detected: List[str]
+
+
+class TroubleshootRequest(BaseModel):
+    """Request model for troubleshooting path query."""
+    error_code: str
+    context: Optional[str] = None
+
+
+class TroubleshootResponse(BaseModel):
+    """Response model for troubleshooting path."""
+    success: bool
+    error_code: str
+    category: Optional[str]
+    steps: List[dict]
+    related_errors: List[str]
+
+
+# Cache for document graph service
+_document_graph_service: Optional[DocumentGraphService] = None
+
+
+async def get_doc_graph_service() -> DocumentGraphService:
+    """Get or create the document graph service instance."""
+    global _document_graph_service
+    if _document_graph_service is None:
+        _document_graph_service = get_document_graph_service()
+    return _document_graph_service
+
+
+@router.get("/technical/health")
+async def technical_health():
+    """
+    Check health status of PDF Extraction Tools API.
+
+    Returns:
+        Health status including API availability and response time.
+    """
+    try:
+        doc_service = await get_doc_graph_service()
+        health = await doc_service.health_check()
+        return JSONResponse(content={
+            "success": True,
+            "data": health,
+            "meta": {
+                "timestamp": datetime.utcnow().isoformat(),
+                "service": "pdf_extraction_tools"
+            }
+        })
+    except Exception as e:
+        logger.error(f"Technical health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "error": str(e),
+                "meta": {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "service": "pdf_extraction_tools"
+                }
+            }
+        )
+
+
+@router.post("/technical/search", response_model=TechnicalSearchResponse)
+async def search_technical_docs(request: TechnicalSearchRequest):
+    """
+    Search FANUC technical documentation.
+
+    This endpoint queries the PDF Extraction Tools API for relevant
+    documentation based on the query. Automatically detects error codes
+    and routes to appropriate search methods.
+
+    Args:
+        request: Search request with query and options
+
+    Returns:
+        Technical documentation results with source attribution.
+    """
+    try:
+        doc_service = await get_doc_graph_service()
+
+        # Detect if query is FANUC-related
+        fanuc_query = is_fanuc_query(request.query)
+        error_codes = extract_error_codes(request.query)
+
+        # Search documentation
+        results = await doc_service.search_documentation(
+            query=request.query,
+            max_results=request.max_results
+        )
+
+        return TechnicalSearchResponse(
+            success=True,
+            results=[r.model_dump() for r in results] if results else [],
+            total_results=len(results) if results else 0,
+            query=request.query,
+            is_fanuc_query=fanuc_query,
+            error_codes_detected=error_codes
+        )
+
+    except Exception as e:
+        logger.error(f"Technical search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/technical/troubleshoot", response_model=TroubleshootResponse)
+async def get_troubleshooting_path(request: TroubleshootRequest):
+    """
+    Get step-by-step troubleshooting path for a FANUC error code.
+
+    Uses PathRAG traversal to build a resolution path from the
+    knowledge graph of FANUC technical documentation.
+
+    Args:
+        request: Error code and optional context
+
+    Returns:
+        Ordered troubleshooting steps with sources.
+    """
+    try:
+        doc_service = await get_doc_graph_service()
+
+        # Get error category
+        category = get_error_category(request.error_code)
+
+        # Query troubleshooting path
+        steps = await doc_service.query_troubleshooting_path(
+            error_code=request.error_code,
+            context=request.context
+        )
+
+        # Find related error codes (same category)
+        related = []
+        if category:
+            # This would be populated from the PDF API's related errors
+            related = []  # TODO: Implement related errors lookup
+
+        return TroubleshootResponse(
+            success=True,
+            error_code=request.error_code,
+            category=category,
+            steps=[s.model_dump() for s in steps] if steps else [],
+            related_errors=related
+        )
+
+    except Exception as e:
+        logger.error(f"Troubleshooting path query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/technical/context")
+async def get_technical_context(
+    query: str = Query(..., description="Query to get technical context for"),
+    error_code: Optional[str] = Query(None, description="Optional error code"),
+    max_results: int = Query(5, description="Maximum results to include")
+):
+    """
+    Get formatted technical context for RAG injection.
+
+    Returns a formatted context string suitable for injection into
+    LLM prompts alongside web search results.
+
+    Args:
+        query: The user's query
+        error_code: Optional specific error code
+        max_results: Maximum documents to include
+
+    Returns:
+        Formatted context string ready for LLM injection.
+    """
+    try:
+        doc_service = await get_doc_graph_service()
+
+        # Check if query is FANUC-related
+        if not is_fanuc_query(query) and not error_code:
+            return JSONResponse(content={
+                "success": True,
+                "data": {
+                    "context": None,
+                    "reason": "Query not detected as FANUC-related"
+                },
+                "meta": {
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            })
+
+        # Get context for RAG
+        context = await doc_service.get_context_for_rag(
+            query=query,
+            error_code=error_code,
+            max_results=max_results
+        )
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "context": context,
+                "query": query,
+                "error_code": error_code,
+                "max_results": max_results
+            },
+            "meta": {
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Technical context retrieval failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

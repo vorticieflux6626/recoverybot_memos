@@ -43,7 +43,14 @@ class MemOSSettings(BaseSettings):
     ollama_port: int = 11434
     ollama_model: str = "llama3.3:70b"
     ollama_embedding_model: str = "mxbai-embed-large"
-    
+
+    # PDF Extraction Tools API (FANUC Technical Documentation)
+    pdf_api_url: str = "http://localhost:8002"
+    pdf_api_timeout: int = 30
+    pdf_api_enabled: bool = True
+    pdf_api_max_results: int = 10
+    pdf_api_cache_ttl: int = 300  # 5 minutes
+
     # Security Configuration
     jwt_secret_key: str = "recovery-bot-memOS-jwt-secret-key-for-authentication-2025"
     jwt_algorithm: str = "HS256"
@@ -180,5 +187,6 @@ if __name__ == "__main__":
     print(f"Database URL: {settings.database_url}")
     print(f"Redis URL: {settings.redis_url}")
     print(f"Ollama URL: {settings.ollama_base_url}")
+    print(f"PDF API URL: {settings.pdf_api_url} (enabled: {settings.pdf_api_enabled})")
     print(f"Storage Path: {settings.storage_path}")
     print(f"HIPAA Compliance: {settings.enable_audit_logging and settings.enable_encryption_at_rest}")
