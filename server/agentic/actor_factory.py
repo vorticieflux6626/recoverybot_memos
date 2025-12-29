@@ -398,11 +398,22 @@ class ActorFactory:
         best_model = max(model_scores.items(), key=lambda x: x[1])[0]
 
         # Verify model is available
+        # Filter out embedding models - they cannot generate text
+        embedding_patterns = [
+            "embedding", "embed", "bge-", "bge:", "minilm",
+            "arctic-embed", "snowflake", "nomic-embed",
+            "functiongemma", "embeddinggemma", "mxbai-embed"
+        ]
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.get(f"{self.ollama_url}/api/tags")
                 if response.status_code == 200:
-                    available = {m["name"] for m in response.json().get("models", [])}
+                    # Filter out embedding models from available list
+                    all_models = [m["name"] for m in response.json().get("models", [])]
+                    available = {
+                        m for m in all_models
+                        if not any(p in m.lower() for p in embedding_patterns)
+                    }
                     if best_model in available or any(best_model in m for m in available):
                         return best_model
         except Exception as e:

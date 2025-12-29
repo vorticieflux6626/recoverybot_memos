@@ -27,6 +27,9 @@ from typing import List, Optional, Dict, Any, Tuple
 
 import httpx
 
+from .metrics import get_performance_metrics
+from .context_limits import get_model_context_window
+
 logger = logging.getLogger("agentic.retrieval_evaluator")
 
 
@@ -487,8 +490,8 @@ Output JSON array of sub-questions:
 
         return [query]
 
-    async def _call_llm(self, prompt: str, max_tokens: int = 256) -> str:
-        """Call Ollama LLM"""
+    async def _call_llm(self, prompt: str, max_tokens: int = 256, request_id: str = "") -> str:
+        """Call Ollama LLM with context utilization tracking"""
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -504,7 +507,21 @@ Output JSON array of sub-questions:
                     }
                 )
                 if response.status_code == 200:
-                    return response.json().get("response", "")
+                    result = response.json().get("response", "")
+
+                    # Track context utilization
+                    metrics = get_performance_metrics()
+                    req_id = request_id or f"crag_{hash(prompt) % 10000}"
+                    metrics.record_context_utilization(
+                        request_id=req_id,
+                        agent_name="crag_evaluator",
+                        model_name=self.model,
+                        input_text=prompt,
+                        output_text=result,
+                        context_window=get_model_context_window(self.model)
+                    )
+
+                    return result
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
         return ""

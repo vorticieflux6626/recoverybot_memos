@@ -14,6 +14,9 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
+from .metrics import get_performance_metrics
+from .context_limits import get_model_context_window
+
 logger = logging.getLogger("agentic.query_classifier")
 
 
@@ -160,7 +163,17 @@ class QueryClassifier:
         ]
 
         # Models to skip (embedding models, vision-only models)
-        skip_patterns = ["embedding", "embed", "vision", "-vl"]
+        # Comprehensive list to prevent using non-generative models
+        skip_patterns = [
+            "embedding", "embed",           # General embedding models
+            "bge-", "bge_",                 # BGE embedding models
+            "minilm",                       # All-minilm models
+            "arctic-embed", "snowflake",    # Snowflake embedding
+            "nomic-embed",                  # Nomic embedding
+            "functiongemma", "embeddinggemma",  # Gemma embedding variants
+            "vision", "-vl",                # Vision-only models
+            "mxbai-embed",                  # MixedBread embedding
+        ]
 
         for model in preferred_models:
             # Check for exact match first
@@ -228,6 +241,17 @@ class QueryClassifier:
 
                     data = await resp.json()
                     response_text = data.get("response", "")
+
+                    # Track context utilization
+                    metrics = get_performance_metrics()
+                    metrics.record_context_utilization(
+                        request_id=f"classify_{hash(query) % 10000}",
+                        agent_name="query_classifier",
+                        model_name=model,
+                        input_text=prompt,
+                        output_text=response_text,
+                        context_window=get_model_context_window(model)
+                    )
 
                     # Parse the JSON response
                     return self._parse_classification(response_text, query)

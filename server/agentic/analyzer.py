@@ -21,7 +21,47 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import httpx
 
 from .models import QueryAnalysis, SearchPlan
-from .context_limits import get_analyzer_limits, ANALYZER_LIMITS
+from .context_limits import get_analyzer_limits, ANALYZER_LIMITS, get_model_context_window
+from .metrics import get_performance_metrics
+
+
+def extract_json_object(text: str) -> Optional[str]:
+    """
+    Extract a JSON object from text using proper brace matching.
+    Handles nested objects and arrays correctly.
+    """
+    # Find the first { character
+    start_idx = text.find('{')
+    if start_idx == -1:
+        return None
+
+    # Track brace depth to find matching closing brace
+    brace_count = 0
+    in_string = False
+    escape_next = False
+
+    for i, char in enumerate(text[start_idx:], start_idx):
+        if escape_next:
+            escape_next = False
+            continue
+
+        if char == '\\' and in_string:
+            escape_next = True
+            continue
+
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+
+        if not in_string:
+            if char == '{':
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    return text[start_idx:i + 1]
+
+    return None  # No matching closing brace found
 
 if TYPE_CHECKING:
     from .entity_tracker import EntityTracker, EntityState
@@ -54,7 +94,8 @@ class QueryAnalyzer:
     async def analyze(
         self,
         query: str,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        request_id: str = ""
     ) -> QueryAnalysis:
         """
         Analyze the user query to determine if web search is beneficial.
@@ -73,7 +114,7 @@ class QueryAnalyzer:
         prompt = self._build_analysis_prompt(query, context)
 
         try:
-            result = await self._call_ollama(prompt)
+            result = await self._call_ollama(prompt, request_id)
             analysis = self._parse_analysis(result, query)
             logger.info(f"Query analysis: requires_search={analysis.requires_search}, "
                        f"type={analysis.query_type}, complexity={analysis.estimated_complexity}")
@@ -95,7 +136,8 @@ class QueryAnalyzer:
         self,
         query: str,
         analysis: QueryAnalysis,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        request_id: str = ""
     ) -> SearchPlan:
         """
         Create a comprehensive search plan based on query analysis.
@@ -111,7 +153,7 @@ class QueryAnalyzer:
         prompt = self._build_plan_prompt(query, analysis, context)
 
         try:
-            result = await self._call_ollama(prompt)
+            result = await self._call_ollama(prompt, request_id)
             plan = self._parse_plan(result, query, analysis)
             logger.info(f"Search plan created: {len(plan.decomposed_questions)} questions, "
                        f"{len(plan.search_phases)} phases")
@@ -239,8 +281,8 @@ Respond with a JSON object:
 For complex queries, plan more iterations. For simple queries, fewer.
 Return ONLY the JSON object, no other text."""
 
-    async def _call_ollama(self, prompt: str) -> str:
-        """Call Ollama API for LLM inference"""
+    async def _call_ollama(self, prompt: str, request_id: str = "") -> str:
+        """Call Ollama API for LLM inference with context utilization tracking"""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 f"{self.ollama_url}/api/generate",
@@ -256,15 +298,29 @@ Return ONLY the JSON object, no other text."""
             )
             response.raise_for_status()
             data = response.json()
-            return data.get("response", "")
+            result = data.get("response", "")
+
+            # Track context utilization
+            if request_id:
+                metrics = get_performance_metrics()
+                metrics.record_context_utilization(
+                    request_id=request_id,
+                    agent_name="analyzer",
+                    model_name=self.model,
+                    input_text=prompt,
+                    output_text=result,
+                    context_window=get_model_context_window(self.model)
+                )
+
+            return result
 
     def _parse_analysis(self, response: str, query: str) -> QueryAnalysis:
         """Parse LLM response into QueryAnalysis"""
         try:
-            # Extract JSON from response
-            json_match = re.search(r'\{[^{}]*\}', response, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
+            # Extract JSON from response using proper brace matching
+            json_str = extract_json_object(response)
+            if json_str:
+                data = json.loads(json_str)
 
                 # Determine thinking model requirement
                 requires_thinking = data.get("requires_thinking_model", False)
@@ -348,10 +404,10 @@ Return ONLY the JSON object, no other text."""
     ) -> SearchPlan:
         """Parse LLM response into SearchPlan"""
         try:
-            # Extract JSON from response
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
+            # Extract JSON from response using proper brace matching
+            json_str = extract_json_object(response)
+            if json_str:
+                data = json.loads(json_str)
                 # Ensure decomposed_questions is a list of strings
                 decomposed = data.get("decomposed_questions", [query])
                 if isinstance(decomposed, str):
@@ -614,6 +670,17 @@ Return ONLY the JSON object. /no_think"""
                 )
                 response.raise_for_status()
                 result = response.json().get("response", "")
+
+                # Track context utilization for coverage evaluation
+                metrics = get_performance_metrics()
+                metrics.record_context_utilization(
+                    request_id=f"coverage_{hash(query) % 10000}",
+                    agent_name="analyzer_coverage",
+                    model_name=analysis_model,
+                    input_text=prompt,
+                    output_text=result,
+                    context_window=get_model_context_window(analysis_model)
+                )
 
             # Parse JSON response - use more robust extraction
             # Find the outermost balanced braces

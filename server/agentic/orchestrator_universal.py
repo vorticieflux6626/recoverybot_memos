@@ -121,6 +121,7 @@ from .content_cache import get_content_cache
 from .context_limits import (
     calculate_context_budget,
     get_synthesizer_limits,
+    get_search_result_limits,
     get_model_context_window,
     format_context_utilization_report,
     PipelineContextConfig,
@@ -166,6 +167,10 @@ class UniversalGraphState:
             self._state[self._active] = 2
         self._active = agent_symbol
         self._state[agent_symbol] = 1
+        # Log at INFO for key phases
+        if agent_symbol in ["A", "S", "Σ", "✓"]:
+            agent_name = next((name for sym, name in self.AGENTS if sym == agent_symbol), agent_symbol)
+            logger.info(f"Graph: {agent_name} started → {self.to_line()}")
 
     def complete(self, agent_symbol: str = None):
         """Mark an agent as completed."""
@@ -174,6 +179,13 @@ class UniversalGraphState:
             self._state[symbol] = 2
             if self._active == symbol:
                 self._active = None
+            # Log graph state change for visibility
+            agent_name = next((name for sym, name in self.AGENTS if sym == symbol), symbol)
+            # Log at INFO for key phases, DEBUG for others
+            if symbol in ["A", "S", "Σ", "✓"]:
+                logger.info(f"Graph: {agent_name} completed → {self.to_line()}")
+            else:
+                logger.debug(f"Graph: {agent_name} completed → {self.to_line()}")
 
     def to_line(self) -> str:
         """Generate the graph line string."""
@@ -541,11 +553,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
         """Lazy initialize domain corpus manager."""
         if self._domain_corpus_manager is None:
             self._domain_corpus_manager = get_corpus_manager()
-            # Initialize default corpuses
+            # Initialize default corpuses (synchronous function)
             try:
-                asyncio.create_task(
-                    initialize_default_corpuses(ollama_url=self.ollama_url)
-                )
+                initialize_default_corpuses(ollama_url=self.ollama_url)
             except Exception as e:
                 logger.warning(f"Failed to initialize default corpuses: {e}")
         return self._domain_corpus_manager
@@ -1105,7 +1115,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 graph_line=self._graph_state.to_line()
             )
 
-            analysis = await self.analyzer.analyze(request.query, request.context)
+            analysis = await self.analyzer.analyze(
+                request.query, request.context, request_id=request_id
+            )
             state.query_analysis = analysis
 
             search_trace.append({
@@ -1134,9 +1146,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
             tracker = self._get_entity_tracker()
             entities = await tracker.extract_entities(request.query)
             if entities:
-                # add_entity() is the correct method, not add_entities()
+                # add_entity() expects Dict, EntityState.to_dict() provides that
                 for entity in entities:
-                    scratchpad.add_entity(entity)
+                    scratchpad.add_entity(entity.to_dict())
             self._record_timing("entity_tracking", time.time() - start)
         except Exception as e:
             logger.warning(f"[{request_id}] Entity extraction failed: {e}")
@@ -1229,31 +1241,76 @@ class UniversalOrchestrator(BaseSearchPipeline):
             graph_line=self._graph_state.to_line()
         )
 
-        # Determine queries to execute
-        if pre_act_plan and self.config.enable_parallel_execution:
-            # Use Pre-Act plan queries in parallel (PlannedAction uses 'inputs' not 'parameters')
-            queries = [a.inputs.get("query", request.query) for a in pre_act_plan.actions
-                       if a.action_type.value == "search"][:4]
-            if not queries:
-                queries = [request.query]
-        else:
-            # Use analyzer for search plan (planner.plan returns AgentAction, analyzer.create_search_plan returns SearchPlan)
-            if state.query_analysis:
+        # Get context-aware search limits for maximum context utilization
+        search_limits = get_search_result_limits()
+        max_queries = search_limits.get("max_queries_per_iteration", 5)
+        max_results_per_query = search_limits.get("max_results_per_query", 10)
+        logger.info(f"[{request_id}] Search limits: max_queries={max_queries}, max_results_per_query={max_results_per_query}")
+
+        # Determine queries to execute - always try analyzer for query decomposition
+        queries = []
+
+        # First, try analyzer for search plan decomposition
+        if state.query_analysis:
+            try:
                 plan = await self.analyzer.create_search_plan(
-                    request.query, state.query_analysis, request.context
+                    request.query, state.query_analysis, request.context,
+                    request_id=request_id
                 )
                 # Ensure decomposed_questions is a list of strings
-                decomposed = plan.decomposed_questions if plan.decomposed_questions else [request.query]
+                decomposed = plan.decomposed_questions if plan.decomposed_questions else []
                 if isinstance(decomposed, str):
                     decomposed = [decomposed]
-                queries = decomposed[:3]
-                if not queries:
-                    queries = [request.query]
-                state.search_plan = plan
-                logger.info(f"[{request_id}] Search queries: {queries}")
+                queries = [q for q in decomposed if q and isinstance(q, str)][:max_queries]
+                if queries:
+                    state.search_plan = plan
+                    logger.info(f"[{request_id}] Search queries from analyzer: {queries}")
+            except Exception as e:
+                logger.warning(f"[{request_id}] Analyzer search plan failed: {e}")
+
+        # If analyzer didn't produce queries, try Pre-Act plan
+        if not queries and pre_act_plan and self.config.enable_parallel_execution:
+            queries = [a.inputs.get("query", "") for a in pre_act_plan.actions
+                       if a.action_type.value == "search" and a.inputs.get("query")][:max_queries]
+            if queries:
+                logger.info(f"[{request_id}] Search queries from Pre-Act: {queries}")
+
+        # If only 1 query, expand with topic variations to maximize context utilization
+        if len(queries) <= 1:
+            base_query = queries[0] if queries else request.query
+            # Generate query variations for broader coverage
+            expanded_queries = [base_query]
+            key_topics = state.query_analysis.key_topics if state.query_analysis else []
+            query_lower = base_query.lower()
+
+            # Add topic-specific variations
+            if any(word in query_lower for word in ["compare", "vs", "versus", "difference"]):
+                expanded_queries.extend([
+                    f"{base_query} advantages disadvantages",
+                    f"{base_query} pros cons 2025",
+                    f"{base_query} which is better"
+                ])
+            elif any(word in query_lower for word in ["how", "what", "why"]):
+                expanded_queries.extend([
+                    f"{base_query} explained",
+                    f"{base_query} latest research 2025",
+                    f"{base_query} practical examples"
+                ])
             else:
-                # Fallback: use simple query
-                queries = [request.query]
+                # General expansion
+                expanded_queries.extend([
+                    f"{base_query} 2025",
+                    f"{base_query} latest developments",
+                    f"{base_query} benefits challenges"
+                ])
+
+            queries = expanded_queries[:max_queries]
+            logger.info(f"[{request_id}] Expanded to {len(queries)} queries for context utilization: {queries}")
+
+        # Final fallback: use original query
+        if not queries:
+            queries = [request.query]
+            logger.info(f"[{request_id}] Using original query (no decomposition)")
 
         # Update graph: complete Plan, enter Search
         self._graph_state.complete("P")
@@ -1268,10 +1325,10 @@ class UniversalOrchestrator(BaseSearchPipeline):
             graph_line=self._graph_state.to_line()
         )
 
-        # Execute searches
+        # Execute searches with context-aware result limits
         if self.config.enable_parallel_execution and len(queries) > 1:
             # Parallel execution - searcher.search() expects a list of queries
-            tasks = [self.searcher.search([q]) for q in queries]
+            tasks = [self.searcher.search([q], max_results_per_query=max_results_per_query) for q in queries]
             results_list = await asyncio.gather(*tasks, return_exceptions=True)
             for i, results in enumerate(results_list):
                 if isinstance(results, Exception):
@@ -1282,7 +1339,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
         else:
             # Sequential execution - searcher.search() expects a list of queries
             for query in queries:
-                results = await self.searcher.search([query])
+                results = await self.searcher.search([query], max_results_per_query=max_results_per_query)
                 state.add_results(results)
                 state.mark_query_executed(query)
 
@@ -1422,7 +1479,17 @@ class UniversalOrchestrator(BaseSearchPipeline):
         start = time.time()
         scraped_content = []
 
-        urls_to_scrape = [r.url for r in state.raw_results[:request.max_urls_to_scrape]]
+        # Deduplicate URLs before scraping (preserve order, take first occurrence)
+        seen_urls = set()
+        unique_urls = []
+        for r in state.raw_results:
+            if r.url not in seen_urls:
+                seen_urls.add(r.url)
+                unique_urls.append(r.url)
+                if len(unique_urls) >= request.max_urls_to_scrape:
+                    break
+        urls_to_scrape = unique_urls
+        logger.info(f"[{request_id}] Scraping {len(urls_to_scrape)} unique URLs (from {len(state.raw_results)} total results)")
 
         # Update graph: complete Search, enter Evaluate
         self._graph_state.complete("S")
@@ -1509,14 +1576,40 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 claims.extend(extracted[:5])
 
             if claims:
-                verification = await self.verifier.verify(claims[:10], scraped_content[:5])
-                search_trace.append({
-                    "step": "verify",
-                    "claims_checked": len(claims),
-                    "confidence": verification.confidence
-                })
-                self._record_timing("verification", time.time() - start)
-                return verification
+                # Pass WebSearchResult objects, not raw content strings
+                sources_for_verification = state.raw_results[:5]
+                verification_results = await self.verifier.verify(claims[:10], sources_for_verification)
+
+                # Calculate aggregate confidence from list of VerificationResult
+                if verification_results:
+                    verified_count = sum(1 for v in verification_results if v.verified)
+                    avg_confidence = sum(v.confidence for v in verification_results) / len(verification_results)
+
+                    # Create a composite result for return
+                    from dataclasses import dataclass
+
+                    @dataclass
+                    class AggregateVerification:
+                        confidence: float
+                        verified_count: int
+                        total_claims: int
+                        results: list
+
+                    aggregate = AggregateVerification(
+                        confidence=avg_confidence,
+                        verified_count=verified_count,
+                        total_claims=len(verification_results),
+                        results=verification_results
+                    )
+
+                    search_trace.append({
+                        "step": "verify",
+                        "claims_checked": len(claims),
+                        "verified_count": verified_count,
+                        "confidence": avg_confidence
+                    })
+                    self._record_timing("verification", time.time() - start)
+                    return aggregate
         except Exception as e:
             logger.warning(f"[{request_id}] Verification failed: {e}")
         return None
@@ -1575,7 +1668,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
             search_results=search_results,
             scraped_content=scraped_content_dicts,
             verifications=None,  # Verifications handled separately if enabled
-            context={"additional_context": additional_context} if additional_context else None
+            context={"additional_context": additional_context} if additional_context else None,
+            request_id=request_id
         )
 
         # Calculate and log context utilization
@@ -1589,6 +1683,16 @@ class UniversalOrchestrator(BaseSearchPipeline):
             len(synthesis)
         )
         logger.info(f"[{request_id}] Context utilization:\n{utilization_report}")
+
+        # Track context utilization in metrics
+        self._metrics.record_context_utilization(
+            request_id=request_id,
+            agent_name="synthesizer",
+            model_name=DEFAULT_PIPELINE_CONFIG.synthesizer_model,
+            input_text="." * total_input_chars,  # Placeholder for length calculation
+            output_text=synthesis,
+            context_window=get_model_context_window(DEFAULT_PIPELINE_CONFIG.synthesizer_model)
+        )
 
         search_trace.append({
             "step": "synthesize",
@@ -1650,20 +1754,40 @@ class UniversalOrchestrator(BaseSearchPipeline):
         scraped_content: List[str],
         request_id: str
     ) -> Optional[RAGASResult]:
-        """Phase 11: RAGAS evaluation."""
+        """Phase 11: RAGAS evaluation.
+
+        Uses scraped_content (full page content) for claim verification,
+        not just search result snippets.
+        """
         start = time.time()
         try:
             evaluator = self._get_ragas_evaluator()
-            contexts = [
-                s.get("snippet", s.get("title", ""))
-                for s in self._get_sources(state)[:5]
-                if isinstance(s, dict)
-            ]
+
+            # Use scraped content if available (contains full page text)
+            # Fall back to snippets only if no scraped content
+            if scraped_content and any(len(c) > 100 for c in scraped_content):
+                # Use first 5 scraped pages, each truncated to 5000 chars for efficiency
+                contexts = [c[:5000] for c in scraped_content[:5] if len(c) > 100]
+                logger.info(f"[{request_id}] RAGAS using {len(contexts)} scraped content pieces "
+                           f"(total chars: {sum(len(c) for c in contexts)})")
+            else:
+                # Fall back to snippets if no scraped content
+                contexts = [
+                    s.get("snippet", s.get("title", ""))
+                    for s in self._get_sources(state)[:5]
+                    if isinstance(s, dict)
+                ]
+                logger.warning(f"[{request_id}] RAGAS falling back to snippets (no scraped content)")
+
             result = await evaluator.evaluate(
                 question=query,
                 answer=synthesis,
                 contexts=contexts
             )
+
+            logger.info(f"[{request_id}] RAGAS evaluation: faith={result.faithfulness:.2f}, "
+                       f"claims={len(result.claims)}/{sum(1 for v in result.claim_verifications if v.supported)} supported")
+
             self._record_timing("ragas", time.time() - start)
             return result
         except Exception as e:
@@ -1746,7 +1870,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
             context={
                 "query_type": analysis.query_type,
                 "reasoning": analysis.search_reasoning
-            }
+            },
+            request_id=request_id
         )
         return self.build_response(
             synthesis=synthesis,
@@ -1835,7 +1960,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
             # Create a web research actor for the main query
             actor = await factory.create_actor(
                 task_description=request.query,
-                tools=["web_search", "web_scrape"]
+                force_bundles=["web_research"]  # Use bundle name, not tool names
             )
             if actor:
                 actors.append(actor)
@@ -1925,15 +2050,21 @@ class UniversalOrchestrator(BaseSearchPipeline):
         start = time.time()
         try:
             deep_reader = self._get_deep_reader()
-            # Analyze the most substantial content
+            # Analyze scraped content using DeepReader
             if scraped_content:
-                longest_content = max(scraped_content, key=len)
-                insights = await deep_reader.analyze(
-                    content=longest_content[:10000],
-                    query=query
+                # Convert string content to dict format expected by DeepReader
+                content_dicts = [
+                    {"content": c[:10000], "url": f"source_{i}", "success": True}
+                    for i, c in enumerate(scraped_content[:5])
+                ]
+                insights = await deep_reader.analyze_content(
+                    question=query,
+                    scraped_content=content_dicts,
+                    request_id=request_id
                 )
                 self._record_timing("deep_reading", time.time() - start)
-                return insights
+                # Return the synthesis from the insights dict
+                return insights.get("synthesis", "") if isinstance(insights, dict) else str(insights)
             return None
         except Exception as e:
             logger.warning(f"[{request_id}] Deep reading failed: {e}")
@@ -1948,13 +2079,20 @@ class UniversalOrchestrator(BaseSearchPipeline):
         start = time.time()
         try:
             analyzer = self._get_vision_analyzer()
-            # Look for image URLs in results
+            # Look for images in scraped PDF content
             image_insights = []
             for result in state.raw_results[:5]:
-                if hasattr(result, 'image_url') and result.image_url:
-                    insight = await analyzer.analyze_image(result.image_url)
-                    if insight:
-                        image_insights.append(insight)
+                # Check if result has extracted images (from PDF scraping)
+                if hasattr(result, 'images') and result.images:
+                    for img in result.images[:3]:  # Limit to 3 images per result
+                        if 'base64' in img:
+                            insight_result = await analyzer.analyze_image(
+                                img['base64'],
+                                context=f"Image from {result.title}",
+                                request_id=request_id
+                            )
+                            if insight_result.get('success') and insight_result.get('description'):
+                                image_insights.append(insight_result['description'])
             self._record_timing("vision_analysis", time.time() - start)
             return "\n".join(image_insights) if image_insights else None
         except Exception as e:
@@ -2004,27 +2142,26 @@ class UniversalOrchestrator(BaseSearchPipeline):
             from .sufficient_context import get_positional_optimizer
             optimizer = get_positional_optimizer()
 
-            # Score each content piece by relevance
-            scored = []
-            for content in scraped_content:
-                score = await optimizer.score_relevance(content, query)
-                scored.append((content, score))
+            # Convert scraped_content strings to source dicts for the optimizer
+            sources = [
+                {"content": content, "title": f"Source {i+1}"}
+                for i, content in enumerate(scraped_content)
+            ]
 
-            # Sort by relevance, put best at beginning and end (lost-in-middle mitigation)
-            scored.sort(key=lambda x: x[1], reverse=True)
-            n = len(scored)
-            if n > 2:
-                # Interleave: best, third-best, fifth-best... second-best, fourth-best...
-                optimized = []
-                for i in range(0, n, 2):
-                    if i < n:
-                        optimized.append(scored[i][0])
-                for i in range(1, n, 2):
-                    if i < n:
-                        optimized.append(scored[i][0])
-                self._record_timing("positional_optimization", time.time() - start)
-                return optimized
-            return scraped_content
+            # Score all sources at once (correct API: question, sources)
+            relevance_scores = await optimizer.score_relevance(query, sources)
+
+            # Use the optimizer's reorder method for lost-in-middle mitigation
+            reordered_sources, analysis = optimizer.reorder_for_optimal_attention(
+                sources, relevance_scores
+            )
+
+            # Extract content back from reordered sources
+            optimized = [s.get("content", "") for s in reordered_sources]
+
+            logger.debug(f"[{request_id}] Positional optimization: risk={analysis.lost_in_middle_risk}")
+            self._record_timing("positional_optimization", time.time() - start)
+            return optimized
         except Exception as e:
             logger.warning(f"[{request_id}] Positional optimization failed: {e}")
             return scraped_content

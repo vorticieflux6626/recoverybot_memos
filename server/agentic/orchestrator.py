@@ -47,6 +47,7 @@ from .query_classifier import (
 from .self_reflection import (
     SelfReflectionAgent, ReflectionResult, SupportLevel, get_self_reflection_agent
 )
+from .metrics import get_performance_metrics
 from .retrieval_evaluator import (
     RetrievalEvaluator, RetrievalEvaluation, RetrievalQuality, CorrectiveAction
 )
@@ -235,7 +236,8 @@ class AgenticOrchestrator:
                 request.query,
                 [],  # No search results
                 None,
-                request.context
+                request.context,
+                request_id=request_id
             )
 
             execution_time_ms = int((time.time() - start_time) * 1000)
@@ -367,6 +369,10 @@ class AgenticOrchestrator:
             )
             logger.info(f"[{request_id}] Created scratchpad for multi-agent coordination")
 
+            # Start query metrics tracking
+            metrics = get_performance_metrics()
+            metrics.start_query(request_id, request.query)
+
             search_trace = []
 
             # STEP 1: ANALYZE - Determine if web search is beneficial
@@ -374,7 +380,8 @@ class AgenticOrchestrator:
                 logger.info(f"[{request_id}] Analyzing query to determine search necessity...")
                 state.query_analysis = await self.analyzer.analyze(
                     request.query,
-                    request.context
+                    request.context,
+                    request_id=request_id
                 )
                 search_trace.append({
                     "step": "analyze",
@@ -392,7 +399,8 @@ class AgenticOrchestrator:
                         request.query,
                         [],  # No search results
                         None,
-                        request.context
+                        request.context,
+                        request_id=request_id
                     )
                     search_trace.append({
                         "step": "skip_search",
@@ -427,7 +435,8 @@ class AgenticOrchestrator:
                 state.search_plan = await self.analyzer.create_search_plan(
                     request.query,
                     state.query_analysis,
-                    request.context
+                    request.context,
+                    request_id=request_id
                 )
             else:
                 # Create basic plan if analysis was skipped
@@ -967,14 +976,16 @@ class AgenticOrchestrator:
                         scraped_content,
                         state.verified_claims if request.verification_level != VerificationLevel.NONE else None,
                         synthesis_context,
-                        model_override=thinking_model
+                        model_override=thinking_model,
+                        request_id=request_id
                     )
                 else:
                     synthesis = await self.synthesizer.synthesize(
                         request.query,
                         state.raw_results,
                         state.verified_claims if request.verification_level != VerificationLevel.NONE else None,
-                        synthesis_context
+                        synthesis_context,
+                        request_id=request_id
                     )
 
             # STEP 6: SELF-RAG REFLECTION - Check synthesis quality before returning
@@ -1211,10 +1222,19 @@ class AgenticOrchestrator:
                 except Exception as fb_err:
                     logger.debug(f"[{request_id}] Classifier feedback failed: {fb_err}")
 
+            # Complete query metrics tracking
+            metrics.complete_query(request_id, success=response.success, confidence=confidence_score)
+
             return response
 
         except Exception as e:
             logger.error(f"[{request_id}] Search failed: {e}", exc_info=True)
+            # Complete query metrics tracking on error
+            try:
+                metrics = get_performance_metrics()
+                metrics.complete_query(request_id, success=False)
+            except Exception:
+                pass
 
             execution_time_ms = int((time.time() - start_time) * 1000)
 
@@ -1299,7 +1319,8 @@ class AgenticOrchestrator:
                 analyze_start = time.time()
                 state.query_analysis = await self.analyzer.analyze(
                     request.query,
-                    request.context
+                    request.context,
+                    request_id=request_id
                 )
                 analyze_ms = int((time.time() - analyze_start) * 1000)
 
@@ -1325,7 +1346,7 @@ class AgenticOrchestrator:
                     await emitter.emit(events.synthesizing(request_id, 0))
 
                     synthesis = await self.synthesizer.synthesize(
-                        request.query, [], None, request.context
+                        request.query, [], None, request.context, request_id=request_id
                     )
 
                     execution_time_ms = int((time.time() - start_time) * 1000)
@@ -1358,7 +1379,8 @@ class AgenticOrchestrator:
 
             if state.query_analysis:
                 state.search_plan = await self.analyzer.create_search_plan(
-                    request.query, state.query_analysis, request.context
+                    request.query, state.query_analysis, request.context,
+                    request_id=request_id
                 )
             else:
                 action = await self.planner.plan(request.query, request.context)
@@ -1841,7 +1863,8 @@ class AgenticOrchestrator:
                     scraped_content,
                     state.verified_claims if request.verification_level != VerificationLevel.NONE else None,
                     synthesis_context,
-                    model_override=thinking_model
+                    model_override=thinking_model,
+                    request_id=request_id
                 )
 
             # Mark scratchpad as complete
@@ -2254,7 +2277,7 @@ class AgenticOrchestrator:
             logger.info(f"[{request_id}] Searching for relevant sources...")
 
             # Use analyzer to create good search queries
-            analysis = await self.analyzer.analyze(query, None)
+            analysis = await self.analyzer.analyze(query, None, request_id=request_id)
             search_queries = analysis.suggested_queries if analysis.suggested_queries else [query]
 
             # Execute search

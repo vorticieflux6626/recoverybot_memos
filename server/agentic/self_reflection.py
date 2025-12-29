@@ -21,7 +21,47 @@ from typing import List, Optional, Dict, Any, Tuple
 
 import httpx
 
+from .metrics import get_performance_metrics
+from .context_limits import get_model_context_window
+
 logger = logging.getLogger("agentic.self_reflection")
+
+
+def extract_json_object(text: str) -> Optional[str]:
+    """
+    Extract a JSON object from text using proper brace matching.
+    Handles nested objects and arrays correctly.
+    """
+    start_idx = text.find('{')
+    if start_idx == -1:
+        return None
+
+    brace_count = 0
+    in_string = False
+    escape_next = False
+
+    for i, char in enumerate(text[start_idx:], start_idx):
+        if escape_next:
+            escape_next = False
+            continue
+
+        if char == '\\' and in_string:
+            escape_next = True
+            continue
+
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+
+        if not in_string:
+            if char == '{':
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    return text[start_idx:i + 1]
+
+    return None
 
 
 class ReflectionToken(Enum):
@@ -201,9 +241,9 @@ Output ONLY a JSON object:
 
         try:
             result = await self._call_llm(prompt, max_tokens=128)
-            json_match = re.search(r'\{[^}]+\}', result)
-            if json_match:
-                data = json.loads(json_match.group())
+            json_str = extract_json_object(result)
+            if json_str:
+                data = json.loads(json_str)
                 return min(1.0, data.get("score", 5) / 10)
         except Exception as e:
             logger.warning(f"Relevance check failed: {e}")
@@ -259,9 +299,9 @@ Output JSON:
         unsupported = []
         try:
             result = await self._call_llm(prompt, max_tokens=512)
-            json_match = re.search(r'\{[^}]*\}', result, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
+            json_str = extract_json_object(result)
+            if json_str:
+                data = json.loads(json_str)
                 level_str = data.get("support_level", "partially_supported")
                 unsupported = data.get("unsupported_claims", [])[:3]
 
@@ -451,9 +491,9 @@ Output ONLY a JSON object:
 
         try:
             result = await self._call_llm(prompt, max_tokens=128)
-            json_match = re.search(r'\{[^}]+\}', result)
-            if json_match:
-                data = json.loads(json_match.group())
+            json_str = extract_json_object(result)
+            if json_str:
+                data = json.loads(json_str)
                 return min(1.0, data.get("score", 5) / 10)
         except Exception as e:
             logger.warning(f"Usefulness check failed: {e}")
@@ -539,8 +579,8 @@ Keep the same structure but correct any errors."""
 
         return original_synthesis
 
-    async def _call_llm(self, prompt: str, max_tokens: int = 256) -> str:
-        """Call Ollama LLM"""
+    async def _call_llm(self, prompt: str, max_tokens: int = 256, request_id: str = "") -> str:
+        """Call Ollama LLM with context utilization tracking"""
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -556,7 +596,21 @@ Keep the same structure but correct any errors."""
                     }
                 )
                 if response.status_code == 200:
-                    return response.json().get("response", "")
+                    result = response.json().get("response", "")
+
+                    # Track context utilization
+                    metrics = get_performance_metrics()
+                    req_id = request_id or f"self_rag_{hash(prompt) % 10000}"
+                    metrics.record_context_utilization(
+                        request_id=req_id,
+                        agent_name="self_reflection",
+                        model_name=self.model,
+                        input_text=prompt,
+                        output_text=result,
+                        context_window=get_model_context_window(self.model)
+                    )
+
+                    return result
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
         return ""

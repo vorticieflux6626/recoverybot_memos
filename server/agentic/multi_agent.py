@@ -370,6 +370,21 @@ class ModelSelector:
         requirements = self.TASK_REQUIREMENTS.get(task_type, {})
         score = 0.0
 
+        # CRITICAL: Reject embedding models for all non-embedding tasks
+        # Embedding models cannot generate text, only produce embeddings
+        embedding_patterns = [
+            "embedding", "embed",           # General embedding models
+            "bge-", "bge_", "bge:",         # BGE embedding models
+            "minilm",                       # All-minilm models
+            "arctic-embed", "snowflake",    # Snowflake embedding
+            "nomic-embed",                  # Nomic embedding
+            "functiongemma", "embeddinggemma",  # Gemma embedding variants
+            "mxbai-embed",                  # MixedBread embedding
+        ]
+        model_lower = model_name.lower()
+        if any(pattern in model_lower for pattern in embedding_patterns):
+            return 0.0  # Embedding models cannot be used for text generation
+
         # VRAM check - must fit with some buffer
         vram_needed = specs.get("vram_min_gb", 4)
         if vram_needed > available_vram - 2.0:  # 2GB buffer

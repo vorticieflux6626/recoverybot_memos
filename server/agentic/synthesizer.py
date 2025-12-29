@@ -20,9 +20,11 @@ from .models import (
 from .context_limits import (
     get_synthesizer_limits,
     get_dynamic_source_allocation,
+    get_model_context_window,
     SYNTHESIZER_LIMITS,
     THINKING_SYNTHESIZER_LIMITS,
 )
+from .metrics import get_performance_metrics
 
 logger = logging.getLogger("agentic.synthesizer")
 
@@ -102,7 +104,8 @@ class SynthesizerAgent:
         query: str,
         search_results: List[WebSearchResult],
         verifications: Optional[List[VerificationResult]] = None,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        request_id: str = ""
     ) -> str:
         """
         Synthesize search results into a coherent answer.
@@ -161,7 +164,7 @@ Your synthesized answer:"""
             if self.mcp_available:
                 synthesis = await self._synthesize_via_mcp(prompt)
             else:
-                synthesis = await self._synthesize_via_ollama(prompt)
+                synthesis = await self._synthesize_via_ollama(prompt, request_id)
 
             return synthesis or self._fallback_synthesis(query, search_results)
 
@@ -169,7 +172,7 @@ Your synthesized answer:"""
             logger.error(f"Synthesis failed: {e}")
             return self._fallback_synthesis(query, search_results)
 
-    async def _synthesize_via_ollama(self, prompt: str) -> str:
+    async def _synthesize_via_ollama(self, prompt: str, request_id: str = "") -> str:
         """Execute synthesis via direct Ollama API"""
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
@@ -188,7 +191,21 @@ Your synthesized answer:"""
 
                 if response.status_code == 200:
                     data = response.json()
-                    return data.get("response", "")
+                    synthesis = data.get("response", "")
+
+                    # Track context utilization
+                    if request_id and synthesis:
+                        metrics = get_performance_metrics()
+                        metrics.record_context_utilization(
+                            request_id=request_id,
+                            agent_name="synthesizer",
+                            model_name=self.model,
+                            input_text=prompt,
+                            output_text=synthesis,
+                            context_window=get_model_context_window(self.model)
+                        )
+
+                    return synthesis
 
         except Exception as e:
             logger.error(f"Ollama synthesis failed: {e}")
@@ -303,7 +320,8 @@ Please try rephrasing your question or providing more context."""
         scraped_content: List[Dict[str, Any]],
         verifications: Optional[List[VerificationResult]] = None,
         context: Optional[Dict[str, Any]] = None,
-        model_override: Optional[str] = None
+        model_override: Optional[str] = None,
+        request_id: str = ""
     ) -> str:
         """
         Synthesize an answer using full scraped content from web pages.
@@ -461,6 +479,20 @@ YOUR DETAILED ANSWER (with citations):"""
                     data = response.json()
                     synthesis = data.get("response", "")
                     logger.info(f"Ollama synthesis response: {len(synthesis)} chars")
+
+                    # Track context utilization for synthesizer (critical - highest context usage)
+                    if request_id and synthesis:
+                        metrics = get_performance_metrics()
+                        context_window = model_config.get("context_window", 32768)
+                        metrics.record_context_utilization(
+                            request_id=request_id,
+                            agent_name="synthesizer_content",
+                            model_name=synthesis_model,
+                            input_text=prompt,
+                            output_text=synthesis,
+                            context_window=context_window
+                        )
+
                     if synthesis:
                         # Add source references at the end matching the [Source X] citations
                         sources_list = "\n".join([
@@ -479,7 +511,7 @@ YOUR DETAILED ANSWER (with citations):"""
             logger.error(f"Content synthesis failed: {e}")
 
         # Fallback to regular synthesis
-        return await self.synthesize(query, search_results, verifications, context)
+        return await self.synthesize(query, search_results, verifications, context, request_id)
 
     def determine_confidence_level(
         self,

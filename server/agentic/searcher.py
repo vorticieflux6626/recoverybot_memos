@@ -40,9 +40,13 @@ class SearXNGSearchProvider(SearchProvider):
     Aggregates results from Google, Bing, DuckDuckGo, Brave, etc.
     """
 
+    # Cache TTL for availability check (seconds)
+    AVAILABILITY_CACHE_TTL = 60  # Re-check every 60 seconds
+
     def __init__(self, base_url: str = "http://localhost:8888"):
         self.base_url = base_url.rstrip("/")
         self._available = None  # Cache availability check
+        self._available_checked_at = 0  # Timestamp of last check
 
     @property
     def available(self) -> bool:
@@ -50,9 +54,18 @@ class SearXNGSearchProvider(SearchProvider):
         return self._available if self._available is not None else True
 
     async def check_availability(self) -> bool:
-        """Check if SearXNG server is responding"""
+        """Check if SearXNG server is responding (with TTL cache)"""
+        import time
+        current_time = time.time()
+
+        # Use cached result if within TTL and was available
         if self._available is not None:
-            return self._available
+            cache_age = current_time - self._available_checked_at
+            if cache_age < self.AVAILABILITY_CACHE_TTL:
+                return self._available
+            # If cached as unavailable, re-check more aggressively (every 10s)
+            if not self._available and cache_age < 10:
+                return self._available
 
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
@@ -61,56 +74,83 @@ class SearXNGSearchProvider(SearchProvider):
                     params={"q": "test", "format": "json"}
                 )
                 self._available = response.status_code == 200
+                self._available_checked_at = current_time
+                if self._available:
+                    logger.info(f"SearXNG available at {self.base_url}")
         except Exception as e:
             logger.warning(f"SearXNG not available: {e}")
             self._available = False
+            self._available_checked_at = current_time
 
         return self._available
 
-    async def search(self, query: str, max_results: int = 5) -> List[WebSearchResult]:
+    async def search(self, query: str, max_results: int = 10) -> List[WebSearchResult]:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(
-                    f"{self.base_url}/search",
-                    params={
-                        "q": query,
-                        "format": "json",
-                        "engines": "google,bing,duckduckgo,brave",
-                        "language": "en-US"
-                    }
-                )
+                # SearXNG aggregates multiple pages if we request more results
+                # Each page typically has 10 results, so we may need multiple pages
+                all_results = []
+                seen_urls = set()
 
-                if response.status_code == 200:
+                # Request up to 3 pages if needed to get max_results
+                pages_needed = min(3, (max_results + 9) // 10)
+
+                for page in range(1, pages_needed + 1):
+                    response = await client.get(
+                        f"{self.base_url}/search",
+                        params={
+                            "q": query,
+                            "format": "json",
+                            "engines": "google,bing,duckduckgo,brave,wikipedia",
+                            "language": "en-US",
+                            "pageno": page
+                        }
+                    )
+
+                    if response.status_code != 200:
+                        logger.warning(f"SearXNG page {page} failed: {response.status_code}")
+                        break
+
                     data = response.json()
-                    results = []
+                    page_results = data.get("results", [])
+                    logger.debug(f"SearXNG page {page} returned {len(page_results)} results")
 
-                    for item in data.get("results", [])[:max_results]:
+                    for item in page_results:
                         url = item.get("url", "")
-                        domain = urlparse(url).netloc.replace("www.", "")
+                        if url and url not in seen_urls:
+                            seen_urls.add(url)
+                            all_results.append(item)
+                            if len(all_results) >= max_results:
+                                break
 
-                        # Calculate score based on position and engine count
-                        positions = item.get("positions", [1])
-                        engines = item.get("engines", ["searxng"])
-                        base_score = item.get("score", 0.7)
+                    if len(all_results) >= max_results:
+                        break
 
-                        # Boost for multi-engine results
-                        if len(engines) > 1:
-                            base_score = min(1.0, base_score + 0.1 * len(engines))
+                # Convert to WebSearchResult objects
+                results = []
+                for item in all_results[:max_results]:
+                    url = item.get("url", "")
+                    domain = urlparse(url).netloc.replace("www.", "")
 
-                        results.append(WebSearchResult(
-                            title=item.get("title", ""),
-                            url=url,
-                            snippet=item.get("content", ""),
-                            source_domain=domain,
-                            relevance_score=base_score
-                        ))
+                    # Calculate score based on position and engine count
+                    engines = item.get("engines", ["searxng"])
+                    # SearXNG can return scores > 1, cap to 0.9 to leave room for boost
+                    base_score = min(0.9, item.get("score", 0.7))
 
-                    logger.info(f"SearXNG returned {len(results)} results for: {query[:50]}")
-                    return results
-                else:
-                    logger.warning(f"SearXNG search failed: {response.status_code}")
-                    self._available = False
-                    return []
+                    # Boost for multi-engine results (cap total at 1.0)
+                    if len(engines) > 1:
+                        base_score = min(1.0, base_score + 0.05 * len(engines))
+
+                    results.append(WebSearchResult(
+                        title=item.get("title", ""),
+                        url=url,
+                        snippet=item.get("content", ""),
+                        source_domain=domain,
+                        relevance_score=base_score
+                    ))
+
+                logger.info(f"SearXNG returned {len(results)} results for: {query[:50]}")
+                return results
 
         except Exception as e:
             logger.error(f"SearXNG search error: {e}")

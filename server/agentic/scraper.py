@@ -24,6 +24,8 @@ import io
 import httpx
 
 from .content_cache import get_content_cache
+from .metrics import get_performance_metrics
+from .context_limits import get_model_context_window
 
 # Optional image handling imports
 try:
@@ -605,7 +607,8 @@ class VisionAnalyzer:
         self,
         image_base64: str,
         prompt: str = "Describe this image in detail. If it's a chart or graph, extract the key data points and trends.",
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        request_id: str = ""
     ) -> Dict[str, Any]:
         """
         Analyze an image using a vision model.
@@ -657,6 +660,18 @@ class VisionAnalyzer:
                     data = response.json()
                     description = data.get("response", "")
 
+                    # Track context utilization for vision analysis
+                    if request_id and description:
+                        metrics = get_performance_metrics()
+                        metrics.record_context_utilization(
+                            request_id=request_id,
+                            agent_name="vision_analyzer",
+                            model_name=model,
+                            input_text=full_prompt,
+                            output_text=description,
+                            context_window=get_model_context_window(model)
+                        )
+
                     return {
                         "success": True,
                         "description": description,
@@ -683,7 +698,8 @@ class VisionAnalyzer:
     async def analyze_chart(
         self,
         image_base64: str,
-        chart_context: Optional[str] = None
+        chart_context: Optional[str] = None,
+        request_id: str = ""
     ) -> Dict[str, Any]:
         """
         Specialized analysis for charts and graphs.
@@ -704,13 +720,15 @@ Format your response clearly with these sections."""
         return await self.analyze_image(
             image_base64=image_base64,
             prompt=prompt,
-            context=chart_context
+            context=chart_context,
+            request_id=request_id
         )
 
     async def analyze_diagram(
         self,
         image_base64: str,
-        diagram_context: Optional[str] = None
+        diagram_context: Optional[str] = None,
+        request_id: str = ""
     ) -> Dict[str, Any]:
         """
         Specialized analysis for technical diagrams.
@@ -730,12 +748,14 @@ Format your response clearly with these sections."""
         return await self.analyze_image(
             image_base64=image_base64,
             prompt=prompt,
-            context=diagram_context
+            context=diagram_context,
+            request_id=request_id
         )
 
     async def extract_text_from_image(
         self,
-        image_base64: str
+        image_base64: str,
+        request_id: str = ""
     ) -> Dict[str, Any]:
         """
         Extract text content from an image (OCR-like functionality).
@@ -753,13 +773,15 @@ If this is a chart or figure:
 
         return await self.analyze_image(
             image_base64=image_base64,
-            prompt=prompt
+            prompt=prompt,
+            request_id=request_id
         )
 
     async def analyze_images_batch(
         self,
         images: List[Dict[str, Any]],
-        question: Optional[str] = None
+        question: Optional[str] = None,
+        request_id: str = ""
     ) -> List[Dict[str, Any]]:
         """
         Analyze multiple images, optionally in context of a question.
@@ -767,6 +789,7 @@ If this is a chart or figure:
         Args:
             images: List of image dicts with 'base64' key
             question: Optional question to answer using the images
+            request_id: Request ID for metrics tracking
 
         Returns:
             List of analysis results
@@ -784,12 +807,13 @@ If this is a chart or figure:
             # Determine if it looks like a chart/graph based on context
             page_info = img_data.get("description", "")
             if any(kw in page_info.lower() for kw in ["chart", "graph", "figure", "diagram"]):
-                result = await self.analyze_chart(img_data["base64"], context)
+                result = await self.analyze_chart(img_data["base64"], context, request_id=request_id)
             else:
                 result = await self.analyze_image(
                     img_data["base64"],
                     prompt="Describe this image. If it contains data, charts, or technical information, extract the key details.",
-                    context=context
+                    context=context,
+                    request_id=request_id
                 )
 
             result["image_index"] = i
@@ -825,7 +849,8 @@ class DeepReader:
         self,
         question: str,
         scraped_content: List[Dict[str, Any]],
-        max_context_chars: int = 30000
+        max_context_chars: int = 30000,
+        request_id: str = ""
     ) -> Dict[str, Any]:
         """
         Analyze scraped content to answer a specific question.
@@ -925,6 +950,18 @@ LIMITATIONS:
                 result = response.json()
 
                 answer_text = result.get("response", "")
+
+                # Track context utilization for deep reading
+                if request_id and answer_text:
+                    metrics = get_performance_metrics()
+                    metrics.record_context_utilization(
+                        request_id=request_id,
+                        agent_name="deep_reader",
+                        model_name=self.model,
+                        input_text=prompt,
+                        output_text=answer_text,
+                        context_window=get_model_context_window(self.model)
+                    )
 
                 # Parse the response
                 return self._parse_analysis_response(answer_text, sources_used)
