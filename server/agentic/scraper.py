@@ -204,7 +204,18 @@ class ContentScraper:
                 content = re.sub(f'<{tag}[^>]*>.*?</{tag}>', '', content, flags=re.IGNORECASE | re.DOTALL)
 
             # Try to extract main content areas
+            # Domain-specific patterns first (more specific = earlier match)
             main_patterns = [
+                # StackOverflow/Stack Exchange patterns
+                r'<div[^>]*id="question"[^>]*>(.*?)</div>',
+                r'<div[^>]*id="answers"[^>]*>(.*?)</div>',
+                r'<div[^>]*class="[^"]*s-prose[^"]*"[^>]*>(.*?)</div>',
+                r'<div[^>]*class="[^"]*js-post-body[^"]*"[^>]*>(.*?)</div>',
+                r'<div[^>]*class="[^"]*post-text[^"]*"[^>]*>(.*?)</div>',
+                # GitHub patterns
+                r'<div[^>]*class="[^"]*markdown-body[^"]*"[^>]*>(.*?)</div>',
+                r'<article[^>]*class="[^"]*markdown-body[^"]*"[^>]*>(.*?)</article>',
+                # Generic patterns (fallback)
                 r'<main[^>]*>(.*?)</main>',
                 r'<article[^>]*>(.*?)</article>',
                 r'<div[^>]*class="[^"]*content[^"]*"[^>]*>(.*?)</div>',
@@ -213,11 +224,30 @@ class ContentScraper:
             ]
 
             extracted = None
-            for pattern in main_patterns:
-                match = re.search(pattern, content, re.IGNORECASE | re.DOTALL)
-                if match and len(match.group(1)) > 500:
-                    extracted = match.group(1)
-                    break
+
+            # First try: collect all matches from multi-content patterns (SO answers, GH comments)
+            multi_content_patterns = [
+                r'<div[^>]*class="[^"]*s-prose[^"]*"[^>]*>(.*?)</div>',
+                r'<div[^>]*class="[^"]*js-post-body[^"]*"[^>]*>(.*?)</div>',
+                r'<div[^>]*class="[^"]*post-text[^"]*"[^>]*>(.*?)</div>',
+                r'<div[^>]*class="[^"]*comment-body[^"]*"[^>]*>(.*?)</div>',
+            ]
+
+            for pattern in multi_content_patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE | re.DOTALL)
+                if matches:
+                    combined = '\n\n'.join(matches)
+                    if len(combined) > 500:
+                        extracted = combined
+                        break
+
+            # Second try: single-match patterns
+            if not extracted:
+                for pattern in main_patterns:
+                    match = re.search(pattern, content, re.IGNORECASE | re.DOTALL)
+                    if match and len(match.group(1)) > 500:
+                        extracted = match.group(1)
+                        break
 
             if extracted:
                 content = extracted
