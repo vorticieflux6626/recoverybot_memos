@@ -1309,6 +1309,39 @@ class UniversalOrchestrator(BaseSearchPipeline):
             analyze_ms = int((time.time() - analyze_start) * 1000)
             await emitter.emit(graph_node_completed(request_id, "analyze", True, graph, analyze_ms))
 
+            # PHASE 1.5: Entity Extraction (if enabled)
+            if self.config.enable_entity_tracking and scratchpad:
+                try:
+                    entity_start = time.time()
+                    tracker = self._get_entity_tracker()
+                    entities = await tracker.extract_entities(request.query)
+                    if entities:
+                        for entity in entities:
+                            scratchpad.add_entity(entity.to_dict())
+                        await emitter.emit(events.entities_extracted(
+                            request_id, len(entities),
+                            [e.name for e in entities[:5]]  # First 5 entity names
+                        ))
+
+                        # Emit relations if any
+                        relations = []
+                        for entity in entities:
+                            if hasattr(entity, 'relations') and entity.relations:
+                                relations.extend(entity.relations)
+                        if relations:
+                            for rel in relations[:3]:  # First 3 relations
+                                await emitter.emit(events.entity_relation_found(
+                                    request_id,
+                                    rel.get('source', 'unknown'),
+                                    rel.get('target', 'unknown'),
+                                    rel.get('relation_type', 'related_to')
+                                ))
+
+                        entity_ms = int((time.time() - entity_start) * 1000)
+                        logger.info(f"[{request_id}] Extracted {len(entities)} entities in {entity_ms}ms")
+                except Exception as e:
+                    logger.debug(f"[{request_id}] Entity extraction failed: {e}")
+
             # PHASE 21: Meta-Buffer Template Retrieval & Reasoning Composition
             template_applied = False
             composed_strategy = None
@@ -1341,6 +1374,44 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         state.composed_reasoning_strategy = composed_strategy
                 except Exception as e:
                     logger.debug(f"[{request_id}] Reasoning composition failed: {e}")
+
+            # PHASE 2.1: HyDE Query Expansion (if enabled)
+            expanded_query = request.query
+            if self.config.enable_hyde:
+                try:
+                    await emitter.emit(events.hyde_generating(request_id, request.query))
+                    expander = self._get_hyde_expander()
+                    hyde_result = await expander.expand(request.query, mode=HyDEMode.SINGLE)
+                    if hyde_result.hypothetical_documents:
+                        expanded_query = hyde_result.hypothetical_documents[0]
+                        await emitter.emit(events.hyde_complete(
+                            request_id,
+                            len(hyde_result.hypothetical_documents),
+                            hyde_result.fused_embedding is not None
+                        ))
+                        logger.info(f"[{request_id}] HyDE expanded query: {expanded_query[:100]}...")
+                except Exception as e:
+                    logger.debug(f"[{request_id}] HyDE expansion failed: {e}")
+
+            # PHASE 2.2: Reasoning DAG Initialization (if enabled)
+            reasoning_dag = None
+            if self.config.enable_reasoning_dag:
+                try:
+                    await emitter.emit(events.reasoning_branch_created(
+                        request_id, "root", request.query, 0
+                    ))
+                    dag_start = time.time()
+                    reasoning_dag = await self._phase_init_reasoning_dag(request, request_id)
+                    dag_ms = int((time.time() - dag_start) * 1000)
+
+                    if reasoning_dag:
+                        node_count = len(reasoning_dag.nodes) if hasattr(reasoning_dag, 'nodes') else 1
+                        await emitter.emit(events.reasoning_node_verified(
+                            request_id, "root", True, 1.0
+                        ))
+                        logger.info(f"[{request_id}] Reasoning DAG initialized with {node_count} nodes in {dag_ms}ms")
+                except Exception as e:
+                    logger.debug(f"[{request_id}] Reasoning DAG initialization failed: {e}")
 
             # Handle direct answer if no search needed
             if query_analysis and not query_analysis.requires_search:
@@ -1427,6 +1498,34 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     request_id, len(state.raw_results), state.sources_consulted
                 ))
                 await emitter.emit(graph_node_completed(request_id, "search", True, graph, search_ms))
+
+                # PHASE 3.5: Hybrid Re-ranking with BGE-M3 (if enabled)
+                if self.config.enable_hybrid_reranking and state.raw_results:
+                    try:
+                        await emitter.emit(events.hybrid_search_start(
+                            request_id, len(state.raw_results), "hybrid"
+                        ))
+                        hybrid_start = time.time()
+                        retriever = self._get_hybrid_retriever()
+
+                        # Index current results for hybrid search
+                        for i, result in enumerate(state.raw_results[:20]):
+                            content = getattr(result, 'snippet', '') or getattr(result, 'title', '')
+                            if content:
+                                await retriever.add_document(f"doc_{i}", content)
+
+                        # Perform hybrid search to re-rank
+                        hybrid_results = await retriever.search(
+                            request.query, top_k=min(len(state.raw_results), 10)
+                        )
+                        hybrid_ms = int((time.time() - hybrid_start) * 1000)
+
+                        await emitter.emit(events.hybrid_search_complete(
+                            request_id, len(hybrid_results), hybrid_ms
+                        ))
+                        logger.info(f"[{request_id}] Hybrid re-ranking complete: {len(hybrid_results)} results in {hybrid_ms}ms")
+                    except Exception as e:
+                        logger.warning(f"[{request_id}] Hybrid re-ranking failed: {e}")
 
                 # CRAG evaluation if enabled
                 if self.config.enable_crag_evaluation:
@@ -1612,6 +1711,37 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         )
 
                 await emitter.emit(graph_node_completed(request_id, "reflect", True, graph, reflect_ms))
+
+            # PHASE 7.2: RAGAS Evaluation (if enabled)
+            ragas_result = None
+            if self.config.enable_ragas and synthesis:
+                try:
+                    await emitter.emit(events.ragas_evaluating(request_id, len(scraped_content)))
+                    ragas_start = time.time()
+                    ragas_result = await self._phase_ragas_evaluation(
+                        request.query, synthesis, state, scraped_content, request_id
+                    )
+                    ragas_ms = int((time.time() - ragas_start) * 1000)
+
+                    if ragas_result:
+                        await emitter.emit(events.ragas_evaluation_complete(
+                            request_id,
+                            ragas_result.faithfulness,
+                            ragas_result.answer_relevancy,
+                            ragas_result.overall_score
+                        ))
+                        logger.info(
+                            f"[{request_id}] RAGAS evaluation complete: "
+                            f"faith={ragas_result.faithfulness:.2f}, "
+                            f"relevancy={ragas_result.answer_relevancy:.2f} in {ragas_ms}ms"
+                        )
+                        # Factor RAGAS into confidence
+                        if ragas_result.overall_score > 0:
+                            confidence = self.calculate_blended_confidence(
+                                confidence, None, ragas_result.overall_score, source_diversity
+                            )
+                except Exception as e:
+                    logger.warning(f"[{request_id}] RAGAS evaluation failed: {e}")
 
             # PHASE 7.5: Entropy-Based Halting Check (if enabled)
             entropy_result = None

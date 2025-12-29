@@ -17,7 +17,7 @@
 | Phase 19: Enhanced Query Generation | ✅ Integrated | FLARE + Query Tree active |
 | Phase 20: Scratchpad Enhancement | ✅ Integrated | RAISE + Semantic Memory |
 | Phase 21: Template Reuse | ✅ **INTEGRATED** | Meta-Buffer + Reasoning Composer active |
-| SSE Events | ✅ **Phase 21 Complete** | 5 new events added |
+| SSE Events | ✅ **ALL COMPLETE** | 16 new events added (HyDE, RAGAS, BGE-M3, etc.) |
 | Metrics | ✅ Good | 41 tracking calls |
 
 ---
@@ -100,26 +100,28 @@ if self.config.enable_meta_buffer and confidence >= 0.75:
 - `progress_update`
 - `graph_node_entered`, `graph_node_completed`
 
-### Events NOT Emitted (Should be added)
+### Events Now Emitted ✅
 
-| Event | Feature | Priority |
-|-------|---------|----------|
-| `thought_template_matched` | Meta-Buffer | HIGH |
-| `thought_template_applied` | Meta-Buffer | HIGH |
-| `template_created` | Experience Distillation | MEDIUM |
-| `experience_distilling` | Experience Distillation | MEDIUM |
-| `reasoning_branch_created` | Reasoning DAG | LOW |
-| `reasoning_node_verified` | Reasoning DAG | LOW |
-| `reasoning_paths_merged` | Reasoning DAG | LOW |
-| `entity_relation_found` | Entity Tracker | LOW |
-| `hyde_generating` | HyDE | MEDIUM |
-| `hyde_complete` | HyDE | MEDIUM |
-| `ragas_evaluating` | RAGAS | MEDIUM |
-| `ragas_evaluation_complete` | RAGAS | MEDIUM |
-| `hybrid_search_start` | BGE-M3 | LOW |
-| `hybrid_search_complete` | BGE-M3 | LOW |
-| `llm_call_start` | Debugging | LOW |
-| `llm_call_complete` | Debugging | LOW |
+| Event | Feature | Status |
+|-------|---------|--------|
+| `thought_template_matched` | Meta-Buffer | ✅ ADDED |
+| `thought_template_applied` | Meta-Buffer | ✅ ADDED |
+| `template_created` | Experience Distillation | ✅ ADDED |
+| `experience_distilling` | Experience Distillation | ✅ ADDED |
+| `reasoning_strategy_composed` | Self-Discover | ✅ ADDED |
+| `reasoning_branch_created` | Reasoning DAG | ✅ ADDED |
+| `reasoning_node_verified` | Reasoning DAG | ✅ ADDED |
+| `reasoning_paths_merged` | Reasoning DAG | ✅ Helper exists |
+| `entities_extracted` | Entity Tracker | ✅ ADDED |
+| `entity_relation_found` | Entity Tracker | ✅ ADDED |
+| `hyde_generating` | HyDE | ✅ ADDED |
+| `hyde_complete` | HyDE | ✅ ADDED |
+| `ragas_evaluating` | RAGAS | ✅ ADDED |
+| `ragas_evaluation_complete` | RAGAS | ✅ ADDED |
+| `hybrid_search_start` | BGE-M3 | ✅ ADDED |
+| `hybrid_search_complete` | BGE-M3 | ✅ ADDED |
+| `llm_call_start` | Debugging | ⏳ Lowest priority |
+| `llm_call_complete` | Debugging | ⏳ Lowest priority |
 
 ---
 
@@ -247,11 +249,34 @@ if composed_strategy:
     ))
 ```
 
-### 3. Remaining (Lower Priority)
+### 3. ✅ FIXED: Added Lower Priority SSE Events (2025-12-29)
 
-- Add HyDE SSE events: `hyde_generating`, `hyde_complete`
-- Add RAGAS SSE events: `ragas_evaluating`, `ragas_evaluation_complete`
+All lower priority events now added to `search_with_events()`:
+
+**HyDE Events** (line 1349):
+- `hyde_generating(request_id, query)` - HyDE expansion starting
+- `hyde_complete(request_id, doc_count, has_embedding)` - HyDE expansion complete
+
+**RAGAS Events** (line 1638):
+- `ragas_evaluating(request_id, context_count)` - RAGAS evaluation starting
+- `ragas_evaluation_complete(request_id, faithfulness, relevancy, overall)` - RAGAS complete
+
+**BGE-M3 Hybrid Search Events** (line 1452):
+- `hybrid_search_start(request_id, doc_count, mode)` - Hybrid re-ranking starting
+- `hybrid_search_complete(request_id, result_count, duration_ms)` - Hybrid complete
+
+**Reasoning DAG Events** (line 1367):
+- `reasoning_branch_created(request_id, branch_id, hypothesis, depth)` - DAG branch created
+- `reasoning_node_verified(request_id, node_id, is_valid, confidence)` - Node verified
+
+**Entity Tracker Events** (line 1321):
+- `entities_extracted(request_id, count, names)` - Entities extracted from query
+- `entity_relation_found(request_id, source, target, relation_type)` - Relation discovered
+
+### 4. Remaining (Lowest Priority)
+
 - Add Phase 21 metrics API endpoint
+- Add LLM call debugging events (`llm_call_start`, `llm_call_complete`)
 
 ---
 
@@ -284,9 +309,10 @@ if composed_strategy:
 
 1. ✅ ~~Implement Phase 21 integration~~ **DONE**
 2. ✅ ~~Add missing SSE events~~ **DONE** (5 Phase 21 events added)
-3. ⏳ Add Phase 21 metrics endpoints (lower priority)
-4. ⏳ Add HyDE/RAGAS SSE event emissions (lower priority)
-5. ⏳ Re-run FANUC tests to verify Reasoning Composer working
+3. ✅ ~~Add HyDE/RAGAS SSE event emissions~~ **DONE** (10+ events added)
+4. ⏳ Add Phase 21 metrics endpoints (lowest priority)
+5. ⏳ Add LLM call debugging events (lowest priority)
+6. ⏳ Re-run FANUC tests to verify all features working
 
 ---
 

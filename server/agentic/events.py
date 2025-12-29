@@ -1238,6 +1238,102 @@ def reasoning_strategy_composed(
     )
 
 
+def reasoning_branch_created(
+    request_id: str,
+    branch_id: str,
+    hypothesis: str,
+    depth: int
+) -> SearchEvent:
+    """Reasoning DAG branch created"""
+    return SearchEvent(
+        event_type=EventType.REASONING_BRANCH_CREATED,
+        request_id=request_id,
+        message=f"Reasoning DAG: Branch '{branch_id}' created at depth {depth}",
+        progress_percent=14,
+        data={
+            "branch_id": branch_id,
+            "hypothesis": hypothesis[:100] if hypothesis else "",
+            "depth": depth
+        }
+    )
+
+
+def reasoning_node_verified(
+    request_id: str,
+    node_id: str,
+    is_valid: bool,
+    confidence: float
+) -> SearchEvent:
+    """Reasoning DAG node verified"""
+    return SearchEvent(
+        event_type=EventType.REASONING_NODE_VERIFIED,
+        request_id=request_id,
+        message=f"Reasoning DAG: Node '{node_id}' verified (valid={is_valid}, conf={confidence:.2f})",
+        progress_percent=15,
+        data={
+            "node_id": node_id,
+            "is_valid": is_valid,
+            "confidence": confidence
+        }
+    )
+
+
+def reasoning_paths_merged(
+    request_id: str,
+    path_count: int,
+    merged_node_id: str
+) -> SearchEvent:
+    """Reasoning DAG paths merged"""
+    return SearchEvent(
+        event_type=EventType.REASONING_PATHS_MERGED,
+        request_id=request_id,
+        message=f"Reasoning DAG: {path_count} paths merged into '{merged_node_id}'",
+        progress_percent=16,
+        data={
+            "path_count": path_count,
+            "merged_node_id": merged_node_id
+        }
+    )
+
+
+def entities_extracted(
+    request_id: str,
+    entity_count: int,
+    entity_names: list
+) -> SearchEvent:
+    """Entities extracted from query"""
+    return SearchEvent(
+        event_type=EventType.ENTITIES_EXTRACTED,
+        request_id=request_id,
+        message=f"Extracted {entity_count} entities: {', '.join(entity_names[:3])}",
+        progress_percent=11,
+        data={
+            "entity_count": entity_count,
+            "entity_names": entity_names[:5]
+        }
+    )
+
+
+def entity_relation_found(
+    request_id: str,
+    source_entity: str,
+    target_entity: str,
+    relation_type: str
+) -> SearchEvent:
+    """Entity relation discovered"""
+    return SearchEvent(
+        event_type=EventType.ENTITY_RELATION_FOUND,
+        request_id=request_id,
+        message=f"Relation: {source_entity} --[{relation_type}]--> {target_entity}",
+        progress_percent=11,
+        data={
+            "source_entity": source_entity,
+            "target_entity": target_entity,
+            "relation_type": relation_type
+        }
+    )
+
+
 def outcome_recorded(
     request_id: str,
     category: str,
