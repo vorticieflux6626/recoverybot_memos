@@ -79,6 +79,10 @@ from .metrics import (
     PhaseTimer,
     get_performance_metrics
 )
+from .search_metrics import (
+    SearchMetrics,
+    get_search_metrics
+)
 from .kv_cache_service import (
     KVCacheService,
     CacheBackend,
@@ -366,6 +370,9 @@ __all__ = [
     "QueryMetrics",
     "PhaseTimer",
     "get_performance_metrics",
+    # Search/Scrape Metrics
+    "SearchMetrics",
+    "get_search_metrics",
     # Phase 4: KV Cache Service
     "KVCacheService",
     "CacheBackend",

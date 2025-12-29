@@ -22,10 +22,12 @@ from urllib.parse import urlparse
 import io
 
 import httpx
+import time
 
 from .content_cache import get_content_cache
 from .metrics import get_performance_metrics
 from .context_limits import get_model_context_window
+from .search_metrics import get_search_metrics
 
 # Optional image handling imports
 try:
@@ -124,6 +126,23 @@ class ContentScraper:
         Returns:
             Dict with url, title, content, content_type, success, error
         """
+        metrics = get_search_metrics()
+        domain = urlparse(url).netloc.replace("www.", "")
+        start_time = time.time()
+
+        # Check if domain should be skipped based on failure history
+        should_skip, skip_reason = metrics.should_skip_domain(domain)
+        if should_skip:
+            logger.info(f"Skipping {domain}: {skip_reason}")
+            return {
+                "url": url,
+                "title": "",
+                "content": "",
+                "content_type": "skipped",
+                "success": False,
+                "error": f"Domain skipped: {skip_reason}"
+            }
+
         # Phase 2 Optimization: Check cache first
         if use_cache:
             cache = get_content_cache()
@@ -153,6 +172,16 @@ class ContentScraper:
             else:
                 result = self._extract_html(url, response.text)
 
+            # Record metrics
+            duration_ms = (time.time() - start_time) * 1000
+            content_length = len(result.get("content", ""))
+            metrics.record_scrape(
+                domain=domain,
+                success=result.get("success", False),
+                content_length=content_length,
+                duration_ms=duration_ms
+            )
+
             # Cache the result
             if use_cache and result.get("success"):
                 cache = get_content_cache()
@@ -168,6 +197,14 @@ class ContentScraper:
             return result
 
         except httpx.HTTPStatusError as e:
+            duration_ms = (time.time() - start_time) * 1000
+            error_msg = f"HTTP {e.response.status_code}"
+            metrics.record_scrape(
+                domain=domain,
+                success=False,
+                duration_ms=duration_ms,
+                failure_reason=error_msg
+            )
             logger.warning(f"HTTP error scraping {url}: {e.response.status_code}")
             return {
                 "url": url,
@@ -175,9 +212,17 @@ class ContentScraper:
                 "content": "",
                 "content_type": "error",
                 "success": False,
-                "error": f"HTTP {e.response.status_code}"
+                "error": error_msg
             }
         except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
+            error_msg = type(e).__name__
+            metrics.record_scrape(
+                domain=domain,
+                success=False,
+                duration_ms=duration_ms,
+                failure_reason=error_msg
+            )
             logger.warning(f"Error scraping {url}: {e}")
             return {
                 "url": url,

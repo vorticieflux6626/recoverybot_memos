@@ -15,12 +15,14 @@ import asyncio
 import logging
 import re
 import string
+import time
 from typing import List, Optional, Set, Tuple
 from urllib.parse import quote_plus, urlparse
 
 import httpx
 
 from .models import WebSearchResult
+from .search_metrics import get_search_metrics
 
 logger = logging.getLogger("agentic.searcher")
 
@@ -182,6 +184,9 @@ class SearXNGSearchProvider(SearchProvider):
         Returns:
             List of WebSearchResult objects
         """
+        metrics = get_search_metrics()
+        start_time = time.time()
+
         try:
             # Determine engines to use
             if engines is None:
@@ -252,10 +257,19 @@ class SearXNGSearchProvider(SearchProvider):
                         relevance_score=base_score
                     ))
 
+                duration_ms = (time.time() - start_time) * 1000
+                metrics.record_search(
+                    "searxng", query, len(results), duration_ms, success=True
+                )
                 logger.info(f"SearXNG returned {len(results)} results for: {query[:50]}")
                 return results
 
         except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
+            metrics.record_search(
+                "searxng", query, 0, duration_ms, success=False,
+                error=str(type(e).__name__)
+            )
             logger.error(f"SearXNG search error: {e}")
             self._available = False
             return []
@@ -330,38 +344,79 @@ class DuckDuckGoProvider(SearchProvider):
 
     No API key required, but may be rate-limited.
     Uses HTML parsing as DDG doesn't have a public API.
+    Features retry logic with exponential backoff on rate limits.
     """
 
     BASE_URL = "https://html.duckduckgo.com/html/"
+    MAX_RETRIES = 2
 
     async def search(self, query: str, max_results: int = 5) -> List[WebSearchResult]:
-        try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
-            }
-            data = {"q": query}
+        metrics = get_search_metrics()
+        start_time = time.time()
 
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.post(
-                    self.BASE_URL,
-                    headers=headers,
-                    data=data,
-                    follow_redirects=True
-                )
-
-                if response.status_code == 200:
-                    html = response.text
-                    return self._parse_results(html, max_results)
-                elif response.status_code == 202:
-                    logger.warning("DuckDuckGo rate limited (202)")
-                    return []
-                else:
-                    logger.warning(f"DuckDuckGo search failed: {response.status_code}")
-                    return []
-
-        except Exception as e:
-            logger.error(f"DuckDuckGo search error: {e}")
+        # Check if we're in backoff period
+        available, reason = metrics.is_provider_available("duckduckgo")
+        if not available:
+            logger.info(f"DuckDuckGo skipped: {reason}")
             return []
+
+        for attempt in range(self.MAX_RETRIES + 1):
+            try:
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+                }
+                data = {"q": query}
+
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    response = await client.post(
+                        self.BASE_URL,
+                        headers=headers,
+                        data=data,
+                        follow_redirects=True
+                    )
+
+                    duration_ms = (time.time() - start_time) * 1000
+
+                    if response.status_code == 200:
+                        html = response.text
+                        results = self._parse_results(html, max_results)
+                        metrics.record_search(
+                            "duckduckgo", query, len(results), duration_ms, success=True
+                        )
+                        metrics.reset_rate_limit("duckduckgo")
+                        return results
+
+                    elif response.status_code == 202:
+                        backoff = metrics.record_rate_limit("duckduckgo")
+                        if attempt < self.MAX_RETRIES:
+                            wait_time = min(backoff, 10)  # Max 10s wait between retries
+                            logger.info(f"DuckDuckGo rate limited, retrying in {wait_time}s...")
+                            await asyncio.sleep(wait_time)
+                            start_time = time.time()  # Reset timer for next attempt
+                            continue
+                        metrics.record_search(
+                            "duckduckgo", query, 0, duration_ms, success=False,
+                            error="rate_limited"
+                        )
+                        return []
+
+                    else:
+                        metrics.record_search(
+                            "duckduckgo", query, 0, duration_ms, success=False,
+                            error=f"http_{response.status_code}"
+                        )
+                        return []
+
+            except Exception as e:
+                duration_ms = (time.time() - start_time) * 1000
+                metrics.record_search(
+                    "duckduckgo", query, 0, duration_ms, success=False,
+                    error=str(type(e).__name__)
+                )
+                logger.error(f"DuckDuckGo search error: {e}")
+                return []
+
+        return []
 
     def _parse_results(self, html: str, max_results: int) -> List[WebSearchResult]:
         """Parse DuckDuckGo HTML response"""
@@ -661,6 +716,7 @@ class SearcherAgent:
         """
         all_results = []
         seen_urls = set()
+        metrics = get_search_metrics()
 
         # Extract keywords from all queries for relevance checking
         all_query_keywords: Set[str] = set()
@@ -669,15 +725,31 @@ class SearcherAgent:
 
         logger.debug(f"Query keywords for relevance: {all_query_keywords}")
 
-        # Determine best available provider
+        # Determine best available provider using intelligent selection
         # Priority: SearXNG (self-hosted, no limits) → DuckDuckGo → Brave
+        # Uses metrics to avoid rate-limited providers
+        provider = None
+        provider_name = None
+
+        # Try SearXNG first (no rate limits when self-hosted)
         if await self.searxng.check_availability():
             provider = self.searxng
             provider_name = "SearXNG"
         else:
-            # DuckDuckGo is always available (no API key needed)
-            provider = self.duckduckgo
-            provider_name = "DuckDuckGo"
+            # Fall back using metrics-based selection
+            best_provider, reason = metrics.get_best_provider(["duckduckgo", "brave"])
+            logger.info(f"Provider selection: {best_provider} ({reason})")
+
+            if best_provider == "duckduckgo":
+                provider = self.duckduckgo
+                provider_name = "DuckDuckGo"
+            elif best_provider == "brave" and self.brave.available:
+                provider = self.brave
+                provider_name = "Brave"
+            else:
+                # Fallback to DDG even if rate-limited
+                provider = self.duckduckgo
+                provider_name = "DuckDuckGo"
 
         logger.info(f"Using {provider_name} search provider")
 
