@@ -43,6 +43,15 @@ from .content_cache import get_content_cache
 from .ttl_cache_manager import get_ttl_cache_manager
 from .events import EventEmitter, EventType, SearchEvent
 
+# Lazy settings import to avoid circular dependencies
+_settings = None
+def _get_settings():
+    global _settings
+    if _settings is None:
+        from config.settings import get_settings
+        _settings = get_settings()
+    return _settings
+
 logger = logging.getLogger("agentic.base_pipeline")
 
 
@@ -61,25 +70,26 @@ class BaseSearchPipeline(ABC):
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        mcp_url: str = "http://localhost:7777",
+        ollama_url: Optional[str] = None,
+        mcp_url: Optional[str] = None,
         brave_api_key: Optional[str] = None,
         memory_service: Optional[Any] = None
     ):
-        self.ollama_url = ollama_url
-        self.mcp_url = mcp_url
+        settings = _get_settings()
+        self.ollama_url = ollama_url or settings.ollama_base_url
+        self.mcp_url = mcp_url or settings.mcp_url
 
         # Core agents (shared across all orchestrators)
-        self.analyzer = QueryAnalyzer(ollama_url=ollama_url)
-        self.planner = PlannerAgent(ollama_url=ollama_url, mcp_url=mcp_url)
+        self.analyzer = QueryAnalyzer(ollama_url=self.ollama_url)
+        self.planner = PlannerAgent(ollama_url=self.ollama_url, mcp_url=self.mcp_url)
         self.searcher = SearcherAgent(brave_api_key=brave_api_key)
-        self.verifier = VerifierAgent(ollama_url=ollama_url)
-        self.synthesizer = SynthesizerAgent(ollama_url=ollama_url, mcp_url=mcp_url)
+        self.verifier = VerifierAgent(ollama_url=self.ollama_url)
+        self.synthesizer = SynthesizerAgent(ollama_url=self.ollama_url, mcp_url=self.mcp_url)
 
         # Content processing
         self.scraper = ContentScraper()
-        self.deep_reader = DeepReader(ollama_url=ollama_url)
-        self.vision_analyzer = VisionAnalyzer(ollama_url=ollama_url)
+        self.deep_reader = DeepReader(ollama_url=self.ollama_url)
+        self.vision_analyzer = VisionAnalyzer(ollama_url=self.ollama_url)
 
         # Memory and caching
         self.memory_service = memory_service

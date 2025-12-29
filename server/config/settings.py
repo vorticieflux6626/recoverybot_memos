@@ -44,6 +44,13 @@ class MemOSSettings(BaseSettings):
     ollama_model: str = "llama3.3:70b"
     ollama_embedding_model: str = "mxbai-embed-large"
 
+    # Agentic Search Configuration
+    mcp_url: str = "http://localhost:7777"  # MCP Node Editor
+    searxng_url: str = "http://localhost:8888"  # SearXNG metasearch
+    classifier_model: str = "deepseek-r1:14b-qwen-distill-q8_0"  # Query classifier
+    synthesizer_model: str = "qwen3:8b"  # Synthesis model
+    thinking_model: str = "deepseek-r1:14b-qwen-distill-q8_0"  # Reasoning model
+
     # PDF Extraction Tools API (FANUC Technical Documentation)
     pdf_api_url: str = "http://localhost:8002"
     pdf_api_timeout: int = 30

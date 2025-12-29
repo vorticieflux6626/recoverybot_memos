@@ -30,6 +30,15 @@ except ImportError:
 
 import httpx
 
+# Lazy settings import to avoid circular dependencies
+_settings = None
+def _get_settings():
+    global _settings
+    if _settings is None:
+        from config.settings import get_settings
+        _settings = get_settings()
+    return _settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,7 +78,7 @@ class SearXNGSearcher:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8888",
+        base_url: Optional[str] = None,
         timeout: float = 30.0,
         default_engines: Optional[List[str]] = None,
         max_results_per_query: int = 10
@@ -78,12 +87,13 @@ class SearXNGSearcher:
         Initialize SearXNG searcher.
 
         Args:
-            base_url: SearXNG server URL
+            base_url: SearXNG server URL (defaults to settings.searxng_url)
             timeout: Request timeout in seconds
             default_engines: Engines to use (None = google, bing, duckduckgo)
             max_results_per_query: Maximum results per query
         """
-        self.base_url = base_url.rstrip("/")
+        settings = _get_settings()
+        self.base_url = (base_url or settings.searxng_url).rstrip("/")
         self.timeout = timeout
         self.default_engines = default_engines or ["google", "bing", "duckduckgo"]
         self.max_results_per_query = max_results_per_query

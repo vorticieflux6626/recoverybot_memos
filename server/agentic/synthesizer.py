@@ -26,6 +26,15 @@ from .context_limits import (
 )
 from .metrics import get_performance_metrics
 
+# Lazy settings import to avoid circular dependencies
+_settings = None
+def _get_settings():
+    global _settings
+    if _settings is None:
+        from config.settings import get_settings
+        _settings = get_settings()
+    return _settings
+
 logger = logging.getLogger("agentic.synthesizer")
 
 # Chain-of-Draft instruction to reduce thinking tokens by up to 80%
@@ -79,13 +88,14 @@ class SynthesizerAgent:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        mcp_url: str = "http://localhost:7777",
-        model: str = "qwen3:8b"  # Larger model for better synthesis
+        ollama_url: Optional[str] = None,
+        mcp_url: Optional[str] = None,
+        model: Optional[str] = None
     ):
-        self.ollama_url = ollama_url
-        self.mcp_url = mcp_url
-        self.model = model
+        settings = _get_settings()
+        self.ollama_url = ollama_url or settings.ollama_base_url
+        self.mcp_url = mcp_url or settings.mcp_url
+        self.model = model or settings.synthesizer_model
         self.mcp_available = False
 
     async def check_mcp_available(self) -> bool:

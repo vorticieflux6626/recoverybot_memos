@@ -571,8 +571,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        mcp_url: str = "http://localhost:7777",
+        ollama_url: Optional[str] = None,
+        mcp_url: Optional[str] = None,
         brave_api_key: Optional[str] = None,
         memory_service: Optional[Any] = None,
         config: Optional[FeatureConfig] = None,
@@ -584,8 +584,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
         Initialize the universal orchestrator.
 
         Args:
-            ollama_url: Ollama API URL
-            mcp_url: MCP Node Editor URL
+            ollama_url: Ollama API URL (defaults to settings.ollama_base_url)
+            mcp_url: MCP Node Editor URL (defaults to settings.mcp_url)
             brave_api_key: Brave Search API key
             memory_service: Optional memory service
             config: Explicit FeatureConfig (takes precedence over preset)

@@ -25,6 +25,15 @@ import httpx
 from .models import WebSearchResult
 from .search_metrics import get_search_metrics
 
+# Lazy settings import to avoid circular dependencies
+_settings = None
+def _get_settings():
+    global _settings
+    if _settings is None:
+        from config.settings import get_settings
+        _settings = get_settings()
+    return _settings
+
 logger = logging.getLogger("agentic.searcher")
 
 
@@ -146,8 +155,9 @@ class SearXNGSearchProvider(SearchProvider):
         r"\bmould\s+(open|close)", r"\brobot\s+ready\b", r"\bcycle\s+start\b",
     ]
 
-    def __init__(self, base_url: str = "http://localhost:8888"):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, base_url: Optional[str] = None):
+        settings = _get_settings()
+        self.base_url = (base_url or settings.searxng_url).rstrip("/")
         self._available = None  # Cache availability check
         self._available_checked_at = 0  # Timestamp of last check
         self._client: Optional[httpx.AsyncClient] = None  # Shared HTTP client
@@ -1018,8 +1028,8 @@ class SearcherAgent:
         "urbandictionary.com",
     }
 
-    def __init__(self, brave_api_key: Optional[str] = None, searxng_url: str = "http://localhost:8888"):
-        self.searxng = SearXNGSearchProvider(searxng_url)
+    def __init__(self, brave_api_key: Optional[str] = None, searxng_url: Optional[str] = None):
+        self.searxng = SearXNGSearchProvider(searxng_url)  # Uses settings if None
         self.brave = BraveSearchProvider(brave_api_key)
         self.duckduckgo = DuckDuckGoProvider()
         self._embedding_model = None  # Lazy-load for semantic similarity
