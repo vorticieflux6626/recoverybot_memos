@@ -50,6 +50,172 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 15** | Orchestrator Consolidation | ✅ **COMPLETE** |
 | **Phase 16** | Android SSE Streaming Integration | ✅ **COMPLETE** |
 | **Phase 17** | Context Curation Pipeline | ✅ **COMPLETE** |
+| **Phase 18** | Confidence-Calibrated Halting | ✅ **COMPLETE** |
+| **Phase 19** | Enhanced Query Generation (FLARE, RQ-RAG) | ✅ **COMPLETE** |
+| **Phase 20** | Scratchpad Enhancement (A-MEM, RAISE) | ✅ **COMPLETE** |
+
+#### ✅ Phase 20: Scratchpad Enhancement (Completed 2025-12-29)
+
+Implemented A-MEM semantic memory network and RAISE four-component structure:
+
+**New Modules:**
+- **`semantic_memory.py`**: A-MEM Zettelkasten-inspired memory network
+  - Automatic connection establishment based on embedding similarity (>0.7)
+  - Bidirectional links for graph traversal
+  - 8 memory types: finding, source, entity, reasoning, observation, example, question, answer
+  - 7 connection types: semantic, reference, supports, contradicts, derived_from, answers, related
+  - Based on A-MEM (arXiv 2502.12110) - 35% F1 improvement
+- **`raise_scratchpad.py`**: RAISE four-component structure
+  - Observations: Tool outputs, retrieved documents (6 types)
+  - Reasoning: Intermediate conclusions with confidence (7 types)
+  - Examples: Successful patterns for reuse
+  - Trajectory: Execution history with timing
+  - Quality signal extraction from scratchpad contents
+  - Based on RAISE (arXiv 2401.02777)
+
+**Key Features:**
+- **Semantic Memory**: Embedding-based similarity, auto-connection, graph traversal
+- **Memory Traversal**: BFS exploration with strength-weighted paths
+- **Quality Signal**: Evidence quality, reasoning quality, coverage, uncertainty indicators
+- **Observation Types**: TOOL_OUTPUT, DOCUMENT, SEARCH_RESULT, USER_INPUT, SYSTEM_DATA, SCRAPED_CONTENT
+- **Reasoning Types**: DEDUCTION, INDUCTION, ABDUCTION, COMPARISON, SYNTHESIS, CRITIQUE, HYPOTHESIS
+- **Uncertainty Indicators**: HIGH/MEDIUM/LOW_CONFIDENCE, CONFLICTING_EVIDENCE, MISSING_INFORMATION, UNVERIFIED
+
+**Orchestrator Integration:**
+- `_get_semantic_memory()`: Lazy-loaded A-MEM network
+- `_get_raise_scratchpad()`: Per-request RAISE scratchpad
+- `_add_to_semantic_memory()`: Add content with auto-connections
+- `_record_observation()`: Record observations during pipeline
+- `_record_reasoning()`: Record reasoning steps
+- `_get_quality_signal()`: Extract quality assessment
+
+**Feature Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `enable_semantic_memory` | False | A-MEM Zettelkasten-style memory network |
+| `enable_raise_structure` | False | RAISE four-component scratchpad |
+
+**Preset Configuration:**
+| Preset | semantic_memory | raise_structure |
+|--------|-----------------|-----------------|
+| minimal | False | False |
+| balanced | False | False |
+| enhanced | False | False |
+| research | True | True |
+| full | True | True |
+
+**Research Basis:**
+- A-MEM (arXiv 2502.12110): Zettelkasten-inspired memory with 35% F1 improvement
+- RAISE (arXiv 2401.02777): Observations/Reasoning/Examples/Trajectory structure
+
+**Module Version**: `agentic/__init__.py` → v0.33.0
+
+#### ✅ Phase 19: Enhanced Query Generation (Completed 2025-12-29)
+
+Implemented FLARE forward-looking retrieval and RQ-RAG query tree decoding for improved query coverage:
+
+**New Modules:**
+- **`flare_retriever.py`**: Forward-Looking Active REtrieval
+  - Detects uncertainty during synthesis via hedging patterns and low-confidence markers
+  - Triggers proactive retrieval based on what the model PREDICTS it needs
+  - Regenerates with retrieved context when uncertainty detected
+  - Based on FLARE (EMNLP 2023) - retrieve when uncertain, not after-the-fact
+- **`query_tree.py`**: RQ-RAG Query Tree Decoder
+  - Explores multiple query variations via tree decoding
+  - Operations: REWRITE, DECOMPOSE, DISAMBIGUATE, EXPAND, NARROW, NEGATE
+  - Parallel exploration of different phrasings retrieves different relevant docs
+  - Confidence-weighted aggregation across tree branches
+  - Based on RQ-RAG (arXiv 2404.00610) - +33.5% on QA benchmarks
+
+**Key Features:**
+- **Uncertainty Detection**: Patterns for hedging (might, may, possibly) and factual claims (statistics, dates)
+- **Tentative Generation**: Generate 50 tokens tentatively, use as retrieval query if uncertain
+- **Tree Decoding**: Generate 4+ query variations at depth 2, retrieve in parallel
+- **Retrieval Triggers**: LOW_CONFIDENCE, UNCERTAIN_PHRASE, FACTUAL_CLAIM, MISSING_DETAIL
+- **Branch Aggregation**: Weight documents by node confidence × retrieval score
+
+**Orchestrator Integration:**
+- `_expand_queries_with_tree()`: Expands query into 8 variations for parallel search
+- `_flare_enhanced_retrieval()`: Adds docs when synthesis shows uncertainty
+- Lazy-loaded components for minimal overhead when disabled
+
+**Feature Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `enable_flare_retrieval` | False | Forward-looking active retrieval |
+| `enable_query_tree` | False | RQ-RAG tree decoding for query expansion |
+
+**Preset Configuration:**
+| Preset | flare_retrieval | query_tree |
+|--------|-----------------|------------|
+| minimal | False | False |
+| balanced | False | False |
+| enhanced | False | False |
+| research | True | True |
+| full | True | True |
+
+**Research Basis:**
+- FLARE (EMNLP 2023): Active retrieval on uncertainty (arXiv:2305.06983)
+- RQ-RAG (arXiv 2404.00610): +33.5% on QA benchmarks via tree decoding
+
+**Module Version**: `agentic/__init__.py` → v0.32.0
+
+#### ✅ Phase 18: Confidence-Calibrated Halting (Completed 2025-12-29)
+
+Implemented adaptive iteration control based on UALA, CISC, and REFRAIN research:
+
+**New Modules:**
+- **`entropy_monitor.py`**: UALA-style entropy-based halting
+  - Tracks generation entropy to detect confident vs uncertain outputs
+  - Thresholds: entropy < 0.2 → halt confident, entropy > 0.5 → continue
+  - Session-based trajectory tracking for convergence detection
+  - Based on UALA (ACL 2024) - >50% reduction in tool calls
+- **`self_consistency.py`**: CISC multi-path convergence checking
+  - Weighted majority voting across multiple synthesis attempts
+  - Semantic similarity clustering of answers
+  - Key fact agreement analysis across attempts
+  - Based on CISC (Google, arXiv 2502.20233) - >40% sample reduction
+- **`iteration_bandit.py`**: UCB-based action selection
+  - Multi-armed bandit for exploration/exploitation tradeoff
+  - Actions: search_more, refine_query, synthesize_now, decompose, verify, broaden, narrow
+  - Context-aware statistics for improved learning
+  - Based on REFRAIN (arXiv 2510.10103) - 20-55% token reduction
+
+**Key Features:**
+- **Entropy Monitoring**: LLM self-evaluation of confidence via completeness, source quality, hedging, specificity
+- **Halt Decisions**: CONTINUE, HALT_CONFIDENT, HALT_MAX_ITERATIONS, HALT_CONVERGENCE
+- **Convergence Status**: CONVERGED (>60% agreement), PARTIAL, DIVERGENT, INSUFFICIENT
+- **UCB Action Selection**: `UCB(a) = Q(a) + c * sqrt(log(t) / N(a))`
+- **Bandit Learning**: Persistent stats across sessions, context-aware rewards
+
+**Orchestrator Integration:**
+- Phase 7.5 (Entropy Check): Between reflection and adaptive refinement
+- If entropy indicates confidence, skips refinement loop (saves time)
+- UCB bandit optionally replaces default refinement decision logic
+- Bandit outcomes recorded for continuous learning
+
+**Feature Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `enable_entropy_halting` | False | UALA-style entropy monitoring |
+| `enable_iteration_bandit` | False | UCB action selection for iterations |
+| `enable_self_consistency` | False | Multi-path answer convergence |
+
+**Preset Configuration:**
+| Preset | entropy_halting | iteration_bandit | self_consistency |
+|--------|-----------------|------------------|------------------|
+| minimal | False | False | False |
+| balanced | False | False | False |
+| enhanced | False | False | False |
+| research | True | True | False |
+| full | True | True | True |
+
+**Research Basis:**
+- UALA (ACL 2024): Uncertainty-aware tool call reduction
+- CISC (arXiv 2502.20233): Confidence-informed self-consistency
+- REFRAIN (arXiv 2510.10103): UCB-based iteration decisions
+
+**Module Version**: `agentic/__init__.py` → v0.31.0
 
 #### ✅ Phase 17: Context Curation Pipeline (Completed 2025-12-29)
 

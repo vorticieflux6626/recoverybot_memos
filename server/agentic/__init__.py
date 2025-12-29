@@ -346,6 +346,70 @@ from .context_curator import (
     get_context_curator,
     curate_context
 )
+# Phase 2 Confidence-Calibrated Halting (December 2025)
+from .entropy_monitor import (
+    EntropyMonitor,
+    EntropyResult,
+    EntropyState,
+    HaltDecision,
+    get_entropy_monitor
+)
+from .self_consistency import (
+    SelfConsistencyChecker,
+    ConvergenceResult,
+    ConvergenceStatus,
+    SynthesisAttempt,
+    AnswerCluster,
+    get_consistency_checker
+)
+from .iteration_bandit import (
+    IterationBandit,
+    BanditDecision,
+    RefinementAction,
+    RefinementState,
+    ActionOutcome,
+    ArmStats,
+    get_iteration_bandit
+)
+# Phase 3 Enhanced Query Generation (December 2025)
+from .flare_retriever import (
+    FLARERetriever,
+    FLAREResult,
+    RetrievalPoint,
+    RetrievalTrigger,
+    get_flare_retriever
+)
+from .query_tree import (
+    QueryTreeDecoder,
+    QueryTree,
+    QueryNode,
+    QueryOperation,
+    TreeDecodingResult,
+    NodeStatus as QueryNodeStatus,
+    get_query_tree_decoder
+)
+# Phase 4 Scratchpad Enhancement (December 2025)
+from .semantic_memory import (
+    SemanticMemoryNetwork,
+    Memory,
+    MemoryConnection,
+    MemoryType,
+    ConnectionType,
+    TraversalResult,
+    get_semantic_memory
+)
+from .raise_scratchpad import (
+    RAISEScratchpad,
+    Observation,
+    ReasoningStep,
+    Example,
+    TrajectoryStep,
+    QualitySignal,
+    ObservationType,
+    ReasoningType,
+    UncertaintyIndicator,
+    create_raise_scratchpad
+)
 
 __all__ = [
     # ==========================================================================
@@ -628,6 +692,56 @@ __all__ = [
     "CurationTrace",
     "get_context_curator",
     "curate_context",
+    # Phase 2 Confidence-Calibrated Halting (December 2025)
+    "EntropyMonitor",
+    "EntropyResult",
+    "EntropyState",
+    "HaltDecision",
+    "get_entropy_monitor",
+    "SelfConsistencyChecker",
+    "ConvergenceResult",
+    "ConvergenceStatus",
+    "SynthesisAttempt",
+    "AnswerCluster",
+    "get_consistency_checker",
+    "IterationBandit",
+    "BanditDecision",
+    "RefinementAction",
+    "RefinementState",
+    "ActionOutcome",
+    "ArmStats",
+    "get_iteration_bandit",
+    # Phase 3 Enhanced Query Generation (December 2025)
+    "FLARERetriever",
+    "FLAREResult",
+    "RetrievalPoint",
+    "RetrievalTrigger",
+    "get_flare_retriever",
+    "QueryTreeDecoder",
+    "QueryTree",
+    "QueryNode",
+    "QueryOperation",
+    "TreeDecodingResult",
+    "get_query_tree_decoder",
+    "QueryNodeStatus",
+    # Phase 4 Scratchpad Enhancement (December 2025)
+    "SemanticMemoryNetwork",
+    "Memory",
+    "MemoryConnection",
+    "MemoryType",
+    "ConnectionType",
+    "TraversalResult",
+    "get_semantic_memory",
+    "RAISEScratchpad",
+    "Observation",
+    "ReasoningStep",
+    "Example",
+    "TrajectoryStep",
+    "QualitySignal",
+    "ObservationType",
+    "ReasoningType",
+    "UncertaintyIndicator",
+    "create_raise_scratchpad",
 ]
 
-__version__ = "0.30.0"  # Phase 1 Context Curation: DIG scoring, redundancy detection, curation pipeline
+__version__ = "0.33.0"  # Phase 4 Scratchpad Enhancement: A-MEM semantic memory, RAISE structure

@@ -146,6 +146,52 @@ from .context_curator import (
     CurationPreset,
     get_context_curator
 )
+# Phase 2: Confidence-Calibrated Halting
+from .entropy_monitor import (
+    EntropyMonitor,
+    EntropyResult,
+    HaltDecision,
+    get_entropy_monitor
+)
+from .self_consistency import (
+    SelfConsistencyChecker,
+    ConvergenceResult,
+    ConvergenceStatus,
+    get_consistency_checker
+)
+from .iteration_bandit import (
+    IterationBandit,
+    BanditDecision,
+    RefinementAction,
+    RefinementState,
+    get_iteration_bandit
+)
+# Phase 3: Enhanced Query Generation
+from .flare_retriever import (
+    FLARERetriever,
+    FLAREResult,
+    RetrievalPoint,
+    get_flare_retriever
+)
+from .query_tree import (
+    QueryTreeDecoder,
+    QueryTree,
+    TreeDecodingResult,
+    get_query_tree_decoder
+)
+# Phase 4: Scratchpad Enhancement
+from .semantic_memory import (
+    SemanticMemoryNetwork,
+    MemoryType,
+    ConnectionType,
+    get_semantic_memory
+)
+from .raise_scratchpad import (
+    RAISEScratchpad,
+    ObservationType,
+    ReasoningType,
+    create_raise_scratchpad
+)
 
 logger = logging.getLogger("agentic.orchestrator_universal")
 
@@ -278,6 +324,19 @@ class FeatureConfig:
     enable_context_curation: bool = False  # DIG-based context filtering/dedup
     context_curation_preset: str = "balanced"  # fast/balanced/thorough/technical
 
+    # Confidence-Calibrated Halting (Phase 2 - Layer 2)
+    enable_entropy_halting: bool = False   # UALA-style entropy monitoring
+    enable_iteration_bandit: bool = False  # UCB action selection for iterations
+    enable_self_consistency: bool = False  # Multi-path answer convergence
+
+    # Enhanced Query Generation (Phase 3 - Layer 2)
+    enable_flare_retrieval: bool = False   # Forward-looking active retrieval
+    enable_query_tree: bool = False        # RQ-RAG tree decoding for query expansion
+
+    # Scratchpad Enhancement (Phase 4 - Layer 3)
+    enable_semantic_memory: bool = False   # A-MEM Zettelkasten-style memory network
+    enable_raise_structure: bool = False   # RAISE four-component scratchpad
+
     # Advanced reasoning (Layer 3)
     enable_entity_tracking: bool = False   # GSW entity extraction
     enable_thought_library: bool = False   # Reusable patterns
@@ -359,6 +418,16 @@ PRESET_CONFIGS = {
         enable_ragas=True,
         enable_context_curation=True,  # DIG-based context filtering
         context_curation_preset="thorough",  # Thorough for research
+        # Phase 2: Confidence-Calibrated Halting
+        enable_entropy_halting=True,
+        enable_iteration_bandit=True,
+        enable_self_consistency=False,  # Expensive, disabled by default
+        # Phase 3: Enhanced Query Generation
+        enable_flare_retrieval=True,
+        enable_query_tree=True,
+        # Phase 4: Scratchpad Enhancement
+        enable_semantic_memory=True,
+        enable_raise_structure=True,
         enable_mixed_precision=True,
         enable_entity_enhanced_retrieval=True,
         enable_entity_tracking=True,
@@ -399,6 +468,16 @@ PRESET_CONFIGS = {
         enable_ragas=True,
         enable_context_curation=True,  # DIG-based context filtering
         context_curation_preset="technical",  # Technical for full precision
+        # Phase 2: Confidence-Calibrated Halting
+        enable_entropy_halting=True,
+        enable_iteration_bandit=True,
+        enable_self_consistency=True,  # Full enables all
+        # Phase 3: Enhanced Query Generation
+        enable_flare_retrieval=True,
+        enable_query_tree=True,
+        # Phase 4: Scratchpad Enhancement
+        enable_semantic_memory=True,
+        enable_raise_structure=True,
         # Layer 3 - Advanced reasoning
         enable_entity_tracking=True,
         enable_thought_library=True,
@@ -526,6 +605,19 @@ class UniversalOrchestrator(BaseSearchPipeline):
         self._ttl_manager = None
         self._stuck_metrics: Optional[StuckStateMetrics] = None
         self._context_curator: Optional[ContextCurator] = None
+
+        # Phase 2: Confidence-Calibrated Halting components
+        self._entropy_monitor: Optional[EntropyMonitor] = None
+        self._self_consistency_checker: Optional[SelfConsistencyChecker] = None
+        self._iteration_bandit: Optional[IterationBandit] = None
+
+        # Phase 3: Enhanced Query Generation components
+        self._flare_retriever: Optional[FLARERetriever] = None
+        self._query_tree_decoder: Optional[QueryTreeDecoder] = None
+
+        # Phase 4: Scratchpad Enhancement components
+        self._semantic_memory: Optional[SemanticMemoryNetwork] = None
+        self._raise_scratchpad: Optional[RAISEScratchpad] = None
 
         # Graph visualization state for SSE events
         self._graph_state = UniversalGraphState()
@@ -736,6 +828,228 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 preset=preset
             )
         return self._context_curator
+
+    def _get_entropy_monitor(self) -> EntropyMonitor:
+        """Lazy initialize entropy monitor for confidence-calibrated halting."""
+        if self._entropy_monitor is None:
+            self._entropy_monitor = get_entropy_monitor(self.ollama_url)
+        return self._entropy_monitor
+
+    def _get_consistency_checker(self) -> SelfConsistencyChecker:
+        """Lazy initialize self-consistency checker."""
+        if self._self_consistency_checker is None:
+            self._self_consistency_checker = get_consistency_checker(self.ollama_url)
+        return self._self_consistency_checker
+
+    def _get_iteration_bandit(self) -> IterationBandit:
+        """Lazy initialize iteration bandit for UCB action selection."""
+        if self._iteration_bandit is None:
+            # Persistence path for learning across sessions
+            persistence_path = f"{self.db_path}/iteration_bandit_stats.json"
+            self._iteration_bandit = get_iteration_bandit(persistence_path)
+        return self._iteration_bandit
+
+    def _create_refinement_state(
+        self,
+        query: str,
+        state,
+        entropy: float = 0.5,
+        coverage_score: float = 0.0,
+        confidence: float = 0.5
+    ) -> RefinementState:
+        """Create a RefinementState for bandit decision-making."""
+        unanswered = []
+        if hasattr(state, 'search_plan') and state.search_plan:
+            # Get unanswered from decomposed questions vs answered
+            all_qs = getattr(state.search_plan, 'decomposed_questions', [])
+            # Simplified: assume coverage ratio determines unanswered
+            if coverage_score < 1.0 and all_qs:
+                unanswered_ratio = 1.0 - coverage_score
+                unanswered_count = int(len(all_qs) * unanswered_ratio)
+                unanswered = all_qs[:unanswered_count]
+
+        return RefinementState(
+            query=query,
+            iteration=state.iteration,
+            max_iterations=state.max_iterations if hasattr(state, 'max_iterations') else 5,
+            current_confidence=confidence,
+            num_sources=state.sources_consulted if hasattr(state, 'sources_consulted') else 0,
+            coverage_score=coverage_score,
+            entropy=entropy,
+            has_contradictions=False,  # TODO: integrate contradiction detection
+            unanswered_questions=unanswered
+        )
+
+    # ===== Phase 3: Enhanced Query Generation =====
+
+    def _get_flare_retriever(self) -> FLARERetriever:
+        """Lazy initialize FLARE retriever for forward-looking active retrieval."""
+        if self._flare_retriever is None:
+            self._flare_retriever = get_flare_retriever(self.ollama_url)
+        return self._flare_retriever
+
+    def _get_query_tree_decoder(self) -> QueryTreeDecoder:
+        """Lazy initialize query tree decoder for RQ-RAG tree decoding."""
+        if self._query_tree_decoder is None:
+            self._query_tree_decoder = get_query_tree_decoder(self.ollama_url)
+        return self._query_tree_decoder
+
+    async def _expand_queries_with_tree(
+        self,
+        query: str,
+        retrieval_func=None
+    ) -> List[str]:
+        """
+        Use RQ-RAG query tree to expand the query into variations.
+
+        Returns list of expanded queries for parallel search.
+        """
+        if not self.config.enable_query_tree:
+            return [query]
+
+        try:
+            decoder = self._get_query_tree_decoder()
+            result = await decoder.tree_decode(query, retrieval_func)
+
+            # Return all unique queries from the tree
+            all_queries = [query]  # Original first
+            for node_id, node in result.tree.nodes.items():
+                if node.query != query and node.query not in all_queries:
+                    all_queries.append(node.query)
+
+            logger.debug(f"Query tree expanded {query!r} into {len(all_queries)} variations")
+            return all_queries[:8]  # Limit to 8 total
+
+        except Exception as e:
+            logger.warning(f"Query tree expansion failed: {e}")
+            return [query]
+
+    async def _flare_enhanced_retrieval(
+        self,
+        query: str,
+        partial_synthesis: str,
+        context: List[str],
+        retrieval_func=None
+    ) -> List[str]:
+        """
+        Use FLARE for forward-looking retrieval during synthesis.
+
+        If the partial synthesis shows uncertainty, retrieve more documents.
+        """
+        if not self.config.enable_flare_retrieval:
+            return []
+
+        try:
+            flare = self._get_flare_retriever()
+            additional_docs, retrieval_points = await flare.forward_looking_retrieve(
+                query=query,
+                partial_synthesis=partial_synthesis,
+                context=context,
+                retrieval_func=retrieval_func
+            )
+
+            if retrieval_points:
+                logger.info(
+                    f"FLARE retrieved {len(additional_docs)} docs at "
+                    f"{len(retrieval_points)} uncertainty points"
+                )
+
+            return additional_docs
+
+        except Exception as e:
+            logger.warning(f"FLARE retrieval failed: {e}")
+            return []
+
+    # ===== Phase 4: Scratchpad Enhancement =====
+
+    def _get_semantic_memory(self) -> SemanticMemoryNetwork:
+        """Lazy initialize semantic memory network for A-MEM connections."""
+        if self._semantic_memory is None:
+            self._semantic_memory = get_semantic_memory(self.ollama_url)
+        return self._semantic_memory
+
+    def _get_raise_scratchpad(self, request_id: str, query: str) -> RAISEScratchpad:
+        """Get or create a RAISE scratchpad for structured working memory."""
+        if self._raise_scratchpad is None or self._raise_scratchpad.request_id != request_id:
+            self._raise_scratchpad = create_raise_scratchpad(request_id, query)
+        return self._raise_scratchpad
+
+    async def _add_to_semantic_memory(
+        self,
+        content: str,
+        memory_type: MemoryType,
+        attributes: Dict[str, Any] = None,
+        explicit_connections: List = None
+    ):
+        """
+        Add content to the semantic memory network.
+
+        Creates connections based on semantic similarity automatically.
+        """
+        if not self.config.enable_semantic_memory:
+            return
+
+        try:
+            memory = self._get_semantic_memory()
+            await memory.add_memory(
+                content=content,
+                memory_type=memory_type,
+                attributes=attributes or {},
+                explicit_connections=explicit_connections or []
+            )
+            logger.debug(f"Added to semantic memory: {memory_type.value}")
+        except Exception as e:
+            logger.warning(f"Failed to add to semantic memory: {e}")
+
+    def _record_observation(
+        self,
+        request_id: str,
+        query: str,
+        content: str,
+        observation_type: ObservationType,
+        source: str,
+        quality_score: float = 0.5
+    ):
+        """Record an observation in the RAISE scratchpad."""
+        if not self.config.enable_raise_structure:
+            return
+
+        scratchpad = self._get_raise_scratchpad(request_id, query)
+        scratchpad.add_observation(
+            content=content,
+            observation_type=observation_type,
+            source=source,
+            quality_score=quality_score
+        )
+
+    def _record_reasoning(
+        self,
+        request_id: str,
+        query: str,
+        conclusion: str,
+        reasoning_type: ReasoningType,
+        confidence: float = 0.5,
+        agent: str = ""
+    ):
+        """Record a reasoning step in the RAISE scratchpad."""
+        if not self.config.enable_raise_structure:
+            return
+
+        scratchpad = self._get_raise_scratchpad(request_id, query)
+        scratchpad.add_reasoning_step(
+            conclusion=conclusion,
+            reasoning_type=reasoning_type,
+            confidence=confidence,
+            agent=agent
+        )
+
+    def _get_quality_signal(self, request_id: str, query: str):
+        """Get quality signal from RAISE scratchpad."""
+        if not self.config.enable_raise_structure:
+            return None
+
+        scratchpad = self._get_raise_scratchpad(request_id, query)
+        return scratchpad.get_quality_signal()
 
     # ===== Core Search Method =====
 
@@ -1158,11 +1472,61 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
                 await emitter.emit(graph_node_completed(request_id, "reflect", True, graph, reflect_ms))
 
-            # PHASE 8: Adaptive Refinement Loop (if enabled and confidence below threshold)
+            # PHASE 7.5: Entropy-Based Halting Check (if enabled)
+            entropy_result = None
+            should_skip_refinement = False
+            if self.config.enable_entropy_halting and synthesis:
+                entropy_start = time.time()
+                try:
+                    entropy_monitor = self._get_entropy_monitor()
+                    entropy_result = await entropy_monitor.calculate_entropy(
+                        query=request.query,
+                        synthesis=synthesis,
+                        context=scraped_content,
+                        iteration=state.iteration,
+                        max_iterations=request.max_iterations,
+                        session_id=request_id
+                    )
+
+                    entropy_ms = int((time.time() - entropy_start) * 1000)
+                    logger.info(
+                        f"[{request_id}] Entropy check: {entropy_result.current_entropy:.3f} "
+                        f"(conf={entropy_result.confidence_score:.2f}) "
+                        f"decision={entropy_result.decision.value} in {entropy_ms}ms"
+                    )
+
+                    # If entropy indicates high confidence, skip refinement
+                    if entropy_result.decision in [HaltDecision.HALT_CONFIDENT, HaltDecision.HALT_CONVERGENCE]:
+                        should_skip_refinement = True
+                        # Boost confidence based on entropy analysis
+                        confidence = max(confidence, entropy_result.confidence_score)
+                        logger.info(
+                            f"[{request_id}] Entropy-based halting: skipping refinement "
+                            f"(decision={entropy_result.decision.value})"
+                        )
+
+                    # Record in search trace
+                    search_trace.append({
+                        "step": "entropy_halting",
+                        "entropy": entropy_result.current_entropy,
+                        "confidence_score": entropy_result.confidence_score,
+                        "decision": entropy_result.decision.value,
+                        "skip_refinement": should_skip_refinement,
+                        "duration_ms": entropy_ms
+                    })
+                except Exception as e:
+                    logger.warning(f"[{request_id}] Entropy monitoring failed: {e}")
+
+            # PHASE 8: Adaptive Refinement Loop (if enabled, not skipped by entropy, and confidence below threshold)
+            should_refine = (
+                self.config.enable_adaptive_refinement and
+                not should_skip_refinement and
+                confidence < self.config.min_confidence_threshold
+            )
             logger.info(f"[{request_id}] Adaptive refinement check: enabled={self.config.enable_adaptive_refinement}, "
                        f"confidence={confidence:.2%}, threshold={self.config.min_confidence_threshold:.2%}, "
-                       f"trigger={self.config.enable_adaptive_refinement and confidence < self.config.min_confidence_threshold}")
-            if self.config.enable_adaptive_refinement and confidence < self.config.min_confidence_threshold:
+                       f"entropy_skip={should_skip_refinement}, trigger={should_refine}")
+            if should_refine:
                 refine_loop_start = time.time()
                 initial_confidence = confidence
                 refinement_attempt = 0
@@ -1211,19 +1575,61 @@ class UniversalOrchestrator(BaseSearchPipeline):
                             answer_assessment.gaps
                         ))
 
-                    # Step 3: Decide refinement action
-                    decision = self.adaptive_refinement.decide_refinement_action(
-                        confidence=confidence,
-                        source_count=len(sources),
-                        query_complexity=state.query_analysis.estimated_complexity if state.query_analysis else "medium",
-                        iteration=refinement_attempt,
-                        gap_analysis=gap_analysis,
-                        answer_assessment=answer_assessment
-                    )
+                    # Step 3: Decide refinement action (optionally via UCB bandit)
+                    bandit_decision = None
+                    if self.config.enable_iteration_bandit:
+                        try:
+                            bandit = self._get_iteration_bandit()
+                            coverage_score = gap_analysis.coverage_score if gap_analysis else 0.5
+                            entropy_val = entropy_result.current_entropy if entropy_result else 0.5
 
+                            refinement_state = self._create_refinement_state(
+                                query=request.query,
+                                state=state,
+                                entropy=entropy_val,
+                                coverage_score=coverage_score,
+                                confidence=confidence
+                            )
+
+                            bandit_decision = bandit.select_action(refinement_state)
+                            logger.info(
+                                f"[{request_id}] Bandit decision: {bandit_decision.action.value} "
+                                f"(UCB={bandit_decision.ucb_score:.3f}, conf={bandit_decision.confidence:.2f})"
+                            )
+
+                            # Map bandit action to RefinementDecision
+                            bandit_to_refinement = {
+                                RefinementAction.SYNTHESIZE_NOW: RefinementDecision.COMPLETE,
+                                RefinementAction.SEARCH_MORE: RefinementDecision.REFINE_QUERY,
+                                RefinementAction.REFINE_QUERY: RefinementDecision.REFINE_QUERY,
+                                RefinementAction.DECOMPOSE: RefinementDecision.DECOMPOSE,
+                                RefinementAction.VERIFY_CLAIMS: RefinementDecision.COMPLETE,  # Maps to verify then stop
+                                RefinementAction.BROADEN_SCOPE: RefinementDecision.WEB_FALLBACK,
+                                RefinementAction.NARROW_FOCUS: RefinementDecision.REFINE_QUERY,
+                            }
+                            decision = bandit_to_refinement.get(
+                                bandit_decision.action,
+                                RefinementDecision.REFINE_QUERY
+                            )
+                        except Exception as e:
+                            logger.warning(f"[{request_id}] Iteration bandit failed: {e}, falling back to default")
+                            bandit_decision = None
+
+                    # Fall back to standard adaptive refinement decision if bandit not used
+                    if bandit_decision is None:
+                        decision = self.adaptive_refinement.decide_refinement_action(
+                            confidence=confidence,
+                            source_count=len(sources),
+                            query_complexity=state.query_analysis.estimated_complexity if state.query_analysis else "medium",
+                            iteration=refinement_attempt,
+                            gap_analysis=gap_analysis,
+                            answer_assessment=answer_assessment
+                        )
+
+                    decision_source = "bandit" if bandit_decision else "adaptive"
                     await emitter.emit(events.adaptive_refinement_decision(
                         request_id, decision.value, confidence, refinement_attempt,
-                        f"Gap count: {len(gap_analysis.gaps) if gap_analysis else 0}, "
+                        f"Source: {decision_source}, Gap count: {len(gap_analysis.gaps) if gap_analysis else 0}, "
                         f"Grade: {answer_assessment.grade.value if answer_assessment else 'N/A'}"
                     ))
 
@@ -1351,6 +1757,33 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
                 logger.info(f"[{request_id}] Adaptive refinement complete: {initial_confidence:.2%} → {confidence:.2%} "
                            f"in {refinement_attempt} attempts ({refine_total_ms}ms)")
+
+                # Record bandit outcome for learning (if bandit was used)
+                if self.config.enable_iteration_bandit and bandit_decision:
+                    try:
+                        bandit = self._get_iteration_bandit()
+                        # Calculate reward based on confidence improvement
+                        improvement = confidence - initial_confidence
+                        # Reward is normalized: 0.5 = no change, 1.0 = large improvement, 0.0 = degraded
+                        reward = min(1.0, max(0.0, 0.5 + improvement))
+                        # Boost reward if we reached threshold
+                        if confidence >= self.config.min_confidence_threshold:
+                            reward = min(1.0, reward + 0.2)
+
+                        bandit.record_outcome(
+                            action=bandit_decision.action,
+                            reward=reward,
+                            state=refinement_state if 'refinement_state' in dir() else None,
+                            context={
+                                "initial_confidence": initial_confidence,
+                                "final_confidence": confidence,
+                                "iterations": refinement_attempt,
+                                "duration_ms": refine_total_ms
+                            }
+                        )
+                        logger.debug(f"[{request_id}] Bandit outcome recorded: action={bandit_decision.action.value}, reward={reward:.2f}")
+                    except Exception as e:
+                        logger.warning(f"[{request_id}] Failed to record bandit outcome: {e}")
 
             # Build final response
             execution_time_ms = int((time.time() - start_time) * 1000)
