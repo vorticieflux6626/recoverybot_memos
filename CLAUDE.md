@@ -976,6 +976,18 @@ GET  /api/tts/models/status              - Check which models are loaded
     - `agentic/searxng_search.py` - Async client for direct SearXNG API access
     - `../searxng/searxng_client.py` - Standalone Python client
   - API: `http://localhost:8888/search?q=query&format=json&engines=google,bing`
+- **Academic Domain Search** (NEW - December 2025):
+  - **Dynamic Engine Selection**: Auto-detects query type and routes to appropriate engines
+  - **Query Types**: academic, technical, general (pattern-based detection)
+  - **Engine Groups**:
+    - `academic`: arxiv, semantic_scholar, google_scholar, pubmed, base, crossref
+    - `technical`: github, stackoverflow, pypi, npm, dockerhub
+    - `general`: google, bing, duckduckgo, brave, wikipedia
+  - **80+ Trusted Domains**: Organized by category with tiered scoring
+  - **Premium Domains** (0.25 boost): arxiv.org, semanticscholar.org, pytorch.org, huggingface.co
+  - **Trusted Domains** (0.15 boost): stackoverflow.com, github.com, wikipedia.org
+  - Key file: `agentic/searcher.py` - `TRUSTED_DOMAINS`, `PREMIUM_DOMAINS`, `ENGINE_GROUPS`
+  - Documentation: `agentic/ACADEMIC_SEARCH_UPGRADE_PLAN.md`
 - **Post-Scrape Content Coverage Evaluation** (NEW - December 2025):
   - Evaluates scraped content against decomposed questions using qwen3:8b
   - Identifies specific information gaps (e.g., missing costs, requirements, contact info)
