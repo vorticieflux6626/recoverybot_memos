@@ -567,4 +567,4 @@ __all__ = [
     # "PRESET_CONFIGS",
 ]
 
-__version__ = "0.27.1"  # Android SSE streaming: search_with_events() method, SupportLevel serialization fix, FANUC testing
+__version__ = "0.27.2"  # Fix _metrics lazy init, FANUC 10-query test suite, AGENTIC_OVERVIEW.md documentation

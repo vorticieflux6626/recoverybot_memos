@@ -2034,7 +2034,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
         logger.info(f"[{request_id}] Context utilization:\n{utilization_report}")
 
         # Track context utilization in metrics
-        self._metrics.record_context_utilization(
+        self._get_metrics().record_context_utilization(
             request_id=request_id,
             agent_name="synthesizer",
             model_name=DEFAULT_PIPELINE_CONFIG.synthesizer_model,
