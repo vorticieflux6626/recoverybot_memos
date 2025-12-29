@@ -27,6 +27,7 @@ from core.memory_service import memory_service
 from core.embedding_service import embedding_service
 from core.privacy_service import privacy_service
 from core.encryption_service import encryption_service
+from core.exceptions import AppException
 
 # Import API routers
 from api.memory import router as memory_router
@@ -319,30 +320,68 @@ async def test_endpoint():
         )
 
 
-# Global exception handler
+# =============================================================================
+# Exception Handlers - Unified Response Format (Phase 7)
+# =============================================================================
+
+@app.exception_handler(AppException)
+async def app_exception_handler(request: Request, exc: AppException):
+    """
+    Handle all AppException instances with unified response format.
+
+    Response format:
+    {
+        "success": false,
+        "data": null,
+        "meta": {"timestamp": "...", "request_id": "...", "path": "..."},
+        "errors": [{"code": "ERR_xxxx", "message": "...", "details": {...}}]
+    }
+    """
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "data": None,
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "request_id": getattr(request.state, "request_id", None),
+                "path": str(request.url.path)
+            },
+            "errors": [exc.to_dict()]
+        }
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Global exception handler for unhandled errors"""
+    """
+    Global exception handler for unhandled errors.
+
+    Logs the error and returns unified error response format.
+    """
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    
+
+    error_details = {"type": type(exc).__name__}
     if settings.debug:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "Internal server error",
-                "detail": str(exc),
-                "type": type(exc).__name__,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-        )
-    else:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "Internal server error",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-        )
+        error_details["detail"] = str(exc)
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "data": None,
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "request_id": getattr(request.state, "request_id", None),
+                "path": str(request.url.path)
+            },
+            "errors": [{
+                "code": "ERR_9001",
+                "message": "An unexpected error occurred" if not settings.debug else str(exc),
+                "details": error_details
+            }]
+        }
+    )
 
 
 # Graceful shutdown handler

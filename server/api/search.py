@@ -22,6 +22,17 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse
 
+# Phase 7: Unified exception handling
+from core.exceptions import (
+    AppException,
+    ErrorCode,
+    ValidationError,
+    SearchError,
+    SearchTimeoutError,
+    ExternalServiceError,
+    ServiceUnavailableError
+)
+
 from agentic import UniversalOrchestrator, OrchestratorPreset, AgenticOrchestrator
 from agentic.models import (
     SearchRequest,
@@ -242,9 +253,11 @@ async def classify_query(request: ClassifyRequest):
 
     except Exception as e:
         logger.error(f"Classification failed: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Classification failed: {str(e)}"
+        # Phase 7: Use unified exception format
+        raise SearchError(
+            message=f"Query classification failed: {str(e)}",
+            code=ErrorCode.CLASSIFICATION_FAILED,
+            query=request.query
         )
 
 

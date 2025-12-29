@@ -36,8 +36,31 @@ Presets:
 =============================================================================
 """
 
-# DEPRECATED: Use UniversalOrchestrator instead
-from .orchestrator import AgenticOrchestrator  # DEPRECATED
+# =============================================================================
+# BACKWARD COMPATIBILITY SHIMS (Legacy orchestrators archived 2025-12-29)
+# =============================================================================
+# The following classes are defined as shim functions that redirect to
+# UniversalOrchestrator with appropriate presets. They emit deprecation warnings.
+#
+# See: agentic/archive/legacy_orchestrators/README.md
+# =============================================================================
+
+import warnings
+
+def AgenticOrchestrator(*args, **kwargs):
+    """
+    DEPRECATED: Use UniversalOrchestrator(preset=OrchestratorPreset.BALANCED)
+
+    This shim maintains backward compatibility with code importing AgenticOrchestrator.
+    """
+    warnings.warn(
+        "AgenticOrchestrator is deprecated and archived. "
+        "Use UniversalOrchestrator(preset=OrchestratorPreset.BALANCED) instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    from .orchestrator_universal import UniversalOrchestrator, OrchestratorPreset
+    return UniversalOrchestrator(preset=OrchestratorPreset.BALANCED, *args, **kwargs)
 from .models import (
     SearchRequest,
     SearchResponse,
@@ -115,10 +138,21 @@ from .progress_tools import (
     ProgressTool,
     PROGRESS_TOOL_PROMPT
 )
-from .orchestrator_dynamic import (
-    DynamicOrchestrator,
-    create_dynamic_orchestrator
-)
+# DynamicOrchestrator shim (archived 2025-12-29)
+def DynamicOrchestrator(*args, **kwargs):
+    """DEPRECATED: Use UniversalOrchestrator(preset=OrchestratorPreset.RESEARCH)"""
+    warnings.warn(
+        "DynamicOrchestrator is deprecated and archived. "
+        "Use UniversalOrchestrator(preset=OrchestratorPreset.RESEARCH) instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    from .orchestrator_universal import UniversalOrchestrator, OrchestratorPreset
+    return UniversalOrchestrator(preset=OrchestratorPreset.RESEARCH, *args, **kwargs)
+
+def create_dynamic_orchestrator(*args, **kwargs):
+    """DEPRECATED: Use UniversalOrchestrator(preset=OrchestratorPreset.RESEARCH)"""
+    return DynamicOrchestrator(*args, **kwargs)
 from .entity_tracker import (
     EntityTracker,
     EntityState,
@@ -307,11 +341,25 @@ from .sufficient_context import (
     get_positional_optimizer,
     get_dynamic_allocator
 )
-from .orchestrator_unified import (
-    UnifiedOrchestrator,
-    get_unified_orchestrator,
-    create_unified_orchestrator
-)
+# UnifiedOrchestrator shims (archived 2025-12-29)
+def UnifiedOrchestrator(*args, **kwargs):
+    """DEPRECATED: Use UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED)"""
+    warnings.warn(
+        "UnifiedOrchestrator is deprecated and archived. "
+        "Use UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED) instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    from .orchestrator_universal import UniversalOrchestrator, OrchestratorPreset
+    return UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED, *args, **kwargs)
+
+def get_unified_orchestrator(*args, **kwargs):
+    """DEPRECATED: Use get_universal_orchestrator('enhanced')"""
+    return UnifiedOrchestrator(*args, **kwargs)
+
+def create_unified_orchestrator(*args, **kwargs):
+    """DEPRECATED: Use UniversalOrchestrator(preset=ENHANCED)"""
+    return UnifiedOrchestrator(*args, **kwargs)
 from .base_pipeline import (
     BaseSearchPipeline
 )
