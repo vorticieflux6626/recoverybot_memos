@@ -120,6 +120,13 @@ class QueryMetrics:
     urls_scraped: int = 0
     sources_consulted: int = 0
 
+    # PDF API stats (technical documentation)
+    pdf_api_calls: int = 0
+    pdf_api_hits: int = 0  # Successful responses
+    pdf_api_ms: float = 0  # Total PDF API time
+    pdf_api_sources: int = 0  # Sources from PDF API
+    pdf_api_error: str = ""  # Last error if any
+
     # Quality
     confidence_score: float = 0.0
     success: bool = True
@@ -186,6 +193,11 @@ class QueryMetrics:
             "iterations": self.iterations,
             "queries_executed": self.queries_executed,
             "urls_scraped": self.urls_scraped,
+            "pdf_api_calls": self.pdf_api_calls,
+            "pdf_api_hits": self.pdf_api_hits,
+            "pdf_api_ms": round(self.pdf_api_ms, 1),
+            "pdf_api_sources": self.pdf_api_sources,
+            "pdf_api_error": self.pdf_api_error,
             "confidence": round(self.confidence_score, 2),
             "success": self.success,
             "error": self.error_message,
@@ -229,6 +241,11 @@ class PerformanceMetrics:
             "thinking_tokens_saved": 0,
             "total_time_ms": 0,
             "total_synthesis_ms": 0,
+            # PDF API stats
+            "pdf_api_total_calls": 0,
+            "pdf_api_total_hits": 0,
+            "pdf_api_total_ms": 0,
+            "pdf_api_total_sources": 0,
         }
 
         # Rolling averages (exponential moving average)
@@ -324,6 +341,28 @@ class PerformanceMetrics:
         """Record URLs scraped"""
         if request_id in self._active_queries:
             self._active_queries[request_id].urls_scraped += num_urls
+
+    def record_pdf_api_call(
+        self,
+        request_id: str,
+        success: bool,
+        latency_ms: float,
+        sources_count: int = 0,
+        error: str = ""
+    ):
+        """Record a PDF API call (technical documentation)"""
+        if request_id in self._active_queries:
+            metrics = self._active_queries[request_id]
+            metrics.pdf_api_calls += 1
+            metrics.pdf_api_ms += latency_ms
+            if success:
+                metrics.pdf_api_hits += 1
+                metrics.pdf_api_sources += sources_count
+            else:
+                metrics.pdf_api_error = error
+
+        # Track tool latency
+        self.record_tool_latency("pdf_api", latency_ms)
 
     def record_tool_latency(self, tool_name: str, latency_ms: float):
         """Record latency for a specific tool"""
@@ -427,6 +466,12 @@ class PerformanceMetrics:
         self.stats["total_time_ms"] += metrics.total_ms
         self.stats["total_synthesis_ms"] += metrics.synthesis_ms
 
+        # Update PDF API stats
+        self.stats["pdf_api_total_calls"] += metrics.pdf_api_calls
+        self.stats["pdf_api_total_hits"] += metrics.pdf_api_hits
+        self.stats["pdf_api_total_ms"] += metrics.pdf_api_ms
+        self.stats["pdf_api_total_sources"] += metrics.pdf_api_sources
+
         # Update rolling averages
         self._update_ema("ttft_ms", metrics.ttft_ms)
         self._update_ema("total_ms", metrics.total_ms)
@@ -463,6 +508,12 @@ class PerformanceMetrics:
             self.stats["thinking_tokens_saved"] * 50   # ~50ms per token saved
         )
 
+        # Calculate PDF API stats
+        pdf_calls = self.stats["pdf_api_total_calls"] or 1
+        pdf_hit_rate = self.stats["pdf_api_total_hits"] / pdf_calls if pdf_calls > 0 else 0
+        avg_pdf_ms = self.stats["pdf_api_total_ms"] / pdf_calls if pdf_calls > 0 else 0
+        avg_pdf_sources = self.stats["pdf_api_total_sources"] / pdf_calls if pdf_calls > 0 else 0
+
         return {
             "aggregate_stats": {
                 **self.stats,
@@ -472,6 +523,14 @@ class PerformanceMetrics:
                 "avg_synthesis_ms": round(avg_synthesis_ms, 1),
                 "avg_tokens_per_query": round(avg_tokens, 0),
                 "estimated_time_saved_ms": round(estimated_time_saved_ms, 0),
+            },
+            "pdf_api_stats": {
+                "total_calls": self.stats["pdf_api_total_calls"],
+                "total_hits": self.stats["pdf_api_total_hits"],
+                "hit_rate": round(pdf_hit_rate, 3),
+                "avg_latency_ms": round(avg_pdf_ms, 1),
+                "avg_sources_per_call": round(avg_pdf_sources, 1),
+                "total_sources": self.stats["pdf_api_total_sources"],
             },
             "rolling_averages": {
                 k: round(v, 1) for k, v in self.rolling_avg.items()

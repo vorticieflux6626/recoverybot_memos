@@ -5505,3 +5505,232 @@ async def get_technical_context(
     except Exception as e:
         logger.error(f"Technical context retrieval failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# CORPUS SYNCHRONIZATION ENDPOINTS
+# =============================================================================
+# These endpoints enable synchronization between the local FANUC corpus
+# and the PDF Extraction Tools knowledge base.
+# =============================================================================
+
+from agentic.fanuc_corpus_builder import get_fanuc_builder, FANUCCorpusBuilder
+
+# Cache for corpus builder
+_corpus_builder: Optional[FANUCCorpusBuilder] = None
+
+
+async def get_corpus_builder() -> FANUCCorpusBuilder:
+    """Get or create the FANUC corpus builder instance."""
+    global _corpus_builder
+    if _corpus_builder is None:
+        _corpus_builder = get_fanuc_builder()
+    return _corpus_builder
+
+
+class CorpusSyncRequest(BaseModel):
+    """Request model for corpus synchronization."""
+    error_codes: Optional[List[str]] = None
+    pdf_api_url: str = "http://localhost:8002"
+    sync_type: str = "incremental"  # incremental, full, or specific
+
+
+class CorpusSyncResponse(BaseModel):
+    """Response model for corpus synchronization."""
+    success: bool
+    synced: int
+    new_entities: int
+    updated_entities: int
+    failed: int
+    pdf_api_available: bool
+
+
+class EnrichmentRequest(BaseModel):
+    """Request model for entity enrichment."""
+    error_code: str
+    pdf_api_url: str = "http://localhost:8002"
+
+
+class EnrichmentResponse(BaseModel):
+    """Response model for entity enrichment."""
+    success: bool
+    error_code: str
+    steps_added: int
+    relations_added: int
+
+
+@router.post("/corpus/sync", response_model=CorpusSyncResponse)
+async def sync_corpus_with_pdf(request: CorpusSyncRequest):
+    """
+    Synchronize local FANUC corpus with PDF Extraction Tools API.
+
+    This endpoint pulls entities from the PDF knowledge base and merges
+    them with the local corpus, enabling cross-referencing between
+    web-sourced knowledge and official documentation.
+
+    Sync types:
+    - incremental: Only sync new/changed entities
+    - full: Re-sync all entities
+    - specific: Only sync provided error_codes list
+    """
+    try:
+        builder = await get_corpus_builder()
+
+        result = await builder.sync_with_pdf_api(
+            pdf_api_url=request.pdf_api_url,
+            error_codes=request.error_codes
+        )
+
+        return CorpusSyncResponse(
+            success=True,
+            synced=result.get("synced", 0),
+            new_entities=result.get("new", 0),
+            updated_entities=result.get("updated", 0),
+            failed=result.get("failed", 0),
+            pdf_api_available=result.get("pdf_api_available", False)
+        )
+
+    except Exception as e:
+        logger.error(f"Corpus sync failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/corpus/enrich", response_model=EnrichmentResponse)
+async def enrich_entity_from_pdf(request: EnrichmentRequest):
+    """
+    Enrich a specific error code entity with data from PDF API.
+
+    Fetches troubleshooting path and related entities from the PDF
+    knowledge base and adds them as relations in the local corpus.
+    """
+    try:
+        builder = await get_corpus_builder()
+
+        result = await builder.enrich_from_pdf_api(
+            error_code=request.error_code,
+            pdf_api_url=request.pdf_api_url
+        )
+
+        if result is None:
+            return EnrichmentResponse(
+                success=False,
+                error_code=request.error_code,
+                steps_added=0,
+                relations_added=0
+            )
+
+        return EnrichmentResponse(
+            success=True,
+            error_code=request.error_code,
+            steps_added=result.get("steps_added", 0),
+            relations_added=result.get("relations_added", 0)
+        )
+
+    except Exception as e:
+        logger.error(f"Entity enrichment failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/corpus/cross-reference")
+async def cross_reference_pdf_nodes(
+    pdf_api_url: str = Query("http://localhost:8002", description="PDF API URL")
+):
+    """
+    Create cross-references between local corpus entities and PDF graph nodes.
+
+    This enables queries to seamlessly blend local knowledge with
+    PDF documentation by linking equivalent entities.
+    """
+    try:
+        builder = await get_corpus_builder()
+
+        result = await builder.cross_reference_pdf_nodes(
+            pdf_api_url=pdf_api_url
+        )
+
+        return JSONResponse(content={
+            "success": True,
+            "data": result,
+            "meta": {
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Cross-referencing failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/corpus/stats")
+async def get_corpus_stats():
+    """
+    Get statistics about the FANUC corpus.
+
+    Returns entity counts, relation counts, and sync status.
+    """
+    try:
+        builder = await get_corpus_builder()
+        stats = builder.get_stats()
+
+        return JSONResponse(content={
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Failed to get corpus stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/corpus/entities")
+async def list_corpus_entities(
+    entity_type: Optional[str] = Query(None, description="Filter by entity type"),
+    limit: int = Query(100, description="Maximum entities to return"),
+    offset: int = Query(0, description="Offset for pagination")
+):
+    """
+    List entities in the FANUC corpus.
+
+    Supports filtering by entity type and pagination.
+    """
+    try:
+        builder = await get_corpus_builder()
+
+        entities = list(builder.corpus.entities.values())
+
+        # Filter by type if specified
+        if entity_type:
+            entities = [e for e in entities if e.entity_type.value == entity_type]
+
+        # Paginate
+        total = len(entities)
+        entities = entities[offset:offset + limit]
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "entities": [
+                    {
+                        "id": e.entity_id,
+                        "type": e.entity_type.value,
+                        "name": e.name,
+                        "description": e.description[:200] if e.description else None,
+                        "has_pdf_link": bool(e.metadata and e.metadata.get("pdf_node_id"))
+                    }
+                    for e in entities
+                ],
+                "total": total,
+                "offset": offset,
+                "limit": limit
+            },
+            "meta": {
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Failed to list corpus entities: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

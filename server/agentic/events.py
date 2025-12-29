@@ -191,6 +191,20 @@ class EventType(str, Enum):
     GRAPH_BRANCH_CREATED = "graph_branch_created"
     GRAPH_PATHS_MERGED = "graph_paths_merged"
 
+    # ========== NEW: Technical Documentation (PDF API) Events ==========
+    TECHNICAL_DOCS_SEARCHING = "technical_docs_searching"
+    TECHNICAL_DOCS_FOUND = "technical_docs_found"
+    TECHNICAL_DOCS_NOT_AVAILABLE = "technical_docs_not_available"
+    TROUBLESHOOT_PATH_QUERYING = "troubleshoot_path_querying"
+    TROUBLESHOOT_PATH_FOUND = "troubleshoot_path_found"
+    PDF_API_HEALTH_CHECK = "pdf_api_health_check"
+    CORPUS_SYNC_START = "corpus_sync_start"
+    CORPUS_SYNC_PROGRESS = "corpus_sync_progress"
+    CORPUS_SYNC_COMPLETE = "corpus_sync_complete"
+    ENTITY_ENRICHMENT_START = "entity_enrichment_start"
+    ENTITY_ENRICHMENT_COMPLETE = "entity_enrichment_complete"
+    FANUC_PATTERN_DETECTED = "fanuc_pattern_detected"
+
 
 @dataclass
 class SearchEvent:
@@ -2051,5 +2065,256 @@ def graph_paths_merged(
             "sources": merged_agents,
             "target": target_agent,
             "graph": graph_state.to_dict()
+        }
+    )
+
+
+# ============================================
+# Technical Documentation (PDF API) Event Helpers
+# ============================================
+
+def technical_docs_searching(
+    request_id: str,
+    query: str,
+    error_codes: Optional[List[str]] = None,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Technical documentation search started"""
+    return SearchEvent(
+        event_type=EventType.TECHNICAL_DOCS_SEARCHING,
+        request_id=request_id,
+        message=f"Searching FANUC documentation: {query[:50]}...",
+        query=query,
+        graph_line=graph_line,
+        data={
+            "error_codes_detected": error_codes or [],
+            "source": "pdf_extraction_tools"
+        }
+    )
+
+
+def technical_docs_found(
+    request_id: str,
+    results_count: int,
+    query: str,
+    top_result_title: Optional[str] = None,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Technical documentation results found"""
+    return SearchEvent(
+        event_type=EventType.TECHNICAL_DOCS_FOUND,
+        request_id=request_id,
+        message=f"Found {results_count} technical documents",
+        results_count=results_count,
+        query=query,
+        graph_line=graph_line,
+        data={
+            "top_result": top_result_title,
+            "source": "pdf_extraction_tools"
+        }
+    )
+
+
+def technical_docs_not_available(
+    request_id: str,
+    reason: str = "PDF API not available",
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Technical documentation search unavailable"""
+    return SearchEvent(
+        event_type=EventType.TECHNICAL_DOCS_NOT_AVAILABLE,
+        request_id=request_id,
+        message=f"Technical docs unavailable: {reason}",
+        graph_line=graph_line,
+        data={
+            "reason": reason,
+            "fallback": "web_search"
+        }
+    )
+
+
+def troubleshoot_path_querying(
+    request_id: str,
+    error_code: str,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """PathRAG troubleshooting query started"""
+    return SearchEvent(
+        event_type=EventType.TROUBLESHOOT_PATH_QUERYING,
+        request_id=request_id,
+        message=f"Querying troubleshooting path for {error_code}",
+        graph_line=graph_line,
+        data={
+            "error_code": error_code,
+            "method": "pathrag_traversal"
+        }
+    )
+
+
+def troubleshoot_path_found(
+    request_id: str,
+    error_code: str,
+    steps_count: int,
+    first_step: Optional[str] = None,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """PathRAG troubleshooting path found"""
+    return SearchEvent(
+        event_type=EventType.TROUBLESHOOT_PATH_FOUND,
+        request_id=request_id,
+        message=f"Found {steps_count}-step troubleshooting path for {error_code}",
+        graph_line=graph_line,
+        data={
+            "error_code": error_code,
+            "steps_count": steps_count,
+            "first_step": first_step
+        }
+    )
+
+
+def pdf_api_health_check(
+    request_id: str,
+    available: bool,
+    response_time_ms: Optional[int] = None,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """PDF API health check result"""
+    status = "healthy" if available else "unavailable"
+    return SearchEvent(
+        event_type=EventType.PDF_API_HEALTH_CHECK,
+        request_id=request_id,
+        message=f"PDF API: {status}",
+        graph_line=graph_line,
+        data={
+            "available": available,
+            "response_time_ms": response_time_ms,
+            "api_url": "http://localhost:8002"
+        }
+    )
+
+
+def corpus_sync_start(
+    request_id: str,
+    entity_count: int,
+    sync_type: str = "full",
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Corpus synchronization with PDF API started"""
+    return SearchEvent(
+        event_type=EventType.CORPUS_SYNC_START,
+        request_id=request_id,
+        message=f"Starting {sync_type} corpus sync ({entity_count} entities)",
+        graph_line=graph_line,
+        data={
+            "entity_count": entity_count,
+            "sync_type": sync_type
+        }
+    )
+
+
+def corpus_sync_progress(
+    request_id: str,
+    synced: int,
+    total: int,
+    current_entity: Optional[str] = None,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Corpus synchronization progress update"""
+    percent = int((synced / total) * 100) if total > 0 else 0
+    return SearchEvent(
+        event_type=EventType.CORPUS_SYNC_PROGRESS,
+        request_id=request_id,
+        message=f"Syncing: {synced}/{total} ({percent}%)",
+        progress_percent=percent,
+        graph_line=graph_line,
+        data={
+            "synced": synced,
+            "total": total,
+            "current_entity": current_entity
+        }
+    )
+
+
+def corpus_sync_complete(
+    request_id: str,
+    synced: int,
+    new_entities: int,
+    updated_entities: int,
+    failed: int = 0,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Corpus synchronization completed"""
+    return SearchEvent(
+        event_type=EventType.CORPUS_SYNC_COMPLETE,
+        request_id=request_id,
+        message=f"Corpus sync complete: {synced} synced, {new_entities} new, {updated_entities} updated",
+        progress_percent=100,
+        graph_line=graph_line,
+        data={
+            "synced": synced,
+            "new": new_entities,
+            "updated": updated_entities,
+            "failed": failed
+        }
+    )
+
+
+def entity_enrichment_start(
+    request_id: str,
+    error_code: str,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Entity enrichment from PDF API started"""
+    return SearchEvent(
+        event_type=EventType.ENTITY_ENRICHMENT_START,
+        request_id=request_id,
+        message=f"Enriching {error_code} from PDF documentation",
+        graph_line=graph_line,
+        data={
+            "error_code": error_code,
+            "source": "pdf_extraction_tools"
+        }
+    )
+
+
+def entity_enrichment_complete(
+    request_id: str,
+    error_code: str,
+    steps_added: int,
+    relations_added: int,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Entity enrichment completed"""
+    return SearchEvent(
+        event_type=EventType.ENTITY_ENRICHMENT_COMPLETE,
+        request_id=request_id,
+        message=f"Enriched {error_code}: +{steps_added} steps, +{relations_added} relations",
+        graph_line=graph_line,
+        data={
+            "error_code": error_code,
+            "steps_added": steps_added,
+            "relations_added": relations_added
+        }
+    )
+
+
+def fanuc_pattern_detected(
+    request_id: str,
+    query: str,
+    error_codes: List[str],
+    components: Optional[List[str]] = None,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """FANUC-specific patterns detected in query"""
+    return SearchEvent(
+        event_type=EventType.FANUC_PATTERN_DETECTED,
+        request_id=request_id,
+        message=f"FANUC patterns detected: {', '.join(error_codes[:3])}",
+        query=query,
+        graph_line=graph_line,
+        data={
+            "error_codes": error_codes,
+            "components": components or [],
+            "is_fanuc_query": True
         }
     )
