@@ -4,11 +4,8 @@ Dynamic Orchestrator with AIME-Style Task Planning
 DEPRECATED: This module is deprecated. Use UniversalOrchestrator instead.
 
     from agentic import UniversalOrchestrator, OrchestratorPreset
-    orchestrator = UniversalOrchestrator(
-        preset=OrchestratorPreset.FULL,
-        enable_dynamic_planning=True,
-        enable_progress_tracking=True
-    )
+    orchestrator = UniversalOrchestrator(preset=OrchestratorPreset.RESEARCH)
+    # RESEARCH preset includes dynamic_planning and progress_tracking
 
 ---
 
@@ -92,7 +89,7 @@ class DynamicOrchestrator:
         memory_service: Optional[Any] = None
     ):
         warnings.warn(
-            "DynamicOrchestrator is deprecated. Use UniversalOrchestrator with enable_dynamic_planning=True instead.",
+            "DynamicOrchestrator is deprecated. Use UniversalOrchestrator(preset=OrchestratorPreset.RESEARCH) instead.",
             DeprecationWarning,
             stacklevel=2
         )

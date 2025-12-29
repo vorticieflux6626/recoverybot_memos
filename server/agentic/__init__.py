@@ -23,16 +23,16 @@ UniversalOrchestrator is the SINGLE SOURCE OF TRUTH for all orchestrator needs.
 DEPRECATED orchestrators (maintained for backward compatibility):
 - AgenticOrchestrator -> Use UniversalOrchestrator(preset=OrchestratorPreset.BALANCED)
 - EnhancedAgenticOrchestrator -> Use UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED)
-- DynamicOrchestrator -> Use UniversalOrchestrator with enable_dynamic_planning=True
-- GraphEnhancedOrchestrator -> Use UniversalOrchestrator with enable_graph_cache=True
+- DynamicOrchestrator -> Use UniversalOrchestrator(preset=OrchestratorPreset.RESEARCH)
+- GraphEnhancedOrchestrator -> Use UniversalOrchestrator(preset=OrchestratorPreset.RESEARCH)
 - UnifiedOrchestrator -> Use UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED)
 
 Presets:
 - minimal: 8 features - fast, simple queries
 - balanced: 18 features - default for most queries
 - enhanced: 28 features - complex research
-- research: 35 features - academic/thorough
-- full: 38+ features - maximum capability
+- research: 39 features - academic/thorough (includes dynamic planning + graph cache)
+- full: 42+ features - maximum capability (adds multi-agent)
 =============================================================================
 """
 
@@ -394,7 +394,7 @@ __all__ = [
     "ProgressUpdate",
     "ProgressTool",
     "PROGRESS_TOOL_PROMPT",
-    # Dynamic Orchestrator (DEPRECATED: Use UniversalOrchestrator with enable_dynamic_planning=True)
+    # Dynamic Orchestrator (DEPRECATED: Use UniversalOrchestrator with preset=RESEARCH)
     "DynamicOrchestrator",  # DEPRECATED
     "create_dynamic_orchestrator",  # DEPRECATED
     # GSW-Style Entity Tracking (Phase 2 Enhancement)

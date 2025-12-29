@@ -57,14 +57,14 @@ Consolidated all orchestrators into UniversalOrchestrator as the single source o
 |-------|-------------|
 | `AgenticOrchestrator` | `UniversalOrchestrator(preset=OrchestratorPreset.BALANCED)` |
 | `EnhancedAgenticOrchestrator` | `UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED)` |
-| `DynamicOrchestrator` | `UniversalOrchestrator(enable_dynamic_planning=True)` |
-| `GraphEnhancedOrchestrator` | `UniversalOrchestrator(enable_graph_cache=True)` |
+| `DynamicOrchestrator` | `UniversalOrchestrator(preset=OrchestratorPreset.RESEARCH)` |
+| `GraphEnhancedOrchestrator` | `UniversalOrchestrator(preset=OrchestratorPreset.RESEARCH)` |
 | `UnifiedOrchestrator` | `UniversalOrchestrator(preset=OrchestratorPreset.ENHANCED)` |
 
 **Code Reduction:**
 - 5 deprecated orchestrator files (~5,342 lines)
 - Single source of truth: `orchestrator_universal.py`
-- 38+ feature flags via presets
+- 42+ feature flags via presets
 
 **API Changes:**
 - `get_orchestrator()` → redirects to `get_universal_orchestrator("balanced")`
@@ -78,8 +78,8 @@ Consolidated all orchestrators into UniversalOrchestrator as the single source o
 | `minimal` | 8 | Fast, simple queries |
 | `balanced` | 18 | Default for most queries |
 | `enhanced` | 28 | Complex research |
-| `research` | 35 | Academic/thorough |
-| `full` | 38+ | Maximum capability |
+| `research` | 39 | Academic/thorough (includes dynamic planning + graph cache) |
+| `full` | 42+ | Maximum capability (adds multi-agent) |
 
 **Module Version**: `agentic/__init__.py` → v0.27.0
 
@@ -142,8 +142,8 @@ Consolidated all 40+ features into a single UniversalOrchestrator with preset-ba
 | `minimal` | 8 core features | Fast, simple queries |
 | `balanced` | 18 features | Default for most queries |
 | `enhanced` | 28 features | Complex research |
-| `research` | 35 features | Academic/thorough research |
-| `full` | 38+ features | Maximum capability |
+| `research` | 39 features | Academic/thorough (dynamic planning + graph cache) |
+| `full` | 42+ features | Maximum capability (adds multi-agent) |
 
 **17 Bug Fixes Applied:**
 1. ContentCache `get_cached_query_result` → `get_query_result`

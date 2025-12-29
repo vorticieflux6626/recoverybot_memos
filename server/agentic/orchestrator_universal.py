@@ -341,7 +341,13 @@ PRESET_CONFIGS = {
         enable_deep_reading=True,
         # Performance
         enable_kv_cache_service=True,
-        enable_artifacts=True
+        enable_artifacts=True,
+        # Dynamic planning (AIME-style hierarchical task decomposition)
+        enable_dynamic_planning=True,
+        enable_progress_tracking=True,
+        # Graph cache (workflow-aware KV cache optimization)
+        enable_graph_cache=True,
+        enable_prefetching=True
     ),
     OrchestratorPreset.FULL: FeatureConfig(
         # ALL features enabled

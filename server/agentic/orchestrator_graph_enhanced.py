@@ -4,11 +4,8 @@ Graph-Enhanced Agentic Search Orchestrator
 DEPRECATED: This module is deprecated. Use UniversalOrchestrator instead.
 
     from agentic import UniversalOrchestrator, OrchestratorPreset
-    orchestrator = UniversalOrchestrator(
-        preset=OrchestratorPreset.RESEARCH,
-        enable_graph_cache=True,
-        enable_prefetching=True
-    )
+    orchestrator = UniversalOrchestrator(preset=OrchestratorPreset.RESEARCH)
+    # RESEARCH preset includes graph_cache and prefetching
 
 ---
 
@@ -92,7 +89,7 @@ class GraphEnhancedOrchestrator:
         memory_service: Optional[Any] = None
     ):
         warnings.warn(
-            "GraphEnhancedOrchestrator is deprecated. Use UniversalOrchestrator with enable_graph_cache=True instead.",
+            "GraphEnhancedOrchestrator is deprecated. Use UniversalOrchestrator(preset=OrchestratorPreset.RESEARCH) instead.",
             DeprecationWarning,
             stacklevel=2
         )
