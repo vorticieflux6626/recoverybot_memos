@@ -126,6 +126,36 @@ Implemented Cross-Session Meta-Buffer and Self-Discover Reasoning Composition:
 
 **Module Version**: `agentic/__init__.py` → v0.34.0
 
+#### 🔧 Phase 21 Bug Fixes (Applied 2025-12-29)
+
+Two critical bugs discovered during FANUC challenging query testing:
+
+**Bug #1: Missing `calculate_confidence` Method**
+- **Error**: `'UniversalOrchestrator' object has no attribute 'calculate_confidence'`
+- **Location**: `orchestrator_universal.py:1813`
+- **Fix**: Changed to `calculate_heuristic_confidence(sources, synthesis, request.query)`
+
+**Bug #2: Extra `scratchpad` Argument**
+- **Error**: `TypeError: unhashable type: 'list'` (misleading - appeared in metrics.py)
+- **Location**: `orchestrator_universal.py:1806`
+- **Root Cause**: `_phase_synthesis` was called with 6 args but expects 5
+- **Fix**: Removed `scratchpad` from the call
+
+**Test Results After Fixes:**
+| Query | Confidence | Status |
+|-------|------------|--------|
+| Q1: Mastering procedures | 76.2% | ✅ |
+| Q2: Servo alarms | 68.4% | ✅ |
+| Q3: DCS Safe Position | 50.5% | ✅ (was crashing) |
+| Q4: iRVision drift | 80.7% | ✅ |
+| Q5: KAREL upgrade | 75.7% | ✅ |
+
+**Average Confidence**: 70.3% (5/5 passing)
+
+**Audit Report**: See `agentic/PHASE_21_AUDIT_REPORT.md` for full details.
+
+**Integration Gap Note**: Phase 21 helper methods (`_retrieve_template`, `_distill_successful_search`, `_compose_reasoning_strategy`) are implemented but not yet called in the main search flow. This is documented in the audit report with recommendations.
+
 #### ✅ Phase 20: Scratchpad Enhancement (Completed 2025-12-29)
 
 Implemented A-MEM semantic memory network and RAISE four-component structure:

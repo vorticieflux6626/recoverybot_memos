@@ -1803,14 +1803,14 @@ class UniversalOrchestrator(BaseSearchPipeline):
                             await emitter.emit(graph_node_entered(request_id, "synthesize", graph))
                             synth_start = time.time()
                             synthesis = await self._phase_synthesis(
-                                request, state, all_scraped_content, scratchpad, search_trace, request_id
+                                request, state, all_scraped_content, search_trace, request_id
                             )
                             synth_ms = int((time.time() - synth_start) * 1000)
                             await emitter.emit(graph_node_completed(request_id, "synthesize", True, graph, synth_ms))
 
                             # Re-calculate confidence with new synthesis
                             sources = self._get_sources(state)
-                            confidence = self.calculate_confidence(synthesis, sources, request.query)
+                            confidence = self.calculate_heuristic_confidence(sources, synthesis, request.query)
 
                             # Track best result
                             if confidence > best_confidence:
