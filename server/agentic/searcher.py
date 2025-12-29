@@ -39,12 +39,17 @@ class SearXNGSearchProvider(SearchProvider):
     SearXNG self-hosted metasearch provider.
 
     Primary provider with no rate limits.
-    Aggregates results from Google, Bing, DuckDuckGo, Brave, etc.
+    Aggregates results from Brave, Bing, Startpage, DuckDuckGo, etc.
+
+    NOTE: Google engine disabled due to upstream bug #5286 (Oct 2025).
+    Revisit in Jan 2026 for potential fix.
 
     Supports dynamic engine selection based on query type:
-    - Academic: arxiv, semantic_scholar, google_scholar, pubmed
-    - Technical: github, stackoverflow, pypi, npm
-    - General: google, bing, duckduckgo, brave
+    - Academic: arxiv, semantic_scholar, pubmed, crossref
+    - Technical: github, gitlab, stackoverflow, pypi, npm
+    - General: brave, bing, startpage, duckduckgo
+    - FANUC/Robotics: reddit, brave, electronics/robotics stackexchange
+    - Q&A: stackoverflow, superuser, askubuntu, serverfault
     """
 
     # Cache TTL for availability check (seconds)
@@ -52,14 +57,22 @@ class SearXNGSearchProvider(SearchProvider):
 
     # Engine groups for different query types
     ENGINE_GROUPS = {
-        "general": "google,bing,duckduckgo,brave,wikipedia",
-        "academic": "arxiv,semantic_scholar,google_scholar,pubmed,base,crossref,wikipedia",
-        "technical": "github,stackoverflow,pypi,npm,dockerhub,google,bing",
-        "news": "google_news,bing_news,duckduckgo",
-        "all": "google,bing,duckduckgo,brave,wikipedia,arxiv,semantic_scholar,github,stackoverflow",
-        # FANUC/Industrial robotics - includes Reddit for community troubleshooting
-        "fanuc": "reddit,hackernews,github,google,bing,arxiv",
-        "robotics": "reddit,hackernews,github,arxiv,google_scholar,google,bing"
+        # Primary engines: Brave (1.5 weight), Bing (1.2), Startpage (1.1), DDG (1.0)
+        # Google disabled due to upstream bug #5286 - revisit Jan 2026
+        "general": "brave,bing,startpage,duckduckgo,wikipedia",
+        "academic": "arxiv,semantic_scholar,pubmed,crossref,wikipedia",
+        "technical": "github,gitlab,stackoverflow,superuser,serverfault,pypi,npm,dockerhub,bing",
+        "news": "bing_news,duckduckgo",
+        "all": "brave,bing,startpage,duckduckgo,wikipedia,arxiv,semantic_scholar,github,stackoverflow",
+        # FANUC/Industrial robotics - Reddit + Stack Exchange for troubleshooting
+        "fanuc": "reddit,brave,bing,startpage,arxiv,electronics_stackexchange,robotics_stackexchange",
+        "robotics": "reddit,brave,bing,arxiv,github,gitlab,robotics_stackexchange,electronics_stackexchange",
+        # Q&A focused
+        "qa": "stackoverflow,superuser,askubuntu,serverfault,unix_stackexchange,reddit",
+        # Linux/sysadmin
+        "linux": "askubuntu,unix_stackexchange,serverfault,arch_linux_wiki,gentoo,reddit,bing",
+        # Package/library search
+        "packages": "pypi,npm,crates,pkg_go_dev,dockerhub"
     }
 
     # Patterns to detect academic queries
@@ -679,7 +692,20 @@ class SearcherAgent:
     }
 
     # Minimum keyword overlap ratio for domain boost (0.0-1.0)
-    MIN_KEYWORD_RELEVANCE = 0.3
+    MIN_KEYWORD_RELEVANCE = 0.15  # Lowered from 0.3 to allow partial matches
+
+    # Domains to filter out from results (dictionaries, generic reference sites)
+    BLOCKED_DOMAINS = {
+        "collinsdictionary.com",
+        "merriam-webster.com",
+        "dictionary.com",
+        "thesaurus.com",
+        "cambridge.org/dictionary",
+        "yourdictionary.com",
+        "wordreference.com",
+        "vocabulary.com",
+        "urbandictionary.com",
+    }
 
     def __init__(self, brave_api_key: Optional[str] = None, searxng_url: str = "http://localhost:8888"):
         self.searxng = SearXNGSearchProvider(searxng_url)
@@ -687,32 +713,55 @@ class SearcherAgent:
         self.duckduckgo = DuckDuckGoProvider()
         self._embedding_model = None  # Lazy-load for semantic similarity
 
+    def _stem_word(self, word: str) -> str:
+        """Apply simple stemming to normalize a word to its base form."""
+        if word.endswith('ing') and len(word) > 5:
+            return word[:-3]  # debugging -> debug
+        elif word.endswith('ed') and len(word) > 4:
+            return word[:-2]   # fixed -> fix
+        elif word.endswith('es') and len(word) > 4:
+            return word[:-2]   # fixes -> fix
+        elif word.endswith('s') and len(word) > 4:
+            return word[:-1]   # alarms -> alarm
+        elif word.endswith('ly') and len(word) > 4:
+            return word[:-2]   # slowly -> slow
+        elif word.endswith('ment') and len(word) > 6:
+            return word[:-4]   # replacement -> replac
+        return word
+
     def _extract_keywords(self, text: str) -> Set[str]:
         """Extract meaningful keywords from text, excluding stopwords.
 
-        Also extracts word stems to handle plural/singular matching.
+        Returns stemmed keywords for consistent matching.
+        Preserves hyphenated technical terms (e.g., SRVO-063).
         """
-        # Convert to lowercase and remove punctuation
         text = text.lower()
-        text = text.translate(str.maketrans("", "", string.punctuation))
+
+        # Preserve hyphenated terms (like SRVO-063) by extracting them first
+        import re
+        hyphenated = re.findall(r'[a-z0-9]+-[a-z0-9]+', text)
+
+        # Now remove punctuation for regular word extraction
+        text_clean = text.translate(str.maketrans("", "", string.punctuation))
 
         # Split into words and filter
-        words = text.split()
+        words = text_clean.split()
         keywords = set()
 
         for w in words:
             if w in self.STOPWORDS or len(w) <= 2:
                 continue
+            # Add both original and stemmed form
             keywords.add(w)
-            # Add simple stemming for common suffixes
-            if w.endswith('ing'):
-                keywords.add(w[:-3])  # debugging -> debug
-            elif w.endswith('ed'):
-                keywords.add(w[:-2])   # fixed -> fix
-            elif w.endswith('s') and len(w) > 4:
-                keywords.add(w[:-1])   # deadlocks -> deadlock
-            elif w.endswith('es') and len(w) > 4:
-                keywords.add(w[:-2])   # fixes -> fix
+            stem = self._stem_word(w)
+            if stem != w and len(stem) > 2:
+                keywords.add(stem)
+
+        # Add hyphenated terms (e.g., srvo-063)
+        for term in hyphenated:
+            keywords.add(term)
+            # Also add without hyphen for matching flexibility
+            keywords.add(term.replace('-', ''))
 
         return keywords
 
@@ -838,6 +887,11 @@ class SearcherAgent:
                 # Deduplicate by URL
                 if result.url not in seen_urls:
                     seen_urls.add(result.url)
+
+                    # Skip blocked domains (dictionaries, etc.)
+                    if any(bd in result.source_domain for bd in self.BLOCKED_DOMAINS):
+                        logger.debug(f"Blocked off-topic domain: {result.source_domain}")
+                        continue
 
                     # Check semantic relevance before domain boost
                     is_relevant, keyword_relevance = self._is_result_relevant(
