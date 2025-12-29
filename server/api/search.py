@@ -16,7 +16,7 @@ Endpoints:
 import asyncio
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
@@ -5340,7 +5340,7 @@ async def technical_health():
             "success": True,
             "data": health,
             "meta": {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "service": "pdf_extraction_tools"
             }
         })
@@ -5352,7 +5352,7 @@ async def technical_health():
                 "success": False,
                 "error": str(e),
                 "meta": {
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "service": "pdf_extraction_tools"
                 }
             }
@@ -5478,7 +5478,7 @@ async def get_technical_context(
                     "reason": "Query not detected as FANUC-related"
                 },
                 "meta": {
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }
             })
 
@@ -5498,7 +5498,7 @@ async def get_technical_context(
                 "max_results": max_results
             },
             "meta": {
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         })
 
@@ -5652,7 +5652,7 @@ async def cross_reference_pdf_nodes(
             "success": True,
             "data": result,
             "meta": {
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         })
 
@@ -5676,7 +5676,7 @@ async def get_corpus_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         })
 
@@ -5731,7 +5731,7 @@ async def list_corpus_entities(
                 "limit": limit
             },
             "meta": {
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         })
 
@@ -5859,7 +5859,7 @@ async def hsea_search(request: HSEASearchRequest):
                 }
             },
             "meta": {
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         })
 
@@ -5915,7 +5915,7 @@ async def hsea_troubleshoot(error_code: str):
                 }
             },
             "meta": {
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         })
 
@@ -5952,7 +5952,7 @@ async def hsea_similar(
                 ]
             },
             "meta": {
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         })
 
@@ -5989,7 +5989,7 @@ async def hsea_index_batch(request: HSEAIndexRequest):
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         })
 
@@ -6018,7 +6018,7 @@ async def hsea_index_loaded(
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         })
 
@@ -6038,7 +6038,7 @@ async def hsea_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         })
 

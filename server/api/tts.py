@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
@@ -222,7 +222,7 @@ async def health_check() -> TTSHealthResponse:
         edge_tts_available=EDGE_TTS_AVAILABLE,
         cache_enabled=True,
         voices_available=voice_count,
-        timestamp=datetime.utcnow().isoformat() + "Z"
+        timestamp=datetime.now(timezone.utc).isoformat() + "Z"
     )
 
 

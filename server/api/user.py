@@ -4,7 +4,7 @@ User settings and consent management for Recovery Bot Android client
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,11 +72,11 @@ async def create_user_settings(
             push_notifications=getattr(settings_data, 'push_notifications', True),
             memory_insights_enabled=getattr(settings_data, 'memory_insights_enabled', True),
             settings_version=1,
-            last_consent_date=datetime.utcnow(),
+            last_consent_date=datetime.now(timezone.utc),
             consent_document_version=settings_data.consent_document_version,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-            last_accessed=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            last_accessed=datetime.now(timezone.utc),
             requires_consent_renewal=False
         )
         
@@ -123,11 +123,11 @@ async def get_user_settings(
             push_notifications=True,
             memory_insights_enabled=True,
             settings_version=1,
-            last_consent_date=datetime.utcnow(),
+            last_consent_date=datetime.now(timezone.utc),
             consent_document_version="1.0",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-            last_accessed=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            last_accessed=datetime.now(timezone.utc),
             requires_consent_renewal=False
         )
         
@@ -172,7 +172,7 @@ async def update_user_settings(
             if hasattr(current_settings, field):
                 setattr(current_settings, field, value)
         
-        current_settings.updated_at = datetime.utcnow()
+        current_settings.updated_at = datetime.now(timezone.utc)
         
         return current_settings
         
@@ -218,8 +218,8 @@ async def manage_consent(
             consent_given=consent_data.consent_given,
             consent_type=consent_data.consent_type,
             consent_document_version=consent_data.consent_document_version,
-            consent_timestamp=datetime.utcnow(),
-            expires_at=datetime.utcnow() if not consent_data.consent_given else None,
+            consent_timestamp=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) if not consent_data.consent_given else None,
             specific_permissions=consent_data.specific_permissions or {},
             requirements_met=True
         )
@@ -251,7 +251,7 @@ async def get_user_consent_status(
             "memory_collection": {
                 "consent_given": True,
                 "consent_version": "1.0",
-                "consent_date": datetime.utcnow().isoformat(),
+                "consent_date": datetime.now(timezone.utc).isoformat(),
                 "expires_at": None
             },
             "clinical_data": {
@@ -263,7 +263,7 @@ async def get_user_consent_status(
             "crisis_detection": {
                 "consent_given": True,
                 "consent_version": "1.0", 
-                "consent_date": datetime.utcnow().isoformat(),
+                "consent_date": datetime.now(timezone.utc).isoformat(),
                 "expires_at": None
             },
             "care_team_sharing": {
@@ -290,7 +290,7 @@ async def get_user_consent_status(
             "user_id": user_id,
             "consents": all_consents,
             "overall_status": "partial_consent",
-            "last_updated": datetime.utcnow().isoformat()
+            "last_updated": datetime.now(timezone.utc).isoformat()
         }
         
     except HTTPException:
@@ -344,8 +344,8 @@ async def get_user_dashboard(
                 "Your therapeutic relevance scores have improved by 15% this month"
             ],
             streak_days=14,
-            last_memory_date=datetime.utcnow(),
-            generated_at=datetime.utcnow()
+            last_memory_date=datetime.now(timezone.utc),
+            generated_at=datetime.now(timezone.utc)
         )
         
     except Exception as e:
@@ -438,7 +438,7 @@ async def delete_user_data(
         return {
             "message": "All user data has been scheduled for deletion",
             "user_id": user_id,
-            "deletion_requested_at": datetime.utcnow().isoformat(),
+            "deletion_requested_at": datetime.now(timezone.utc).isoformat(),
             "completion_expected": "Data deletion will be completed within 30 days as required by privacy regulations"
         }
         

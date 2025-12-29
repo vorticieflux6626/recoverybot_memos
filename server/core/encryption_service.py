@@ -349,8 +349,8 @@ class EncryptionService:
     
     def _get_timestamp(self) -> str:
         """Get current timestamp for audit purposes"""
-        from datetime import datetime
-        return datetime.utcnow().isoformat()
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).isoformat()
 
 
 # Utility functions for common encryption operations

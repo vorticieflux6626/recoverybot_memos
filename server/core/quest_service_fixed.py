@@ -6,7 +6,7 @@ Accepts database session as parameter to avoid async context issues
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from typing import List, Optional, Dict, Any, Tuple
 from uuid import UUID
 
@@ -162,7 +162,7 @@ class QuestServiceFixed:
                 user_id=user_id,
                 quest_id=quest.id,
                 state=QuestState.ASSIGNED,
-                started_at=datetime.utcnow(),
+                started_at=datetime.now(timezone.utc),
                 progress_data={}
             )
             session.add(user_quest)
@@ -180,7 +180,7 @@ class QuestServiceFixed:
             
             # Update user stats
             stats = await self._get_or_create_user_stats(session, user_id)
-            stats.updated_at = datetime.utcnow()
+            stats.updated_at = datetime.now(timezone.utc)
             
             await session.commit()
             
@@ -298,7 +298,7 @@ class QuestServiceFixed:
             
             # Update task state
             user_task.state = TaskState.COMPLETED
-            user_task.completed_at = datetime.utcnow()
+            user_task.completed_at = datetime.now(timezone.utc)
             user_task.evidence_data = evidence_data or {}
             
             # Check if all tasks in quest are completed
@@ -329,7 +329,7 @@ class QuestServiceFixed:
         """Handle quest completion"""
         try:
             user_quest.state = QuestState.COMPLETED
-            user_quest.completed_at = datetime.utcnow()
+            user_quest.completed_at = datetime.now(timezone.utc)
             user_quest.points_earned = user_quest.quest.points
             
             # Update user stats
@@ -338,7 +338,7 @@ class QuestServiceFixed:
             stats.weekly_points += user_quest.quest.points
             stats.monthly_points += user_quest.quest.points
             stats.total_quests_completed += 1
-            stats.updated_at = datetime.utcnow()
+            stats.updated_at = datetime.now(timezone.utc)
             
             # Update streak
             await self._update_streak(session, stats)

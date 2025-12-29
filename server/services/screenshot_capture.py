@@ -17,7 +17,7 @@ import os
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +160,7 @@ class ScreenshotCapture:
             ScreenshotResult with image data and metadata
         """
         cfg = config or self.config
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         try:
             # Ensure browser is running
@@ -231,7 +231,7 @@ class ScreenshotCapture:
                     capture_time=start_time,
                     metadata={
                         'status_code': response.status if response else None,
-                        'capture_duration_ms': (datetime.utcnow() - start_time).total_seconds() * 1000,
+                        'capture_duration_ms': (datetime.now(timezone.utc) - start_time).total_seconds() * 1000,
                         'config': {
                             'full_page': cfg.full_page,
                             'viewport': f"{cfg.viewport_width}x{cfg.viewport_height}",
@@ -299,7 +299,7 @@ class ScreenshotCapture:
             ScreenshotResult with element screenshot
         """
         cfg = config or self.config
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         try:
             if self._browser is None:
@@ -405,7 +405,7 @@ class ScreenshotCapture:
                         page_title=await page.title(),
                         page_url=page.url,
                         viewport_size=(cfg.viewport_width, cfg.viewport_height),
-                        capture_time=datetime.utcnow(),
+                        capture_time=datetime.now(timezone.utc),
                         metadata={
                             'viewport_index': i,
                             'scroll_position': scroll_position,
@@ -421,7 +421,7 @@ class ScreenshotCapture:
             results.append(ScreenshotResult(
                 success=False,
                 error=str(e),
-                capture_time=datetime.utcnow()
+                capture_time=datetime.now(timezone.utc)
             ))
 
         return results

@@ -14,7 +14,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 
@@ -322,7 +322,7 @@ class GPUMonitor:
         overhead_vram = used_vram - model_vram if model_vram > 0 else 0
 
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "gpu_count": len(gpus),
             "gpus": [g.to_dict() for g in gpus],
             "total_vram_gb": round(total_vram, 2),
@@ -351,7 +351,7 @@ class GPUMonitor:
 
         for gpu in gpus:
             snapshot = VRAMUsageSnapshot(
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 gpu_index=gpu.index,
                 total_vram_mb=gpu.total_memory_mb,
                 used_vram_mb=gpu.used_memory_mb,

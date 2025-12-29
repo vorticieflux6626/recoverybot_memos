@@ -4,7 +4,7 @@ Provides JWT-based authentication compatible with Android client
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
 import jwt
@@ -119,16 +119,16 @@ async def login(credentials: dict):
             "user_id": "test_user_001",
             "username": username,
             "type": "access",
-            "exp": datetime.utcnow() + timedelta(hours=1),
-            "iat": datetime.utcnow(),
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+            "iat": datetime.now(timezone.utc),
         }
         
         refresh_payload = {
             "user_id": "test_user_001", 
             "username": username,
             "type": "refresh",
-            "exp": datetime.utcnow() + timedelta(hours=24),
-            "iat": datetime.utcnow(),
+            "exp": datetime.now(timezone.utc) + timedelta(hours=24),
+            "iat": datetime.now(timezone.utc),
         }
         
         access_token = jwt.encode(access_payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
@@ -166,8 +166,8 @@ async def refresh_token(refresh_data: dict):
             "user_id": payload.get("user_id"),
             "username": payload.get("username"),
             "type": "access",
-            "exp": datetime.utcnow() + timedelta(hours=1),
-            "iat": datetime.utcnow(),
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+            "iat": datetime.now(timezone.utc),
         }
         
         new_access_token = jwt.encode(new_access_payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)

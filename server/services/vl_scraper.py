@@ -21,7 +21,7 @@ import json
 import re
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 import httpx
 
@@ -309,7 +309,7 @@ class VLScraper:
         Returns:
             ExtractionResult with extracted data
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         if not screenshot.success or not screenshot.image_base64:
             return ExtractionResult(
@@ -356,7 +356,7 @@ class VLScraper:
         # Parse the response
         parsed_data = self._parse_json_response(response)
 
-        elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+        elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
         return ExtractionResult(
             success=parsed_data is not None,
@@ -445,7 +445,7 @@ class VLScraper:
         Returns:
             ScrapingResult with all data
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         if not self._started:
             await self.start()
@@ -491,7 +491,7 @@ class VLScraper:
 
                 logger.info(f"Relevance: {score:.2f} ({recommendation}) - {reasoning}")
 
-            elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
             return ScrapingResult(
                 success=True,

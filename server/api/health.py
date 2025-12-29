@@ -4,7 +4,7 @@ Provides health monitoring for Android client
 """
 
 from fastapi import APIRouter, HTTPException
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 
 from config.database import db_manager
@@ -25,7 +25,7 @@ async def comprehensive_health_check() -> Dict[str, Any]:
     """
     health_status = {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": "1.0.0",
         "services": {},
         "performance": {}
@@ -59,9 +59,9 @@ async def comprehensive_health_check() -> Dict[str, Any]:
         }
         
         # Performance metrics
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         test_embedding = await embedding_service.generate_embedding("health check test")
-        embedding_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+        embedding_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
         
         health_status["performance"] = {
             "embedding_generation_ms": round(embedding_time, 2),
@@ -95,7 +95,7 @@ async def quick_health_check() -> Dict[str, str]:
         if db_healthy:
             return {
                 "status": "healthy",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         else:
             raise HTTPException(
@@ -103,7 +103,7 @@ async def quick_health_check() -> Dict[str, str]:
                 detail={
                     "status": "unhealthy",
                     "reason": "database_unavailable",
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }
             )
     
@@ -116,7 +116,7 @@ async def quick_health_check() -> Dict[str, str]:
                 "status": "unhealthy", 
                 "reason": "service_error",
                 "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         )
 
@@ -145,7 +145,7 @@ async def service_specific_health(service_name: str) -> Dict[str, Any]:
         response = {
             "service": service_name,
             "status": "healthy" if is_healthy else "unhealthy",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
         # Add service-specific details
@@ -165,6 +165,6 @@ async def service_specific_health(service_name: str) -> Dict[str, Any]:
                 "service": service_name,
                 "status": "unhealthy",
                 "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         )

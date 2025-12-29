@@ -15,7 +15,7 @@ import logging
 import time
 from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .agent_step_graph import (
     AgentStepGraph, AgentType, get_agent_step_graph

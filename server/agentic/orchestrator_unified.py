@@ -50,7 +50,7 @@ import warnings
 import logging
 import time
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 import uuid
 

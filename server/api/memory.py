@@ -4,7 +4,7 @@ REST API for Recovery Bot Android client memory operations
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse
@@ -131,7 +131,7 @@ async def search_memories(
     Returns ranked results based on embedding similarity
     """
     try:
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         
         # Audit log the search request
         audit_logger.log_memory_access(
@@ -160,7 +160,7 @@ async def search_memories(
         search_results = await memory_service.search_memories(search_request)
         
         # Calculate search time
-        search_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+        search_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
         
         # Log search operation
         avg_relevance = sum(r.similarity_score for r in search_results) / len(search_results) if search_results else 0.0
@@ -440,7 +440,7 @@ async def delete_memory(
         return {
             "message": "Memory deleted successfully",
             "memory_id": memory_id,
-            "deleted_at": datetime.utcnow().isoformat()
+            "deleted_at": datetime.now(timezone.utc).isoformat()
         }
         
     except HTTPException:
@@ -487,7 +487,7 @@ async def get_memory_stats(
             "average_therapeutic_relevance": stats.get("avg_therapeutic_relevance", 0.0),
             "last_memory_created": stats.get("last_created", None),
             "embeddings_generated": stats.get("embeddings_count", 0),
-            "generated_at": datetime.utcnow().isoformat()
+            "generated_at": datetime.now(timezone.utc).isoformat()
         }
         
     except Exception as e:

@@ -7,7 +7,7 @@ import logging
 import logging.config
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .settings import get_settings
 
@@ -162,7 +162,7 @@ class HIPAAAuditLogger:
         Log memory access for HIPAA audit trail
         """
         audit_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": "MEMORY_ACCESS",
             "user_id": user_id,
             "memory_id": memory_id,
@@ -190,7 +190,7 @@ class HIPAAAuditLogger:
         Log consent events for HIPAA compliance
         """
         audit_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": "CONSENT_EVENT",
             "user_id": user_id,
             "consent_type": consent_type,
@@ -214,7 +214,7 @@ class HIPAAAuditLogger:
         Log data export events
         """
         audit_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": "DATA_EXPORT",
             "user_id": user_id,
             "export_type": export_type,
@@ -236,7 +236,7 @@ class HIPAAAuditLogger:
         Log quest-related events for gamification tracking
         """
         audit_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": event_type,
             "user_id": user_id,
             "quest_id": quest_id,
@@ -258,7 +258,7 @@ class HIPAAAuditLogger:
         Log security-related events
         """
         audit_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": "SECURITY_EVENT",
             "security_event_type": event_type,
             "severity": severity,  # LOW, MEDIUM, HIGH, CRITICAL
@@ -282,7 +282,7 @@ class HIPAAAuditLogger:
         Log system events for operational monitoring
         """
         audit_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": "SYSTEM_EVENT",
             "system_event_type": event_type,
             "component": component,

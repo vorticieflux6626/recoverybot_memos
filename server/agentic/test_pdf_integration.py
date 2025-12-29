@@ -13,7 +13,7 @@ import asyncio
 import argparse
 import sys
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 import httpx

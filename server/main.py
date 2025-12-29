@@ -8,7 +8,7 @@ import logging
 import signal
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import uvicorn
@@ -185,7 +185,7 @@ async def root():
                 <h2>Service Status</h2>
                 <p><strong>Version:</strong> 1.0.0</p>
                 <p><strong>Environment:</strong> {settings.environment}</p>
-                <p><strong>Started:</strong> {datetime.utcnow().isoformat()}</p>
+                <p><strong>Started:</strong> {datetime.now(timezone.utc).isoformat()}</p>
                 <p><strong>Database:</strong> <span class="healthy">Connected</span></p>
                 <p><strong>Encryption:</strong> <span class="healthy">AES-256 Enabled</span></p>
                 <p><strong>HIPAA Compliance:</strong> <span class="healthy">Active</span></p>
@@ -217,7 +217,7 @@ async def health_check():
         
         health_status = {
             "status": "healthy" if db_healthy else "unhealthy",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "version": "1.0.0",
             "environment": settings.environment,
             "services": {
@@ -261,7 +261,7 @@ async def health_check():
             content={
                 "status": "unhealthy",
                 "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             },
             status_code=503
         )
@@ -304,7 +304,7 @@ async def test_endpoint():
                     "content_valid": privacy_valid
                 }
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
     except Exception as e:
@@ -313,7 +313,7 @@ async def test_endpoint():
             content={
                 "message": "memOS Server test failed",
                 "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             },
             status_code=500
         )
@@ -332,7 +332,7 @@ async def global_exception_handler(request: Request, exc: Exception):
                 "error": "Internal server error",
                 "detail": str(exc),
                 "type": type(exc).__name__,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         )
     else:
@@ -340,7 +340,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             status_code=500,
             content={
                 "error": "Internal server error",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         )
 

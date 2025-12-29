@@ -5,7 +5,7 @@ Defines all data structures used in the multi-agent search pipeline.
 Follows the unified response format from UNIFIED_ARCHITECTURE_RECOMMENDATIONS.md
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
@@ -279,7 +279,7 @@ class SearchState(BaseModel):
 
 class SearchMeta(BaseModel):
     """Metadata about the search execution"""
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     version: str = "1.0.0"
     iterations: int = 0

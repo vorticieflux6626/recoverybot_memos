@@ -7,7 +7,7 @@ Provides real-time progress updates to clients via Server-Sent Events (SSE).
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, Dict, Any, Set, Callable, Awaitable, List
 from dataclasses import dataclass, field, asdict
@@ -212,7 +212,7 @@ class SearchEvent:
 
     event_type: EventType
     request_id: str
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     # Optional event data
     message: Optional[str] = None

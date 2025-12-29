@@ -6,7 +6,7 @@ Integrates Mem0 framework with therapeutic context and HIPAA compliance
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any, Tuple
 from dataclasses import dataclass
 
@@ -149,7 +149,7 @@ class MemoryService:
                 )
                 
                 # Create memory record
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 memory = Memory(
                     id=uuid.uuid4(),
                     user_id=user_id,
@@ -300,7 +300,7 @@ class MemoryService:
                     if hasattr(memory, field):
                         setattr(memory, field, value)
                 
-                memory.updated_at = datetime.utcnow()
+                memory.updated_at = datetime.now(timezone.utc)
                 await session.commit()
                 await session.refresh(memory)
                 
@@ -325,7 +325,7 @@ class MemoryService:
                     .where(and_(Memory.id == memory_id, Memory.user_id == user_id))
                     .values(
                         is_deleted=True,
-                        deleted_at=datetime.utcnow(),
+                        deleted_at=datetime.now(timezone.utc),
                         deletion_reason=deletion_reason
                     )
                 )
@@ -574,7 +574,7 @@ class MemoryService:
         is_milestone: bool
     ) -> float:
         """Calculate memory decay factor for therapeutic relevance"""
-        days_old = (datetime.utcnow() - created_at).days
+        days_old = (datetime.now(timezone.utc) - created_at).days
         
         # Base forgetting curve
         base_retention = 2.71828 ** (-days_old / 7.0)  # exp(-days_old / 7.0)

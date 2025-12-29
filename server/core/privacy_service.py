@@ -7,7 +7,7 @@ import re
 import logging
 import hashlib
 from typing import List, Dict, Any, Optional, Set, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from models.memory import MemoryPrivacyLevel
 from config.settings import get_settings
@@ -185,7 +185,7 @@ class PrivacyService:
         Create audit log entry for privacy-related access
         """
         audit_entry = {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'user_id': user_id,
             'memory_id': memory_id,
             'requester_id': requester_id,
@@ -257,7 +257,7 @@ class PrivacyService:
         # This would query actual data - simplified for now
         report = {
             'user_id': user_id,
-            'report_generated_at': datetime.utcnow().isoformat(),
+            'report_generated_at': datetime.now(timezone.utc).isoformat(),
             'date_range': {
                 'start': date_range[0].isoformat() if date_range else None,
                 'end': date_range[1].isoformat() if date_range else None
