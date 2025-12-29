@@ -163,8 +163,8 @@ class AdaptiveRefinementEngine:
                     domain = urlparse(url).netloc
                     if domain:
                         source_domains.append(domain)
-                except:
-                    pass
+                except (ValueError, AttributeError):
+                    pass  # Invalid URL, skip
 
         prompt = f"""Analyze this Q&A for information gaps.
 

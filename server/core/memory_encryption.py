@@ -22,5 +22,5 @@ def decrypt_data(encrypted_data: bytes) -> str:
     try:
         context = json.loads(decrypted)
         return context.get('value', decrypted)
-    except:
+    except (json.JSONDecodeError, TypeError, KeyError):
         return decrypted

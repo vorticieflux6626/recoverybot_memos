@@ -695,8 +695,8 @@ Format as JSON:
             json_match = re.search(r'\{.*\}', result, re.DOTALL)
             if json_match:
                 return json.loads(json_match.group())
-        except:
-            pass
+        except (json.JSONDecodeError, TypeError):
+            pass  # Invalid JSON, return fallback
 
         return {"answer": result, "confidence": "low", "key_facts": [], "missing": ""}
 
@@ -730,8 +730,8 @@ Respond with JSON:
             json_match = re.search(r'\{.*\}', result, re.DOTALL)
             if json_match:
                 return json.loads(json_match.group())
-        except:
-            pass
+        except (json.JSONDecodeError, TypeError):
+            pass  # Invalid JSON, return fallback
 
         return {"verified": False, "confidence": 0.0}
 

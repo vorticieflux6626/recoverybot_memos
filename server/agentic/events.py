@@ -365,8 +365,8 @@ class EventEmitter:
         for queue in self._subscribers:
             try:
                 queue.put_nowait(None)  # Signal end of stream
-            except:
-                pass
+            except (asyncio.QueueFull, RuntimeError):
+                pass  # Queue full or closed, safe to ignore during shutdown
         self._subscribers.clear()
 
     @property

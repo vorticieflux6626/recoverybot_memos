@@ -707,8 +707,8 @@ class UnifiedOrchestrator:
                     "documents": hybrid_stats.documents_indexed,
                     "vocabulary_size": hybrid_stats.vocabulary_size
                 }
-            except:
-                pass
+            except (AttributeError, TypeError) as e:
+                logger.debug(f"Could not get hybrid retriever stats: {e}")
 
         # Domain corpus stats
         if self._domain_corpus_manager:
@@ -717,15 +717,15 @@ class UnifiedOrchestrator:
                     "corpuses": list(self._domain_corpus_manager.corpuses.keys()),
                     "corpus_count": len(self._domain_corpus_manager.corpuses)
                 }
-            except:
-                pass
+            except (AttributeError, TypeError) as e:
+                logger.debug(f"Could not get domain corpus stats: {e}")
 
         # Metrics stats
         if self._metrics:
             try:
                 stats["performance_metrics"] = self._metrics.get_summary()
-            except:
-                pass
+            except (AttributeError, TypeError) as e:
+                logger.debug(f"Could not get performance metrics: {e}")
 
         return stats
 

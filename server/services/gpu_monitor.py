@@ -300,8 +300,8 @@ class GPUMonitor:
                 return int(float(size_str.replace('KB', '')) / 1024)
             else:
                 return int(float(size_str))
-        except:
-            return 0
+        except (ValueError, TypeError):
+            return 0  # Unable to parse size string
 
     async def get_summary(self) -> Dict[str, Any]:
         """

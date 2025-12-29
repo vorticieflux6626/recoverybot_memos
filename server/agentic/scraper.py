@@ -158,8 +158,8 @@ class ContentScraper:
             try:
                 head_response = await session.head(url, timeout=10.0)
                 content_type = head_response.headers.get("content-type", "").lower()
-            except:
-                content_type = ""
+            except (httpx.HTTPError, httpx.TimeoutException):
+                content_type = ""  # HEAD failed, will detect from GET response
 
             # Fetch content
             response = await session.get(url)
@@ -1115,8 +1115,8 @@ LIMITATIONS:
                 if response.status_code == 200:
                     data = response.json()
                     return [m["name"] for m in data.get("models", [])]
-        except:
-            pass
+        except (httpx.HTTPError, httpx.TimeoutException, json.JSONDecodeError) as e:
+            logger.debug(f"Failed to get available models: {e}")
         return []
 
     async def select_best_model(self) -> str:

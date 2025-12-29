@@ -300,8 +300,8 @@ class BaseSearchPipeline(ABC):
                     # Check if it's a trusted domain
                     if any(trusted in netloc for trusted in trusted_domains):
                         trusted_count += 1
-                except:
-                    pass
+                except (ValueError, AttributeError):
+                    pass  # Invalid URL format, skip
 
         # Domain diversity score (unique domains / total sources)
         diversity = len(domains) / max(source_count, 1)
