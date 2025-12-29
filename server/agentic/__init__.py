@@ -321,6 +321,31 @@ from .orchestrator_universal import (
     OrchestratorPreset,
     PRESET_CONFIGS
 )
+# Phase 1 Context Curation (December 2025)
+from .information_gain import (
+    DocumentInformationGain,
+    DIGScore,
+    DIGCategory,
+    DIGBatchResult,
+    get_dig_scorer
+)
+from .redundancy_detector import (
+    RedundancyDetector,
+    DocumentCluster,
+    DeduplicationResult,
+    SelectionMethod,
+    get_redundancy_detector
+)
+from .context_curator import (
+    ContextCurator,
+    CuratedContext,
+    CurationConfig,
+    CurationPreset,
+    CoverageAnalysis,
+    CurationTrace,
+    get_context_curator,
+    curate_context
+)
 
 __all__ = [
     # ==========================================================================
@@ -584,6 +609,25 @@ __all__ = [
     # "FeatureConfig",
     # "OrchestratorPreset",
     # "PRESET_CONFIGS",
+    # Phase 1 Context Curation (December 2025)
+    "DocumentInformationGain",
+    "DIGScore",
+    "DIGCategory",
+    "DIGBatchResult",
+    "get_dig_scorer",
+    "RedundancyDetector",
+    "DocumentCluster",
+    "DeduplicationResult",
+    "SelectionMethod",
+    "get_redundancy_detector",
+    "ContextCurator",
+    "CuratedContext",
+    "CurationConfig",
+    "CurationPreset",
+    "CoverageAnalysis",
+    "CurationTrace",
+    "get_context_curator",
+    "curate_context",
 ]
 
-__version__ = "0.29.0"  # Phase 4 Adaptive Refinement: Full iterative loop execution
+__version__ = "0.30.0"  # Phase 1 Context Curation: DIG scoring, redundancy detection, curation pipeline

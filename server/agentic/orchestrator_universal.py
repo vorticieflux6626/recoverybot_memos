@@ -139,6 +139,13 @@ from .context_limits import (
     PipelineContextConfig,
     DEFAULT_PIPELINE_CONFIG
 )
+from .context_curator import (
+    ContextCurator,
+    CuratedContext,
+    CurationConfig,
+    CurationPreset,
+    get_context_curator
+)
 
 logger = logging.getLogger("agentic.orchestrator_universal")
 
@@ -268,6 +275,8 @@ class FeatureConfig:
 
     # Quality scoring (Layer 2)
     enable_ragas: bool = False             # Faithfulness/relevancy
+    enable_context_curation: bool = False  # DIG-based context filtering/dedup
+    context_curation_preset: str = "balanced"  # fast/balanced/thorough/technical
 
     # Advanced reasoning (Layer 3)
     enable_entity_tracking: bool = False   # GSW entity extraction
@@ -332,6 +341,8 @@ PRESET_CONFIGS = {
         enable_hyde=True,
         enable_hybrid_reranking=True,
         enable_ragas=True,
+        enable_context_curation=True,  # DIG-based context filtering
+        context_curation_preset="balanced",
         enable_mixed_precision=True,
         enable_entity_enhanced_retrieval=True,
         # Layer 3 reasoning features
@@ -346,6 +357,8 @@ PRESET_CONFIGS = {
         enable_hyde=True,
         enable_hybrid_reranking=True,
         enable_ragas=True,
+        enable_context_curation=True,  # DIG-based context filtering
+        context_curation_preset="thorough",  # Thorough for research
         enable_mixed_precision=True,
         enable_entity_enhanced_retrieval=True,
         enable_entity_tracking=True,
@@ -384,6 +397,8 @@ PRESET_CONFIGS = {
         enable_entity_enhanced_retrieval=True,
         # Layer 2 - Quality
         enable_ragas=True,
+        enable_context_curation=True,  # DIG-based context filtering
+        context_curation_preset="technical",  # Technical for full precision
         # Layer 3 - Advanced reasoning
         enable_entity_tracking=True,
         enable_thought_library=True,
@@ -510,6 +525,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
         self._artifact_store: Optional[ArtifactStore] = None
         self._ttl_manager = None
         self._stuck_metrics: Optional[StuckStateMetrics] = None
+        self._context_curator: Optional[ContextCurator] = None
 
         # Graph visualization state for SSE events
         self._graph_state = UniversalGraphState()
@@ -700,6 +716,26 @@ class UniversalOrchestrator(BaseSearchPipeline):
         if self._embedding_aggregator is None:
             self._embedding_aggregator = get_embedding_aggregator(self.ollama_url)
         return self._embedding_aggregator
+
+    def _get_context_curator(self) -> ContextCurator:
+        """Lazy initialize context curator."""
+        if self._context_curator is None:
+            # Map preset string to CurationPreset enum
+            preset_map = {
+                "fast": CurationPreset.FAST,
+                "balanced": CurationPreset.BALANCED,
+                "thorough": CurationPreset.THOROUGH,
+                "technical": CurationPreset.TECHNICAL,
+            }
+            preset = preset_map.get(
+                self.config.context_curation_preset,
+                CurationPreset.BALANCED
+            )
+            self._context_curator = get_context_curator(
+                ollama_url=self.ollama_url,
+                preset=preset
+            )
+        return self._context_curator
 
     # ===== Core Search Method =====
 
@@ -986,6 +1022,56 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     request_id, len(scraped_content), len(urls_to_scrape)
                 ))
                 await emitter.emit(graph_node_completed(request_id, "scrape", True, graph, scrape_ms))
+
+            # PHASE 4.5: Context Curation (DIG-based filtering and deduplication)
+            if self.config.enable_context_curation and scraped_content:
+                curation_start = time.time()
+                try:
+                    curator = self._get_context_curator()
+
+                    # Convert scraped_content (List[str]) to document format for curation
+                    documents = [
+                        {"content": content, "id": f"doc_{i}"}
+                        for i, content in enumerate(scraped_content)
+                    ]
+
+                    # Get decomposed questions from state if available
+                    decomposed_questions = None
+                    if hasattr(state, 'search_plan') and state.search_plan:
+                        decomposed_questions = getattr(
+                            state.search_plan, 'decomposed_questions', None
+                        )
+
+                    # Run context curation
+                    curated = await curator.curate(
+                        query=request.query,
+                        documents=documents,
+                        decomposed_questions=decomposed_questions
+                    )
+
+                    # Replace scraped_content with curated content
+                    scraped_content = [doc.get("content", "") for doc in curated.documents]
+
+                    curation_ms = int((time.time() - curation_start) * 1000)
+                    logger.info(
+                        f"[{request_id}] Context curation: "
+                        f"{curated.original_count} → {curated.curated_count} docs "
+                        f"({curated.reduction_ratio:.1%} reduction) in {curation_ms}ms"
+                    )
+
+                    # Record in search trace
+                    search_trace.append({
+                        "step": "context_curation",
+                        "original_count": curated.original_count,
+                        "curated_count": curated.curated_count,
+                        "reduction_ratio": curated.reduction_ratio,
+                        "avg_dig_score": curated.dig_summary.get("average_dig", 0.0) if curated.dig_summary else 0.0,
+                        "coverage": curated.coverage.coverage_ratio if curated.coverage else None,
+                        "duration_ms": curation_ms
+                    })
+                except Exception as e:
+                    logger.warning(f"[{request_id}] Context curation failed: {e}")
+                    # Continue with original scraped_content
 
             # PHASE 5: Verification
             if self.config.enable_verification and scraped_content:
@@ -1522,6 +1608,58 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 if recovery_action == "broaden":
                     expanded_results = await self.searcher.search([f"general {request.query}"])
                     state.add_results(expanded_results)
+
+        # PHASE 7.8: Context Curation (DIG-based filtering and deduplication)
+        if self.config.enable_context_curation and scraped_content:
+            curation_start = time.time()
+            try:
+                curator = self._get_context_curator()
+
+                # Convert scraped_content (List[str]) to document format for curation
+                documents = [
+                    {"content": content, "id": f"doc_{i}"}
+                    for i, content in enumerate(scraped_content)
+                ]
+
+                # Get decomposed questions from state if available
+                decomposed_questions = None
+                if hasattr(state, 'search_plan') and state.search_plan:
+                    decomposed_questions = getattr(
+                        state.search_plan, 'decomposed_questions', None
+                    )
+
+                # Run context curation
+                curated = await curator.curate(
+                    query=request.query,
+                    documents=documents,
+                    decomposed_questions=decomposed_questions
+                )
+
+                # Replace scraped_content with curated content
+                scraped_content = [doc.get("content", "") for doc in curated.documents]
+
+                curation_ms = int((time.time() - curation_start) * 1000)
+                logger.info(
+                    f"[{request_id}] Context curation: "
+                    f"{curated.original_count} → {curated.curated_count} docs "
+                    f"({curated.reduction_ratio:.1%} reduction) in {curation_ms}ms"
+                )
+                enhancement_metadata["features_used"].append("context_curation")
+                enhancement_metadata["curation_reduction"] = curated.reduction_ratio
+
+                # Record in search trace
+                search_trace.append({
+                    "step": "context_curation",
+                    "original_count": curated.original_count,
+                    "curated_count": curated.curated_count,
+                    "reduction_ratio": curated.reduction_ratio,
+                    "avg_dig_score": curated.dig_summary.get("average_dig", 0.0) if curated.dig_summary else 0.0,
+                    "coverage": curated.coverage.coverage_ratio if curated.coverage else None,
+                    "duration_ms": curation_ms
+                })
+            except Exception as e:
+                logger.warning(f"[{request_id}] Context curation failed: {e}")
+                # Continue with original scraped_content
 
         # PHASE 8: Verification
         verification_result = None
