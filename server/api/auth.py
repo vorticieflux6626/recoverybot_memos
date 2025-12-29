@@ -151,13 +151,13 @@ async def login(credentials: dict):
 @router.post("/refresh")
 async def refresh_token(refresh_data: dict):
     """Refresh access token using refresh token"""
-    refresh_token = refresh_data.get("refresh_token")
-    
-    if not refresh_token:
+    token_value = refresh_data.get("refresh_token")
+
+    if not token_value:
         raise HTTPException(400, "Refresh token required")
-    
+
     try:
-        payload = jwt.decode(refresh_token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(token_value, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         if payload.get("type") != "refresh":
             raise HTTPException(401, "Invalid token type")
         

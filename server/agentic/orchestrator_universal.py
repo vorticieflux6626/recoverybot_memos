@@ -132,6 +132,8 @@ from .kv_cache_service import KVCacheService, get_kv_cache_service
 from .memory_tiers import MemoryTierManager, get_memory_tier_manager
 from .artifacts import ArtifactStore, get_artifact_store, ArtifactType
 from .content_cache import get_content_cache
+# HSEA Three-Stratum Indexing for FANUC domain knowledge
+from .hsea_controller import HSEAController, HSEASearchMode, get_hsea_controller
 from .adaptive_refinement import (
     AdaptiveRefinementEngine,
     RefinementDecision,
@@ -373,6 +375,7 @@ class FeatureConfig:
 
     # Technical Documentation (Layer 3) - PDF Extraction Tools integration
     enable_technical_docs: bool = False    # FANUC manual RAG via PDF API
+    enable_hsea_context: bool = False      # HSEA three-stratum FANUC knowledge
 
     # Enhanced patterns (Layer 3)
     enable_pre_act_planning: bool = False  # Multi-step planning
@@ -442,7 +445,8 @@ PRESET_CONFIGS = {
         enable_embedding_aggregator=True,
         enable_deep_reading=True,
         # Layer 3 technical documentation (PDF API)
-        enable_technical_docs=True
+        enable_technical_docs=True,
+        enable_hsea_context=True  # HSEA three-stratum FANUC knowledge
     ),
     OrchestratorPreset.RESEARCH: FeatureConfig(
         # All enhanced features
@@ -489,7 +493,8 @@ PRESET_CONFIGS = {
         enable_graph_cache=True,
         enable_prefetching=True,
         # Layer 3 technical documentation (PDF API)
-        enable_technical_docs=True
+        enable_technical_docs=True,
+        enable_hsea_context=True  # HSEA three-stratum FANUC knowledge
     ),
     OrchestratorPreset.FULL: FeatureConfig(
         # ALL features enabled
@@ -546,7 +551,8 @@ PRESET_CONFIGS = {
         # Layer 4 - Debug
         enable_llm_debug=True,
         # Layer 3 technical documentation (PDF API)
-        enable_technical_docs=True
+        enable_technical_docs=True,
+        enable_hsea_context=True  # HSEA three-stratum FANUC knowledge
     )
 }
 
@@ -637,6 +643,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
         self._agent_graph = None
         self._scratchpad_cache = None
         self._document_graph_service: Optional[DocumentGraphService] = None
+        self._hsea_controller: Optional[HSEAController] = None
 
         # Additional feature instances
         self._mixed_precision_service: Optional[MixedPrecisionEmbeddingService] = None
@@ -1266,6 +1273,103 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
         except Exception as e:
             logger.warning(f"Technical docs search failed: {e}")
+            return None
+
+    def _get_hsea_controller(self) -> HSEAController:
+        """Lazy initialize HSEA controller for three-stratum FANUC knowledge."""
+        if self._hsea_controller is None:
+            self._hsea_controller = get_hsea_controller()
+        return self._hsea_controller
+
+    async def _search_hsea_context(self, query: str, request_id: str) -> Optional[str]:
+        """
+        Search HSEA three-stratum index for FANUC domain knowledge.
+
+        Returns formatted context string with cause/remedy information
+        for FANUC error codes, None if not applicable.
+        """
+        if not self.config.enable_hsea_context:
+            return None
+
+        # Check if query is FANUC-related
+        if not is_fanuc_query(query):
+            return None
+
+        try:
+            hsea = self._get_hsea_controller()
+
+            # Extract error codes for direct troubleshooting
+            error_codes = extract_error_codes(query)
+
+            context_parts = []
+
+            if error_codes:
+                # Direct troubleshooting lookup for specific error codes
+                for code in error_codes[:3]:  # Limit to 3 codes
+                    try:
+                        troubleshoot_ctx = await hsea.get_troubleshooting_context(code)
+                        if troubleshoot_ctx:
+                            # CrossStratumContext is a dataclass with .entity (ErrorCodeEntity)
+                            entity = troubleshoot_ctx.entity
+                            part = f"## {entity.canonical_form}: {entity.title}\n"
+                            part += f"**Category:** {entity.category}\n"
+                            part += f"**Severity:** {entity.severity}\n\n"
+
+                            if entity.cause:
+                                part += f"**Cause:** {entity.cause}\n\n"
+                            if entity.remedy:
+                                part += f"**Remedy:** {entity.remedy}\n\n"
+
+                            # Layer 1: Troubleshooting patterns from CrossStratumContext
+                            if troubleshoot_ctx.troubleshooting_patterns:
+                                for p in troubleshoot_ctx.troubleshooting_patterns[:2]:
+                                    part += f"**Pattern: {p.name}**\n"
+                                    for step in p.steps[:4]:
+                                        part += f"  - {step}\n"
+                                part += "\n"
+
+                            # Layer 2: Related codes from CrossStratumContext
+                            if troubleshoot_ctx.related_codes:
+                                related_str = ", ".join([r.canonical_form for r in troubleshoot_ctx.related_codes[:5]])
+                                if related_str:
+                                    part += f"**Related Codes:** {related_str}\n"
+
+                            context_parts.append(part)
+                            logger.debug(f"[{request_id}] HSEA troubleshoot context found for {code}")
+                    except Exception as e:
+                        logger.debug(f"[{request_id}] HSEA troubleshoot lookup failed for {code}: {e}")
+
+            # Also do semantic search for additional context
+            try:
+                search_results = await hsea.search(
+                    query=query,
+                    mode=HSEASearchMode.CONTEXTUAL,
+                    top_k=3
+                )
+                # HSEASearchResult is a dataclass, access .results directly
+                if search_results and hasattr(search_results, 'results') and search_results.results:
+                    for ctx in search_results.results[:2]:
+                        # CrossStratumContext has an .entity attribute (ErrorCodeEntity)
+                        entity = ctx.entity if hasattr(ctx, 'entity') else None
+                        if entity:
+                            code = entity.canonical_form
+                            if code not in error_codes:
+                                part = f"**{code}:** {entity.title}\n"
+                                if entity.cause:
+                                    part += f"  Cause: {entity.cause[:200]}...\n"
+                                context_parts.append(part)
+                    logger.debug(f"[{request_id}] HSEA semantic search returned {len(search_results.results)} results")
+            except Exception as e:
+                logger.debug(f"[{request_id}] HSEA semantic search failed: {e}")
+
+            if context_parts:
+                logger.info(f"[{request_id}] HSEA returned {len(context_parts)} context parts for query")
+                return "\n---\n".join(context_parts)
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"[{request_id}] HSEA context search failed: {e}")
             return None
 
     async def _retrieve_template(self, query: str, template_type: TemplateType = None):
@@ -3302,24 +3406,35 @@ class UniversalOrchestrator(BaseSearchPipeline):
         query: str,
         request_id: str
     ) -> Optional[str]:
-        """Phase 4.5: Domain corpus augmentation."""
+        """Phase 4.5: Domain corpus augmentation (includes HSEA for FANUC)."""
         start = time.time()
+        context_parts = []
+
+        # 1. HSEA three-stratum search for FANUC queries (highest priority)
+        if self.config.enable_hsea_context:
+            try:
+                hsea_context = await self._search_hsea_context(query, request_id)
+                if hsea_context:
+                    context_parts.append(f"[FANUC Knowledge Base]\n{hsea_context}")
+                    logger.info(f"[{request_id}] HSEA provided domain context")
+            except Exception as e:
+                logger.debug(f"[{request_id}] HSEA search failed: {e}")
+
+        # 2. General domain corpus search
         try:
             manager = self._get_domain_corpus_manager()
             # cross_domain_query signature: (query, domain_ids=None) - no top_k argument
             results = await manager.cross_domain_query(query)
-            self._record_timing("domain_corpus", time.time() - start)
             if results and results.get("results"):
-                context_parts = []
                 # Limit to 3 results per domain manually
                 for domain_id, domain_results in list(results["results"].items())[:3]:
                     if domain_results and domain_results.get("context"):
                         context_parts.append(f"[{domain_id}] {domain_results.get('context', '')[:500]}")
-                return "\n\n".join(context_parts) if context_parts else None
-            return None
         except Exception as e:
             logger.warning(f"[{request_id}] Domain corpus search failed: {e}")
-            return None
+
+        self._record_timing("domain_corpus", time.time() - start)
+        return "\n\n".join(context_parts) if context_parts else None
 
     async def _phase_crag_evaluation(
         self,

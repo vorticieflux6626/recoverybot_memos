@@ -422,11 +422,23 @@ Please try rephrasing your question or providing more context."""
         # OPTIMIZATION: Chain-of-Draft instruction reduces thinking tokens by up to 80%
         cod_prefix = CHAIN_OF_DRAFT_INSTRUCTION + "\n\n" if is_thinking_model else ""
 
+        # Extract domain knowledge from context if provided (e.g., HSEA FANUC error codes)
+        domain_knowledge_text = ""
+        if context and context.get("additional_context"):
+            domain_ctx = context["additional_context"]
+            if domain_ctx.strip():
+                domain_knowledge_text = f"""
+DOMAIN KNOWLEDGE (use this authoritative information to supplement your answer):
+{domain_ctx}
+---
+"""
+                logger.info(f"Synthesizer including domain knowledge: {len(domain_ctx)} chars")
+
         prompt = f"""{cod_prefix}You are an expert research assistant. Your task is to carefully read the source content below and provide a detailed, accurate answer to the user's question.
 
 USER'S QUESTION: {query}
-
-IMPORTANT: You must directly answer the question using information from the sources. You MUST cite your sources using [Source X] notation.
+{domain_knowledge_text}
+IMPORTANT: You must directly answer the question using information from the sources AND the domain knowledge provided above. You MUST cite your sources using [Source X] notation. For domain knowledge, cite as [Domain Knowledge].
 
 I have provided {num_sources} sources for you to analyze:
 

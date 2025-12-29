@@ -16,6 +16,7 @@ import logging
 import re
 import string
 import time
+from abc import ABC, abstractmethod
 from typing import List, Optional, Set, Tuple
 from urllib.parse import quote_plus, urlparse
 
@@ -27,11 +28,13 @@ from .search_metrics import get_search_metrics
 logger = logging.getLogger("agentic.searcher")
 
 
-class SearchProvider:
+class SearchProvider(ABC):
     """Base class for search providers"""
 
+    @abstractmethod
     async def search(self, query: str, max_results: int = 5) -> List[WebSearchResult]:
-        raise NotImplementedError
+        """Search for the query and return results. Must be implemented by subclasses."""
+        pass
 
 
 class SearXNGSearchProvider(SearchProvider):

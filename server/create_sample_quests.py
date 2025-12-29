@@ -12,7 +12,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from config.database import AsyncSessionLocal
 from models.quest import Quest, QuestTask, QuestCategory, VerificationType
-from core.quest_service import quest_service
+from core.quest_service_fixed import quest_service_fixed as quest_service
 
 # Sample quests organized by category
 SAMPLE_QUESTS = [

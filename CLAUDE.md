@@ -55,6 +55,108 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 20** | Scratchpad Enhancement (A-MEM, RAISE) | ✅ **COMPLETE** |
 | **Phase 21** | Template Reuse Optimization (Meta-Buffer, Self-Discover) | ✅ **COMPLETE** |
 | **Phase 22** | PDF Extraction Tools Integration | ✅ **COMPLETE** |
+| **Phase 23** | HSEA Three-Stratum Indexing | ✅ **COMPLETE** |
+
+#### ✅ Phase 23: HSEA Three-Stratum Indexing (Completed 2025-12-29)
+
+Implemented **Hierarchical Stratified Embedding Architecture (HSEA)** for three-layer contextual search:
+
+**Architecture Overview:**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  π₁ SYSTEMIC (17%)     │  π₂ STRUCTURAL (17%)  │  π₃ SUBSTANTIVE (66%)  │
+│  Category anchors      │  Auto-connections     │  Full content          │
+│  Troubleshooting       │  Semantic memory      │  BGE-M3 Hybrid         │
+│  patterns              │  network              │  Dense + BM25          │
+│  Binary index (32x)    │  Int8 index (4x)      │  FP16 store            │
+│  MRL 64d               │  MRL 256d             │  MRL 1024-4096d        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**New Components:**
+- **`agentic/hsea_controller.py`** (~700 lines): Core HSEA orchestration
+  - ErrorCodeEntity and CrossStratumContext dataclasses
+  - HSEASearchMode: systemic, structural, substantive, contextual, mrl
+  - 7 built-in troubleshooting patterns
+  - Lazy-loaded integration with existing memOS embedding systems
+  - RRF merge for multi-source ranking
+
+**API Endpoints:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/search/hsea/search` | POST | Multi-stratum semantic search |
+| `/api/v1/search/hsea/troubleshoot/{code}` | GET | Troubleshooting context retrieval |
+| `/api/v1/search/hsea/similar/{code}` | GET | Similar error code search |
+| `/api/v1/search/hsea/index/batch` | POST | Batch entity indexing |
+| `/api/v1/search/hsea/stats` | GET | System statistics |
+
+**Three-Stage Retrieval Pipeline:**
+```
+Query → [Binary Index] → 500 candidates (Hamming distance)
+           ↓
+      [Int8 Index] → 50 candidates (Cosine similarity)
+           ↓
+      [FP16 Store] → 10 results (Full precision + enrichment)
+```
+
+**MRL Dimension Progression:**
+- Stage 1: 64 dimensions (coarse semantics, fast filtering)
+- Stage 2: 256 dimensions (balanced precision)
+- Stage 3: 1024 dimensions (fine-grained ranking)
+- Stage 4: 4096 dimensions (full precision final)
+
+**Troubleshooting Patterns:**
+| Pattern | Categories | Keywords |
+|---------|------------|----------|
+| encoder_replacement | SRVO | encoder, pulsecoder, RCAL, mastering |
+| calibration | SRVO, MOTN | calibration, mastering, zero, origin |
+| communication_reset | HOST, COMM | network, timeout, ethernet, IP |
+| parameter_adjustment | SYST, SVGN, MOTN | parameter, setting, $PARAM |
+| safety_interlock | SYST, PRIO | safety, e-stop, fence, DCS |
+| servo_power_cycle | SRVO, SVGN | servo, power, amplifier, motor |
+| vision_calibration | CVIS | vision, camera, iRVision, lens |
+
+**Integration with Existing Systems:**
+- `MixedPrecisionEmbeddingService`: Binary + Int8 + FP16 indexing
+- `SemanticMemoryNetwork`: Auto-connection graph (0.7 threshold)
+- `BGEM3HybridRetriever`: Dense + BM25 fusion via RRF
+- `HyDEExpander`: +15-25% recall via hypothetical documents
+
+**Cross-Stratum Context:**
+```python
+CrossStratumContext:
+  - error_code: "SRVO-063"
+  - title: "SRVO-063 RCAL alarm"
+  - score: 0.87
+  - layer_1_context:
+      - category_anchor: "SRVO Alarms"
+      - patterns: ["Encoder Replacement", "Calibration"]
+  - layer_2_context:
+      - related_codes: ["SRVO-068", "SRVO-069"]
+      - cluster_members: ["SRVO-064", "SRVO-065"]
+      - auto_connections: 5
+  - layer_3_context:
+      - similar_by_cause: [...]
+      - bm25_score: 0.72
+      - dense_score: 0.91
+```
+
+**Performance Targets:**
+| Metric | Target |
+|--------|--------|
+| Contextual search latency | 10-50ms |
+| Three-stage compression | 3.4x |
+| Recall@10 improvement | +15-25% |
+| Auto-connection threshold | 0.7 |
+
+**Research Basis:**
+- Kusupati et al., 2022: Matryoshka Representation Learning
+- Cormack et al., 2009: Reciprocal Rank Fusion
+- Gao et al., 2023: HyDE Query Expansion
+- Microsoft, 2024: GraphRAG
+- Sarmah et al., 2024: HybridRAG
+
+**Module Version**: `agentic/__init__.py` → v0.36.0
 
 #### ✅ Phase 22: PDF Extraction Tools Integration (Completed 2025-12-29)
 

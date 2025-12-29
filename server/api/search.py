@@ -5738,3 +5738,310 @@ async def list_corpus_entities(
     except Exception as e:
         logger.error(f"Failed to list corpus entities: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# HSEA (Hierarchical Stratified Embedding Architecture) ENDPOINTS
+# =============================================================================
+# Three-stratum semantic search with cross-traversal capabilities.
+# Research basis: Matryoshka Representation Learning, RRF, HyDE
+# =============================================================================
+
+from agentic.hsea_controller import (
+    get_hsea_controller,
+    HSEAController,
+    HSEAConfig,
+    HSEASearchMode,
+    ErrorCodeEntity,
+    CrossStratumContext,
+    HSEASearchResult
+)
+
+
+class HSEASearchRequest(BaseModel):
+    """Request model for HSEA search."""
+    query: str
+    mode: str = "contextual"  # systemic, structural, substantive, contextual, mrl
+    top_k: int = 10
+    category_filter: Optional[str] = None
+    enable_hyde: bool = True
+
+
+class HSEAIndexRequest(BaseModel):
+    """Request model for HSEA batch indexing."""
+    entities: List[Dict[str, Any]]
+
+
+@router.post("/hsea/search")
+async def hsea_search(request: HSEASearchRequest):
+    """
+    HSEA semantic search across three strata.
+
+    Modes:
+        - systemic: Binary index (32x compression, ~2ms latency)
+        - structural: Int8 index + memory graph (4x compression, ~5ms)
+        - substantive: FP16 + hybrid (full precision, 10-50ms)
+        - contextual: All strata with cross-traversal (recommended)
+        - mrl: Progressive 64->256->1024->4096 refinement
+
+    Mathematical operation:
+        search(q) = argmax_e [a*sim_pi1(q,e) + b*sim_pi2(q,e) + g*sim_pi3(q,e)]
+
+    Research basis:
+        - MRL (Kusupati et al., 2022): Hierarchical dimension progression
+        - RRF (Cormack et al., 2009): Multi-retriever fusion
+        - HyDE (Gao et al., 2022): Query expansion
+    """
+    try:
+        controller = get_hsea_controller()
+
+        # Map string mode to enum
+        try:
+            mode = HSEASearchMode(request.mode)
+        except ValueError:
+            mode = HSEASearchMode.CONTEXTUAL
+
+        result = await controller.search(
+            query=request.query,
+            mode=mode,
+            top_k=request.top_k,
+            category_filter=request.category_filter,
+            enable_hyde=request.enable_hyde
+        )
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "query": result.query,
+                "search_time_ms": round(result.search_time_ms, 2),
+                "mode": result.mode.value,
+                "dominant_categories": result.dominant_categories,
+                "suggested_patterns": [
+                    {
+                        "name": p.name,
+                        "description": p.description,
+                        "steps": p.steps,
+                        "applicable_categories": p.applicable_categories
+                    }
+                    for p in result.suggested_patterns
+                ],
+                "results": [
+                    {
+                        "error_code": ctx.entity.canonical_form,
+                        "title": ctx.entity.title,
+                        "score": round(ctx.score, 4),
+                        "category": ctx.entity.category,
+                        "cause": ctx.entity.cause[:500] if ctx.entity.cause else None,
+                        "remedy": ctx.entity.remedy[:500] if ctx.entity.remedy else None,
+                        "layer_1": {
+                            "category_anchor": ctx.category_anchor.name if ctx.category_anchor else None,
+                            "patterns": [p.name for p in ctx.troubleshooting_patterns],
+                            "mrl_64d_score": round(ctx.mrl_64d_score, 4)
+                        },
+                        "layer_2": {
+                            "related_codes": [e.canonical_form for e in ctx.related_codes[:5]],
+                            "cluster_members": [e.canonical_form for e in ctx.cluster_members[:5]],
+                            "auto_connections": len(ctx.auto_connections),
+                            "mrl_256d_score": round(ctx.mrl_256d_score, 4)
+                        },
+                        "layer_3": {
+                            "dense_score": round(ctx.dense_score, 4),
+                            "mrl_1024d_score": round(ctx.mrl_1024d_score, 4)
+                        }
+                    }
+                    for ctx in result.results
+                ],
+                "statistics": {
+                    "binary_candidates": result.binary_candidates,
+                    "int8_candidates": result.int8_candidates,
+                    "fp16_results": result.fp16_results,
+                    "mrl_progression": result.mrl_progression
+                }
+            },
+            "meta": {
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"HSEA search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/hsea/troubleshoot/{error_code}")
+async def hsea_troubleshoot(error_code: str):
+    """
+    Get complete HSEA troubleshooting context.
+
+    Cross-stratum traversal: pi_3 -> pi_2 -> pi_1
+    """
+    try:
+        controller = get_hsea_controller()
+        ctx = await controller.get_troubleshooting_context(error_code)
+
+        if not ctx:
+            raise HTTPException(404, f"Error code {error_code} not found")
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "error_code": ctx.entity.canonical_form,
+                "title": ctx.entity.title,
+                "category": ctx.entity.category,
+                "severity": ctx.entity.severity,
+                "cause": ctx.entity.cause,
+                "remedy": ctx.entity.remedy,
+                "layer_1_context": {
+                    "category": {
+                        "name": ctx.category_anchor.name if ctx.category_anchor else None,
+                        "description": ctx.category_anchor.description if ctx.category_anchor else None,
+                        "error_count": ctx.category_anchor.error_count if ctx.category_anchor else 0
+                    },
+                    "troubleshooting_patterns": [
+                        {"name": p.name, "steps": p.steps}
+                        for p in ctx.troubleshooting_patterns
+                    ]
+                },
+                "layer_2_context": {
+                    "related_codes": [
+                        {"code": e.canonical_form, "title": e.title}
+                        for e in ctx.related_codes
+                    ],
+                    "cluster_members": [
+                        {"code": e.canonical_form, "title": e.title}
+                        for e in ctx.cluster_members[:10]
+                    ],
+                    "auto_connections": ctx.auto_connections[:10]
+                }
+            },
+            "meta": {
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"HSEA troubleshoot failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/hsea/similar/{error_code}")
+async def hsea_similar(
+    error_code: str,
+    top_k: int = Query(5, description="Number of similar codes to return")
+):
+    """Find semantically similar error codes."""
+    try:
+        controller = get_hsea_controller()
+        similar = await controller.find_similar(error_code, top_k)
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "source_code": error_code.upper(),
+                "similar_codes": [
+                    {
+                        "code": ctx.entity.canonical_form,
+                        "title": ctx.entity.title,
+                        "category": ctx.entity.category,
+                        "score": round(ctx.score, 4),
+                        "shared_patterns": [p.name for p in ctx.troubleshooting_patterns]
+                    }
+                    for ctx in similar
+                ]
+            },
+            "meta": {
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"HSEA similar failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hsea/index/batch")
+async def hsea_index_batch(request: HSEAIndexRequest):
+    """Batch index error codes into HSEA system."""
+    try:
+        controller = get_hsea_controller()
+
+        entity_objects = [
+            ErrorCodeEntity(
+                entity_id=e["entity_id"],
+                canonical_form=e["canonical_form"],
+                title=e["title"],
+                category=e["category"],
+                code_number=e.get("code_number", 0),
+                cause=e.get("cause", ""),
+                remedy=e.get("remedy", ""),
+                severity=e.get("severity", "alarm"),
+                related_codes=e.get("related_codes", []),
+                page_number=e.get("page_number")
+            )
+            for e in request.entities
+        ]
+
+        stats = await controller.index_batch(entity_objects)
+
+        return JSONResponse(content={
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"HSEA batch index failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hsea/index/loaded")
+async def hsea_index_loaded(
+    limit: int = 100,
+    category: Optional[str] = None
+):
+    """
+    Index entities that were loaded from database but not yet in embedding indices.
+
+    Args:
+        limit: Maximum number of entities to index (default 100)
+        category: Only index entities from this category (e.g., "SRVO")
+    """
+    try:
+        controller = get_hsea_controller()
+        stats = await controller.index_loaded_entities(limit=limit, category_filter=category)
+
+        return JSONResponse(content={
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"HSEA index loaded failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/hsea/stats")
+async def hsea_stats():
+    """Get HSEA system statistics."""
+    try:
+        controller = get_hsea_controller()
+        stats = controller.get_stats()
+
+        return JSONResponse(content={
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"HSEA stats failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
