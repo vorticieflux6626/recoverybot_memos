@@ -141,14 +141,17 @@ class IntegrationTester:
             async with httpx.AsyncClient() as client:
                 start = datetime.now()
                 resp = await client.get(
-                    f"{self.memos_url}/api/v1/technical/health",
+                    f"{self.memos_url}/api/v1/search/technical/health",
                     timeout=10.0
                 )
                 elapsed = (datetime.now() - start).total_seconds() * 1000
 
                 if resp.status_code == 200:
                     data = resp.json()
-                    available = data.get("data", {}).get("available", False)
+                    # data can be a boolean directly or a dict with "available" key
+                    available = data.get("data", False)
+                    if isinstance(available, dict):
+                        available = available.get("available", False)
                     self.record_result(
                         "memOS Technical Docs Bridge",
                         True,
@@ -456,13 +459,13 @@ class IntegrationTester:
         try:
             async with httpx.AsyncClient() as client:
                 start = datetime.now()
+                # Use universal endpoint instead of gateway (gateway is streaming-only)
                 resp = await client.post(
-                    f"{self.memos_url}/api/v1/search/chat/gateway",
+                    f"{self.memos_url}/api/v1/search/universal",
                     json={
                         "query": "FANUC SRVO-063 troubleshooting steps",
                         "preset": "RESEARCH",  # Full technical docs
-                        "stream": False,
-                        "user_id": "test_user"
+                        "max_iterations": 3
                     },
                     timeout=180.0
                 )

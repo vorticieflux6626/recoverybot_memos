@@ -5703,7 +5703,11 @@ async def list_corpus_entities(
 
         # Filter by type if specified
         if entity_type:
-            entities = [e for e in entities if e.entity_type.value == entity_type]
+            entities = [
+                e for e in entities
+                if (e.entity_type == entity_type if isinstance(e.entity_type, str)
+                    else e.entity_type.value == entity_type)
+            ]
 
         # Paginate
         total = len(entities)
@@ -5714,11 +5718,11 @@ async def list_corpus_entities(
             "data": {
                 "entities": [
                     {
-                        "id": e.entity_id,
-                        "type": e.entity_type.value,
+                        "id": e.id,
+                        "type": e.entity_type if isinstance(e.entity_type, str) else e.entity_type.value,
                         "name": e.name,
                         "description": e.description[:200] if e.description else None,
-                        "has_pdf_link": bool(e.metadata and e.metadata.get("pdf_node_id"))
+                        "has_pdf_link": bool(hasattr(e, 'attributes') and e.attributes and e.attributes.get("pdf_node_id"))
                     }
                     for e in entities
                 ],
