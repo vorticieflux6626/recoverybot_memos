@@ -742,6 +742,349 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 int((time.time() - start_time) * 1000)
             )
 
+    async def search_with_events(
+        self,
+        request: SearchRequest,
+        emitter: EventEmitter
+    ) -> SearchResponse:
+        """
+        Execute search with real-time SSE event emissions for Android streaming.
+
+        This method wraps the standard search() method with event emissions
+        at major pipeline phases, enabling real-time progress updates to clients.
+
+        Args:
+            request: SearchRequest with query and options
+            emitter: EventEmitter for sending progress events
+
+        Returns:
+            SearchResponse with synthesized results
+        """
+        from . import events
+
+        start_time = time.time()
+        request_id = emitter.request_id
+        self._stats["total_searches"] += 1
+
+        logger.info(f"[{request_id}] Starting STREAMING search: {request.query[:50]}...")
+
+        # Initialize graph state for visualization
+        reset_graph_state()
+        graph = get_graph_state()
+
+        # Track metrics if enabled
+        if self.config.enable_metrics:
+            metrics = self._get_metrics()
+            metrics.start_query(request_id, request.query)
+
+        # Check caches first
+        if self.config.enable_content_cache:
+            cached = await self.check_cache(request)
+            if cached:
+                self._stats["cache_hits"] += 1
+                await emitter.emit(events.progress_update(request_id, 100, "Returning cached result"))
+                return cached
+
+        if self.config.enable_semantic_cache:
+            semantic_cached = await self.check_semantic_cache(request, request_id)
+            if semantic_cached:
+                self._stats["cache_hits"] += 1
+                await emitter.emit(events.progress_update(request_id, 100, "Returning semantically cached result"))
+                return semantic_cached
+
+        # Initialize graph cache workflow if enabled
+        graph_cache = None
+        if self.config.enable_graph_cache:
+            graph_cache = self._get_graph_cache()
+            await graph_cache.start_workflow(request_id, request.query)
+
+        try:
+            # PHASE 1: Query Analysis
+            await emitter.emit(graph_node_entered(request_id, "analyze", graph))
+            await emitter.emit(events.analyzing_query(request_id, request.query))
+
+            state = self.create_search_state(request)
+            scratchpad = self.create_scratchpad(request, request_id)
+            search_trace = []
+
+            analyze_start = time.time()
+            query_analysis = None
+            if self.config.enable_query_analysis and request.analyze_query:
+                query_analysis = await self._phase_query_analysis(
+                    request, state, search_trace, request_id
+                )
+                await emitter.emit(events.query_analyzed(
+                    request_id,
+                    query_analysis.requires_search if query_analysis else True,
+                    query_analysis.query_type if query_analysis else "research"
+                ))
+
+            analyze_ms = int((time.time() - analyze_start) * 1000)
+            await emitter.emit(graph_node_completed(request_id, "analyze", True, graph, analyze_ms))
+
+            # Handle direct answer if no search needed
+            if query_analysis and not query_analysis.requires_search:
+                await emitter.emit(events.synthesizing(request_id, 0))
+                return await self._handle_direct_answer(
+                    request, query_analysis, request_id, start_time
+                )
+
+            # PHASE 2: Search Planning
+            await emitter.emit(graph_node_entered(request_id, "plan", graph))
+            await emitter.emit(events.planning_search(request_id))
+
+            plan_start = time.time()
+            # Use analyzer to create search plan
+            if query_analysis and hasattr(self, 'analyzer') and self.analyzer:
+                state.search_plan = await self.analyzer.create_search_plan(
+                    request.query, query_analysis, request.context,
+                    request_id=request_id
+                )
+            else:
+                # Fallback: create simple plan
+                from .models import SearchPlan
+                state.search_plan = SearchPlan(
+                    original_query=request.query,
+                    decomposed_questions=[request.query],
+                    search_phases=[{"phase": "initial", "queries": [request.query]}],
+                    priority_order=[0],
+                    fallback_strategies=["broaden search"],
+                    estimated_iterations=request.max_iterations,
+                    reasoning="Direct query search"
+                )
+
+            initial_queries = []
+            for phase in state.search_plan.search_phases:
+                initial_queries.extend(phase.get("queries", []))
+            state.add_pending_queries(initial_queries)
+
+            plan_ms = int((time.time() - plan_start) * 1000)
+            await emitter.emit(events.search_planned(
+                request_id, initial_queries, len(state.search_plan.search_phases)
+            ))
+            await emitter.emit(graph_node_completed(request_id, "plan", True, graph, plan_ms))
+
+            # Initialize scratchpad mission
+            if self.config.enable_scratchpad:
+                decomposed_qs = state.search_plan.decomposed_questions
+                completion_criteria = {
+                    f"q{i+1}": f"Find information about: {q}"
+                    for i, q in enumerate(decomposed_qs)
+                }
+                scratchpad.set_mission(decomposed_qs, completion_criteria)
+                await emitter.emit(events.scratchpad_initialized(request_id, decomposed_qs))
+
+            # PHASE 3: Search Execution (ReAct Loop)
+            for iteration in range(request.max_iterations):
+                state.iteration = iteration + 1
+
+                await emitter.emit(events.iteration_start_detailed(
+                    request_id,
+                    state.iteration,
+                    request.max_iterations,
+                    len(state.pending_queries),
+                    state.sources_consulted
+                ))
+
+                if not state.pending_queries:
+                    break
+
+                # Execute searches
+                await emitter.emit(graph_node_entered(request_id, "search", graph))
+                queries_to_execute = state.pending_queries[:3]
+                await emitter.emit(events.searching(
+                    request_id, queries_to_execute, state.iteration, request.max_iterations
+                ))
+
+                search_start = time.time()
+                await self._phase_search_execution(
+                    request, state, scratchpad, search_trace, request_id,
+                    pre_act_plan=None
+                )
+                search_ms = int((time.time() - search_start) * 1000)
+
+                await emitter.emit(events.search_results(
+                    request_id, len(state.raw_results), state.sources_consulted
+                ))
+                await emitter.emit(graph_node_completed(request_id, "search", True, graph, search_ms))
+
+                # CRAG evaluation if enabled
+                if self.config.enable_crag_evaluation:
+                    await emitter.emit(graph_node_entered(request_id, "crag", graph))
+                    await emitter.emit(events.crag_evaluating(request_id, len(state.raw_results)))
+
+                    crag_start = time.time()
+                    crag_result = await self._phase_crag_evaluation(
+                        request, state, search_trace, request_id
+                    )
+                    crag_ms = int((time.time() - crag_start) * 1000)
+
+                    if crag_result:
+                        await emitter.emit(events.crag_evaluation_complete(
+                            request_id,
+                            crag_result.quality.value,
+                            crag_result.relevance_score,
+                            crag_result.recommended_action.value if hasattr(crag_result.recommended_action, 'value') else str(crag_result.recommended_action)
+                        ))
+                        if crag_result.refined_queries:
+                            await emitter.emit(events.crag_refining(request_id, crag_result.refined_queries))
+                            state.add_pending_queries(crag_result.refined_queries)
+
+                    await emitter.emit(graph_node_completed(request_id, "crag", True, graph, crag_ms))
+
+                # Update iteration complete
+                await emitter.emit(events.iteration_complete_detailed(
+                    request_id, state.iteration,
+                    len(state.raw_results), state.sources_consulted,
+                    "continuing" if state.pending_queries else "complete"
+                ))
+
+            # PHASE 4: URL Scraping
+            scraped_content = []
+            if state.raw_results:
+                await emitter.emit(graph_node_entered(request_id, "scrape", graph))
+
+                urls_to_scrape = [r.url for r in state.raw_results[:request.max_urls_to_scrape] if hasattr(r, 'url') and r.url]
+                await emitter.emit(events.evaluating_urls(request_id, len(urls_to_scrape)))
+
+                scrape_start = time.time()
+                scraped_content = await self._phase_content_scraping(
+                    request, state, scratchpad, search_trace, request_id
+                )
+                scrape_ms = int((time.time() - scrape_start) * 1000)
+
+                await emitter.emit(events.urls_evaluated(
+                    request_id, len(scraped_content), len(urls_to_scrape)
+                ))
+                await emitter.emit(graph_node_completed(request_id, "scrape", True, graph, scrape_ms))
+
+            # PHASE 5: Verification
+            if self.config.enable_verification and scraped_content:
+                await emitter.emit(graph_node_entered(request_id, "verify", graph))
+                await emitter.emit(events.verifying_claims(request_id, len(scraped_content)))
+
+                verify_start = time.time()
+                verification_result = await self._phase_verification(state, scraped_content, search_trace, request_id)
+                verify_ms = int((time.time() - verify_start) * 1000)
+
+                if verification_result:
+                    # AggregateVerification has verified_count and total_claims attributes
+                    verified_count = getattr(verification_result, 'verified_count', 0)
+                    total_claims = getattr(verification_result, 'total_claims', len(scraped_content))
+                    await emitter.emit(events.claims_verified(request_id, verified_count, total_claims))
+
+                await emitter.emit(graph_node_completed(request_id, "verify", True, graph, verify_ms))
+
+            # PHASE 6: Synthesis
+            await emitter.emit(graph_node_entered(request_id, "synthesize", graph))
+            await emitter.emit(events.synthesizing(request_id, len(scraped_content)))
+
+            synthesis_start = time.time()
+            synthesis = await self._phase_synthesis(
+                request, state, scraped_content, search_trace, request_id
+            )
+            synthesis_ms = int((time.time() - synthesis_start) * 1000)
+
+            # Calculate base confidence from source diversity
+            source_diversity = len(state.unique_domains) / max(request.max_sources, 1)
+            confidence = 0.5 + (0.3 * min(source_diversity, 1.0))  # Base confidence 0.5-0.8
+
+            await emitter.emit(events.synthesis_complete(
+                request_id, len(synthesis) if synthesis else 0, confidence
+            ))
+            await emitter.emit(graph_node_completed(request_id, "synthesize", True, graph, synthesis_ms))
+
+            # PHASE 7: Self-RAG Reflection (if enabled)
+            reflection_result = None
+            if self.config.enable_self_reflection and synthesis:
+                await emitter.emit(graph_node_entered(request_id, "reflect", graph))
+                await emitter.emit(events.self_rag_reflecting(request_id, len(synthesis)))
+
+                reflect_start = time.time()
+                reflection_result = await self._phase_self_reflection(
+                    request.query, synthesis, state, scraped_content, request_id
+                )
+                reflect_ms = int((time.time() - reflect_start) * 1000)
+
+                if reflection_result:
+                    # Convert enum to string for JSON serialization
+                    support_level = reflection_result.support_level
+                    if hasattr(support_level, 'value'):
+                        support_level = support_level.value
+                    await emitter.emit(events.self_rag_complete(
+                        request_id,
+                        reflection_result.relevance_score,
+                        str(support_level),
+                        reflection_result.usefulness_score,
+                        reflection_result.temporal_conflicts
+                    ))
+
+                    # Blend confidence with reflection
+                    reflection_conf = reflection_result.overall_confidence if hasattr(reflection_result, 'overall_confidence') else reflection_result.relevance_score
+                    if reflection_conf > 0:
+                        confidence = self.calculate_blended_confidence(
+                            confidence, reflection_conf, None, source_diversity
+                        )
+
+                await emitter.emit(graph_node_completed(request_id, "reflect", True, graph, reflect_ms))
+
+            # Build final response
+            execution_time_ms = int((time.time() - start_time) * 1000)
+
+            response = self.build_response(
+                synthesis=synthesis or "",
+                sources=self._get_sources(state),
+                queries=state.executed_queries,
+                confidence=confidence,
+                state=state,
+                request_id=request_id,
+                search_trace=search_trace,
+                execution_time_ms=execution_time_ms
+            )
+
+            # Store in cache
+            if self.config.enable_content_cache:
+                self.store_in_cache(request, response)
+
+            # End graph cache workflow
+            if graph_cache:
+                await graph_cache.end_workflow(request_id, success=response.success)
+
+            # Track metrics
+            if self.config.enable_metrics:
+                metrics.complete_query(request_id, confidence)
+
+            # Experience distillation (if enabled)
+            if self.config.enable_experience_distillation and confidence >= 0.75:
+                try:
+                    await self._phase_experience_distillation(
+                        request, synthesis or "", confidence, state, request_id
+                    )
+                    await emitter.emit(events.experience_captured(
+                        request_id,
+                        state.query_analysis.query_type if state.query_analysis else "research",
+                        confidence
+                    ))
+                except Exception as e:
+                    logger.debug(f"Experience capture failed: {e}")
+
+            # Final graph complete
+            await emitter.emit(graph_node_completed(request_id, "complete", True, graph, execution_time_ms))
+
+            return response
+
+        except Exception as e:
+            logger.error(f"[{request_id}] Streaming search failed: {e}", exc_info=True)
+
+            if graph_cache:
+                await graph_cache.end_workflow(request_id, success=False)
+
+            return self.build_error_response(
+                str(e),
+                request_id,
+                int((time.time() - start_time) * 1000)
+            )
+
     async def _execute_pipeline(
         self,
         request: SearchRequest,
