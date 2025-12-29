@@ -1157,6 +1157,66 @@ def experience_captured(request_id: str, query_type: str, confidence: float) -> 
     )
 
 
+# ========== Phase 21: Meta-Buffer & Reasoning Composer Events ==========
+
+def thought_template_matched(
+    request_id: str,
+    template_id: str,
+    similarity: float
+) -> SearchEvent:
+    """Meta-Buffer found a matching template"""
+    return SearchEvent(
+        event_type=EventType.THOUGHT_TEMPLATE_MATCHED,
+        request_id=request_id,
+        message=f"Meta-Buffer: Template matched (id={template_id}, similarity={similarity:.2f})",
+        progress_percent=12,
+        data={
+            "template_id": template_id,
+            "similarity": similarity
+        }
+    )
+
+
+def thought_template_applied(
+    request_id: str,
+    template_id: str,
+    applied_components: list
+) -> SearchEvent:
+    """Template applied to guide search"""
+    return SearchEvent(
+        event_type=EventType.THOUGHT_TEMPLATE_APPLIED,
+        request_id=request_id,
+        message=f"Meta-Buffer: Template applied ({len(applied_components)} components)",
+        progress_percent=15,
+        data={
+            "template_id": template_id,
+            "applied_components": applied_components
+        }
+    )
+
+
+def template_created(request_id: str, template_id: str) -> SearchEvent:
+    """New template distilled from successful search"""
+    return SearchEvent(
+        event_type=EventType.TEMPLATE_CREATED,
+        request_id=request_id,
+        message=f"Meta-Buffer: Template created (id={template_id})",
+        progress_percent=98,
+        data={"template_id": template_id}
+    )
+
+
+def experience_distilling(request_id: str, experience_count: int) -> SearchEvent:
+    """Experience distillation in progress"""
+    return SearchEvent(
+        event_type=EventType.EXPERIENCE_DISTILLING,
+        request_id=request_id,
+        message=f"Distilling {experience_count} experiences into templates...",
+        progress_percent=97,
+        data={"experience_count": experience_count}
+    )
+
+
 def outcome_recorded(
     request_id: str,
     category: str,

@@ -1309,6 +1309,35 @@ class UniversalOrchestrator(BaseSearchPipeline):
             analyze_ms = int((time.time() - analyze_start) * 1000)
             await emitter.emit(graph_node_completed(request_id, "analyze", True, graph, analyze_ms))
 
+            # PHASE 21: Meta-Buffer Template Retrieval & Reasoning Composition
+            template_applied = False
+            composed_strategy = None
+
+            if self.config.enable_meta_buffer:
+                try:
+                    template_result = await self._retrieve_template(request.query)
+                    if template_result:
+                        template, similarity = template_result
+                        logger.info(f"[{request_id}] Meta-Buffer: Found template (similarity={similarity:.2f})")
+                        await emitter.emit(events.thought_template_matched(
+                            request_id, template.id, similarity
+                        ))
+                        # Store template for potential use in search planning
+                        state.retrieved_template = template
+                        template_applied = True
+                except Exception as e:
+                    logger.debug(f"[{request_id}] Meta-Buffer template retrieval failed: {e}")
+
+            if self.config.enable_reasoning_composer:
+                try:
+                    composed_strategy = await self._compose_reasoning_strategy(request.query)
+                    if composed_strategy:
+                        logger.info(f"[{request_id}] Reasoning Composer: Strategy composed with {len(composed_strategy.selected_modules)} modules")
+                        # Store strategy for use in synthesis
+                        state.composed_reasoning_strategy = composed_strategy
+                except Exception as e:
+                    logger.debug(f"[{request_id}] Reasoning composition failed: {e}")
+
             # Handle direct answer if no search needed
             if query_analysis and not query_analysis.requires_search:
                 await emitter.emit(events.synthesizing(request_id, 0))
@@ -1932,6 +1961,28 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     ))
                 except Exception as e:
                     logger.debug(f"Experience capture failed: {e}")
+
+            # Meta-Buffer template distillation (Phase 21)
+            if self.config.enable_meta_buffer and confidence >= 0.75:
+                try:
+                    # Gather search queries from state
+                    search_queries = state.executed_queries if hasattr(state, 'executed_queries') else []
+                    decomposed = state.search_plan.decomposed_questions if state.search_plan else [request.query]
+
+                    template = await self._distill_successful_search(
+                        query=request.query,
+                        decomposed_questions=decomposed,
+                        search_queries=search_queries,
+                        synthesis=synthesis or "",
+                        sources=self._get_sources(state),
+                        confidence=confidence,
+                        execution_time_ms=execution_time_ms
+                    )
+                    if template:
+                        logger.info(f"[{request_id}] Meta-Buffer: Template distilled (id={template.id})")
+                        await emitter.emit(events.template_created(request_id, template.id))
+                except Exception as e:
+                    logger.debug(f"[{request_id}] Meta-Buffer template distillation failed: {e}")
 
             # Final graph complete
             await emitter.emit(graph_node_completed(request_id, "complete", True, graph, execution_time_ms))
