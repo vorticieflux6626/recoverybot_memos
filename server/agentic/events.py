@@ -1036,14 +1036,44 @@ def adaptive_refinement_complete(
     )
 
 
-def llm_call_start(request_id: str, model: str, task: str, input_tokens: int = 0) -> SearchEvent:
-    """LLM API call started"""
+def llm_call_start(
+    request_id: str,
+    model: str,
+    task: str,
+    agent_phase: str,
+    classification: str,
+    input_tokens: int = 0,
+    context_window: int = 0,
+    prompt_preview: str = ""
+) -> SearchEvent:
+    """
+    LLM API call started - detailed debugging event.
+
+    Args:
+        request_id: Unique request identifier
+        model: Model name (e.g., "qwen3:8b", "deepseek-r1:14b")
+        task: Specific task (e.g., "query_analysis", "synthesis", "verification")
+        agent_phase: Pipeline phase (e.g., "PHASE_1_ANALYZE", "PHASE_6_SYNTHESIZE")
+        classification: Model classification (e.g., "reasoning", "fast", "vision", "embedding")
+        input_tokens: Estimated input token count
+        context_window: Model's context window size
+        prompt_preview: First 200 chars of prompt for debugging
+    """
     return SearchEvent(
         event_type=EventType.LLM_CALL_START,
         request_id=request_id,
-        message=f"LLM: Calling {model} for {task}",
+        message=f"LLM [{agent_phase}]: {model} ({classification}) starting {task}",
         model_name=model,
-        data={"task": task, "input_tokens": input_tokens}
+        data={
+            "task": task,
+            "agent_phase": agent_phase,
+            "classification": classification,
+            "model": model,
+            "input_tokens": input_tokens,
+            "context_window": context_window,
+            "prompt_preview": prompt_preview[:200] if prompt_preview else "",
+            "utilization_pct": round((input_tokens / context_window * 100), 1) if context_window > 0 else 0
+        }
     )
 
 
@@ -1051,16 +1081,57 @@ def llm_call_complete(
     request_id: str,
     model: str,
     task: str,
+    agent_phase: str,
+    classification: str,
     duration_ms: int,
-    output_tokens: int = 0
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    context_window: int = 0,
+    output_preview: str = "",
+    cache_hit: bool = False,
+    thinking_tokens: int = 0
 ) -> SearchEvent:
-    """LLM API call completed"""
+    """
+    LLM API call completed - detailed debugging event.
+
+    Args:
+        request_id: Unique request identifier
+        model: Model name used
+        task: Specific task completed
+        agent_phase: Pipeline phase that made the call
+        classification: Model classification used
+        duration_ms: Call duration in milliseconds
+        input_tokens: Actual input token count
+        output_tokens: Output token count
+        context_window: Model's context window size
+        output_preview: First 300 chars of output for debugging
+        cache_hit: Whether KV cache was used
+        thinking_tokens: For reasoning models, tokens used in thinking
+    """
+    tokens_per_sec = round(output_tokens / (duration_ms / 1000), 1) if duration_ms > 0 else 0
+    total_tokens = input_tokens + output_tokens + thinking_tokens
+
     return SearchEvent(
         event_type=EventType.LLM_CALL_COMPLETE,
         request_id=request_id,
-        message=f"LLM: {model} completed {task} in {duration_ms}ms",
+        message=f"LLM [{agent_phase}]: {model} completed {task} in {duration_ms}ms ({tokens_per_sec} tok/s)",
         model_name=model,
-        data={"task": task, "duration_ms": duration_ms, "output_tokens": output_tokens}
+        data={
+            "task": task,
+            "agent_phase": agent_phase,
+            "classification": classification,
+            "model": model,
+            "duration_ms": duration_ms,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "thinking_tokens": thinking_tokens,
+            "total_tokens": total_tokens,
+            "tokens_per_sec": tokens_per_sec,
+            "context_window": context_window,
+            "utilization_pct": round((input_tokens / context_window * 100), 1) if context_window > 0 else 0,
+            "output_preview": output_preview[:300] if output_preview else "",
+            "cache_hit": cache_hit
+        }
     )
 
 

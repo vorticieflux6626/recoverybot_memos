@@ -2572,6 +2572,209 @@ async def clear_experiences(
 
 
 # =============================================================================
+# Phase 21: Meta-Buffer & Reasoning Composer Endpoints (Template Reuse)
+# =============================================================================
+
+@router.get("/meta-buffer/stats")
+async def get_meta_buffer_stats():
+    """
+    Get Meta-Buffer (cross-session template) statistics.
+
+    Returns information about stored templates, retrieval patterns,
+    success rates, and template performance metrics.
+    """
+    try:
+        from agentic.meta_buffer import get_meta_buffer
+
+        buffer = get_meta_buffer()
+        stats = buffer.get_stats()  # Sync method
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "phase": "21",
+                "feature": "meta_buffer"
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get meta-buffer stats failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get meta-buffer stats: {str(e)}"
+        )
+
+
+@router.get("/meta-buffer/templates")
+async def get_meta_buffer_templates(
+    limit: int = Query(20, ge=1, le=100, description="Maximum templates to return")
+):
+    """
+    List stored templates in Meta-Buffer.
+
+    Templates are reasoning patterns distilled from successful searches.
+    """
+    try:
+        from agentic.meta_buffer import get_meta_buffer
+
+        buffer = get_meta_buffer()
+        templates = buffer.get_top_templates(limit=limit)  # Use existing method
+
+        # Serialize templates to dicts
+        template_dicts = [
+            {
+                "id": t.id,
+                "template_type": t.template_type.value if hasattr(t.template_type, 'value') else str(t.template_type),
+                "abstract_pattern": t.abstract_pattern[:200] + "..." if len(t.abstract_pattern) > 200 else t.abstract_pattern,
+                "usage_count": t.usage_count,
+                "success_count": t.success_count,
+                "avg_confidence": t.avg_confidence,
+                "success_rate": t.success_count / max(t.usage_count, 1)
+            }
+            for t in templates
+        ]
+
+        return {
+            "success": True,
+            "data": {
+                "templates": template_dicts,
+                "count": len(template_dicts)
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "limit": limit
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"List meta-buffer templates failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list templates: {str(e)}"
+        )
+
+
+@router.get("/reasoning-composer/stats")
+async def get_reasoning_composer_stats():
+    """
+    Get Reasoning Composer (Self-Discover) statistics.
+
+    Returns information about reasoning module usage, composition patterns,
+    and strategy effectiveness.
+    """
+    try:
+        from agentic.reasoning_composer import get_reasoning_composer
+
+        composer = get_reasoning_composer()
+        stats = composer.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "phase": "21",
+                "feature": "reasoning_composer"
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get reasoning-composer stats failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get reasoning-composer stats: {str(e)}"
+        )
+
+
+@router.get("/reasoning-composer/modules")
+async def get_reasoning_modules():
+    """
+    List available reasoning modules.
+
+    Modules are atomic reasoning patterns (e.g., critical_analysis, step_by_step)
+    that can be composed into task-specific strategies.
+    """
+    try:
+        from agentic.reasoning_composer import get_reasoning_composer, ReasoningModule
+
+        composer = get_reasoning_composer()
+        # List all modules from MODULE_DEFINITIONS
+        modules = [
+            {
+                "name": m.value,
+                "description": d.description,
+                "examples": d.examples[:2] if d.examples else []
+            }
+            for m, d in composer.MODULE_DEFINITIONS.items()
+        ]
+
+        return {
+            "success": True,
+            "data": {
+                "modules": modules,
+                "count": len(modules)
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"List reasoning modules failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list modules: {str(e)}"
+        )
+
+
+@router.get("/phase21/summary")
+async def get_phase21_summary():
+    """
+    Get comprehensive Phase 21 (Template Reuse Optimization) summary.
+
+    Combines Meta-Buffer and Reasoning Composer statistics into a single view
+    for debugging and performance monitoring.
+    """
+    try:
+        from agentic.meta_buffer import get_meta_buffer
+        from agentic.reasoning_composer import get_reasoning_composer
+
+        buffer = get_meta_buffer()
+        composer = get_reasoning_composer()
+
+        buffer_stats = buffer.get_stats()  # Sync method
+        composer_stats = composer.get_stats()  # Sync method
+
+        return {
+            "success": True,
+            "data": {
+                "meta_buffer": buffer_stats,
+                "reasoning_composer": composer_stats,
+                "combined": {
+                    "total_templates": buffer_stats.get("total_templates", 0),
+                    "available_modules": composer_stats.get("available_modules", 12),
+                    "template_hit_rate": buffer_stats.get("hit_rate", 0.0),
+                    "compositions_performed": composer_stats.get("compositions_attempted", 0)
+                }
+            },
+            "meta": {
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "phase": "21",
+                "feature": "template_reuse_optimization"
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get Phase 21 summary failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get Phase 21 summary: {str(e)}"
+        )
+
+
+# =============================================================================
 # Classifier Feedback Endpoints (Adaptive-RAG inspired)
 # =============================================================================
 

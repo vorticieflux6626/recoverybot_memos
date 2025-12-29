@@ -51,7 +51,8 @@ from .models import (
 from .events import (
     EventEmitter, EventType, SearchEvent,
     get_graph_state, reset_graph_state,
-    graph_node_entered, graph_node_completed
+    graph_node_entered, graph_node_completed,
+    llm_call_start, llm_call_complete
 )
 
 # Core agents (always available)
@@ -386,6 +387,9 @@ class FeatureConfig:
     # Metrics (always available)
     enable_metrics: bool = True
 
+    # Debug mode (Layer 4 - for development/troubleshooting)
+    enable_llm_debug: bool = False  # Emit detailed LLM call events
+
 
 # Preset configurations
 PRESET_CONFIGS = {
@@ -522,7 +526,9 @@ PRESET_CONFIGS = {
         enable_multi_agent=True,
         # Layer 4 - Graph cache
         enable_graph_cache=True,
-        enable_prefetching=True
+        enable_prefetching=True,
+        # Layer 4 - Debug
+        enable_llm_debug=True
     )
 }
 
@@ -684,6 +690,107 @@ class UniversalOrchestrator(BaseSearchPipeline):
     def full(cls, **kwargs) -> "UniversalOrchestrator":
         """Create full orchestrator - everything enabled."""
         return cls(preset=OrchestratorPreset.FULL, **kwargs)
+
+    # ===== LLM Debug Tracking =====
+
+    def _get_model_classification(self, model: str) -> str:
+        """Classify model by its primary use case for debugging."""
+        model_lower = model.lower()
+        if "deepseek" in model_lower or "r1" in model_lower:
+            return "reasoning"
+        elif "vision" in model_lower or "vl" in model_lower:
+            return "vision"
+        elif "embed" in model_lower:
+            return "embedding"
+        elif "gemma" in model_lower and "4b" in model_lower:
+            return "fast_evaluator"
+        elif "qwen" in model_lower:
+            return "general"
+        else:
+            return "unknown"
+
+    def _get_model_context_window_size(self, model: str) -> int:
+        """Get model context window size for utilization tracking."""
+        model_lower = model.lower()
+        if "deepseek" in model_lower:
+            return 32768  # 32K for DeepSeek R1
+        elif "qwen3:8b" in model_lower:
+            return 32768  # 32K for qwen3:8b
+        elif "gemma" in model_lower:
+            return 8192  # 8K for gemma3:4b
+        elif "llama" in model_lower:
+            return 8192  # 8K for llama models
+        else:
+            return 16384  # Default 16K
+
+    async def _emit_llm_start(
+        self,
+        emitter: EventEmitter,
+        request_id: str,
+        model: str,
+        task: str,
+        agent_phase: str,
+        prompt: str = ""
+    ) -> float:
+        """
+        Emit LLM call start event if debug mode enabled.
+        Returns start timestamp for duration calculation.
+        """
+        start_time = time.time()
+        if self.config.enable_llm_debug:
+            classification = self._get_model_classification(model)
+            context_window = self._get_model_context_window_size(model)
+            # Estimate input tokens (roughly 4 chars per token)
+            input_tokens = len(prompt) // 4 if prompt else 0
+
+            await emitter.emit(llm_call_start(
+                request_id=request_id,
+                model=model,
+                task=task,
+                agent_phase=agent_phase,
+                classification=classification,
+                input_tokens=input_tokens,
+                context_window=context_window,
+                prompt_preview=prompt[:200] if prompt else ""
+            ))
+        return start_time
+
+    async def _emit_llm_complete(
+        self,
+        emitter: EventEmitter,
+        request_id: str,
+        model: str,
+        task: str,
+        agent_phase: str,
+        start_time: float,
+        output: str = "",
+        input_prompt: str = "",
+        cache_hit: bool = False,
+        thinking_tokens: int = 0
+    ):
+        """Emit LLM call complete event if debug mode enabled."""
+        if self.config.enable_llm_debug:
+            duration_ms = int((time.time() - start_time) * 1000)
+            classification = self._get_model_classification(model)
+            context_window = self._get_model_context_window_size(model)
+            # Estimate tokens (roughly 4 chars per token)
+            input_tokens = len(input_prompt) // 4 if input_prompt else 0
+            output_tokens = len(output) // 4 if output else 0
+
+            await emitter.emit(llm_call_complete(
+                request_id=request_id,
+                model=model,
+                task=task,
+                agent_phase=agent_phase,
+                classification=classification,
+                duration_ms=duration_ms,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                context_window=context_window,
+                output_preview=output[:300] if output else "",
+                cache_hit=cache_hit,
+                thinking_tokens=thinking_tokens
+            ))
 
     # ===== Lazy Component Initialization =====
 
@@ -1297,9 +1404,33 @@ class UniversalOrchestrator(BaseSearchPipeline):
             analyze_start = time.time()
             query_analysis = None
             if self.config.enable_query_analysis and request.analyze_query:
+                # LLM Debug: Track query analysis call
+                llm_start = await self._emit_llm_start(
+                    emitter, request_id,
+                    model=DEFAULT_PIPELINE_CONFIG.analyzer_model,
+                    task="query_analysis",
+                    agent_phase="PHASE_1_ANALYZE",
+                    prompt=request.query
+                )
+
                 query_analysis = await self._phase_query_analysis(
                     request, state, search_trace, request_id
                 )
+
+                # LLM Debug: Complete query analysis tracking
+                analysis_summary = ""
+                if query_analysis:
+                    analysis_summary = f"type={query_analysis.query_type}, requires_search={query_analysis.requires_search}"
+                await self._emit_llm_complete(
+                    emitter, request_id,
+                    model=DEFAULT_PIPELINE_CONFIG.analyzer_model,
+                    task="query_analysis",
+                    agent_phase="PHASE_1_ANALYZE",
+                    start_time=llm_start,
+                    output=analysis_summary,
+                    input_prompt=request.query
+                )
+
                 await emitter.emit(events.query_analyzed(
                     request_id,
                     query_analysis.requires_search if query_analysis else True,
@@ -1533,9 +1664,35 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     await emitter.emit(events.crag_evaluating(request_id, len(state.raw_results)))
 
                     crag_start = time.time()
+
+                    # LLM Debug: Track CRAG evaluation call
+                    crag_prompt = f"CRAG pre-synthesis eval: {len(state.raw_results)} results"
+                    llm_start = await self._emit_llm_start(
+                        emitter, request_id,
+                        model=DEFAULT_PIPELINE_CONFIG.evaluator_model,
+                        task="crag_evaluation",
+                        agent_phase="PHASE_3.5_CRAG",
+                        prompt=crag_prompt
+                    )
+
                     crag_result = await self._phase_crag_evaluation(
                         request, state, search_trace, request_id
                     )
+
+                    # LLM Debug: Complete CRAG tracking
+                    crag_output = ""
+                    if crag_result:
+                        crag_output = f"quality={crag_result.quality.value}, relevance={crag_result.relevance_score:.2f}"
+                    await self._emit_llm_complete(
+                        emitter, request_id,
+                        model=DEFAULT_PIPELINE_CONFIG.evaluator_model,
+                        task="crag_evaluation",
+                        agent_phase="PHASE_3.5_CRAG",
+                        start_time=llm_start,
+                        output=crag_output,
+                        input_prompt=crag_prompt
+                    )
+
                     crag_ms = int((time.time() - crag_start) * 1000)
 
                     if crag_result:
@@ -1633,7 +1790,35 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 await emitter.emit(events.verifying_claims(request_id, len(scraped_content)))
 
                 verify_start = time.time()
+
+                # LLM Debug: Track verification call
+                verify_prompt = f"Verifying {len(scraped_content)} sources"
+                llm_start = await self._emit_llm_start(
+                    emitter, request_id,
+                    model=DEFAULT_PIPELINE_CONFIG.verifier_model,
+                    task="claim_verification",
+                    agent_phase="PHASE_5_VERIFY",
+                    prompt=verify_prompt
+                )
+
                 verification_result = await self._phase_verification(state, scraped_content, search_trace, request_id)
+
+                # LLM Debug: Complete verification tracking
+                verify_output = ""
+                if verification_result:
+                    verified = getattr(verification_result, 'verified_count', 0)
+                    total = getattr(verification_result, 'total_claims', 0)
+                    verify_output = f"verified={verified}/{total}"
+                await self._emit_llm_complete(
+                    emitter, request_id,
+                    model=DEFAULT_PIPELINE_CONFIG.verifier_model,
+                    task="claim_verification",
+                    agent_phase="PHASE_5_VERIFY",
+                    start_time=llm_start,
+                    output=verify_output,
+                    input_prompt=verify_prompt
+                )
+
                 verify_ms = int((time.time() - verify_start) * 1000)
 
                 if verification_result:
@@ -1649,9 +1834,33 @@ class UniversalOrchestrator(BaseSearchPipeline):
             await emitter.emit(events.synthesizing(request_id, len(scraped_content)))
 
             synthesis_start = time.time()
+
+            # LLM Debug: Track synthesis call (reasoning model)
+            synthesis_prompt = f"Query: {request.query}\nSources: {len(scraped_content)}"
+            llm_start = await self._emit_llm_start(
+                emitter, request_id,
+                model=DEFAULT_PIPELINE_CONFIG.synthesizer_model,
+                task="synthesis",
+                agent_phase="PHASE_6_SYNTHESIZE",
+                prompt=synthesis_prompt
+            )
+
             synthesis = await self._phase_synthesis(
                 request, state, scraped_content, search_trace, request_id
             )
+
+            # LLM Debug: Complete synthesis tracking
+            await self._emit_llm_complete(
+                emitter, request_id,
+                model=DEFAULT_PIPELINE_CONFIG.synthesizer_model,
+                task="synthesis",
+                agent_phase="PHASE_6_SYNTHESIZE",
+                start_time=llm_start,
+                output=synthesis[:500] if synthesis else "",
+                input_prompt=synthesis_prompt,
+                thinking_tokens=500 if "deepseek" in DEFAULT_PIPELINE_CONFIG.synthesizer_model.lower() else 0
+            )
+
             synthesis_ms = int((time.time() - synthesis_start) * 1000)
 
             # Calculate confidence using heuristic baseline
@@ -1685,9 +1894,35 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 await emitter.emit(events.self_rag_reflecting(request_id, len(synthesis)))
 
                 reflect_start = time.time()
+
+                # LLM Debug: Track self-reflection call (fast evaluator model)
+                reflect_prompt = f"Query: {request.query[:100]}\nSynthesis length: {len(synthesis)}"
+                llm_start = await self._emit_llm_start(
+                    emitter, request_id,
+                    model=DEFAULT_PIPELINE_CONFIG.evaluator_model,
+                    task="self_reflection",
+                    agent_phase="PHASE_7_REFLECT",
+                    prompt=reflect_prompt
+                )
+
                 reflection_result = await self._phase_self_reflection(
                     request.query, synthesis, state, scraped_content, request_id
                 )
+
+                # LLM Debug: Complete reflection tracking
+                reflect_output = ""
+                if reflection_result:
+                    reflect_output = f"relevance={reflection_result.relevance_score:.2f}, useful={reflection_result.usefulness_score:.2f}"
+                await self._emit_llm_complete(
+                    emitter, request_id,
+                    model=DEFAULT_PIPELINE_CONFIG.evaluator_model,
+                    task="self_reflection",
+                    agent_phase="PHASE_7_REFLECT",
+                    start_time=llm_start,
+                    output=reflect_output,
+                    input_prompt=reflect_prompt
+                )
+
                 reflect_ms = int((time.time() - reflect_start) * 1000)
 
                 if reflection_result:
@@ -1718,9 +1953,35 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 try:
                     await emitter.emit(events.ragas_evaluating(request_id, len(scraped_content)))
                     ragas_start = time.time()
+
+                    # LLM Debug: Track RAGAS evaluation call
+                    ragas_prompt = f"RAGAS eval: {len(scraped_content)} contexts"
+                    llm_start = await self._emit_llm_start(
+                        emitter, request_id,
+                        model=DEFAULT_PIPELINE_CONFIG.evaluator_model,
+                        task="ragas_evaluation",
+                        agent_phase="PHASE_7.2_RAGAS",
+                        prompt=ragas_prompt
+                    )
+
                     ragas_result = await self._phase_ragas_evaluation(
                         request.query, synthesis, state, scraped_content, request_id
                     )
+
+                    # LLM Debug: Complete RAGAS tracking
+                    ragas_output = ""
+                    if ragas_result:
+                        ragas_output = f"faith={ragas_result.faithfulness:.2f}, relevancy={ragas_result.answer_relevancy:.2f}"
+                    await self._emit_llm_complete(
+                        emitter, request_id,
+                        model=DEFAULT_PIPELINE_CONFIG.evaluator_model,
+                        task="ragas_evaluation",
+                        agent_phase="PHASE_7.2_RAGAS",
+                        start_time=llm_start,
+                        output=ragas_output,
+                        input_prompt=ragas_prompt
+                    )
+
                     ragas_ms = int((time.time() - ragas_start) * 1000)
 
                     if ragas_result:

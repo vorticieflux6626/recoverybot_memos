@@ -273,10 +273,50 @@ All lower priority events now added to `search_with_events()`:
 - `entities_extracted(request_id, count, names)` - Entities extracted from query
 - `entity_relation_found(request_id, source, target, relation_type)` - Relation discovered
 
-### 4. Remaining (Lowest Priority)
+### 4. ✅ FIXED: LLM Debug Events (2025-12-29)
 
-- Add Phase 21 metrics API endpoint
-- Add LLM call debugging events (`llm_call_start`, `llm_call_complete`)
+Added detailed LLM call debugging events for complex system troubleshooting:
+
+**Event Helpers** (`events.py` lines 1039-1140):
+- `llm_call_start(request_id, model, task, agent_phase, classification, input_tokens, context_window, prompt_preview)`
+- `llm_call_complete(request_id, model, task, agent_phase, classification, duration_ms, input_tokens, output_tokens, context_window, output_preview, cache_hit, thinking_tokens)`
+
+**Event Data Fields:**
+| Field | Description |
+|-------|-------------|
+| `model` | Model name (e.g., "qwen3:8b", "deepseek-r1:14b") |
+| `task` | Task type (query_analysis, synthesis, verification, etc.) |
+| `agent_phase` | Pipeline phase (PHASE_1_ANALYZE, PHASE_6_SYNTHESIZE, etc.) |
+| `classification` | Model classification (reasoning, general, fast_evaluator) |
+| `input_tokens` | Estimated input token count |
+| `context_window` | Model's context window size |
+| `utilization_pct` | Context window utilization percentage |
+| `output_tokens` | Output token count |
+| `thinking_tokens` | Thinking tokens (for reasoning models) |
+| `tokens_per_sec` | Generation speed |
+| `output_preview` | First 300 chars of output |
+
+**Instrumented Phases:**
+- PHASE_1_ANALYZE (query_analysis) - qwen3:8b
+- PHASE_3.5_CRAG (crag_evaluation) - gemma3:4b
+- PHASE_5_VERIFY (claim_verification) - qwen3:8b
+- PHASE_6_SYNTHESIZE (synthesis) - deepseek-r1:14b
+- PHASE_7_REFLECT (self_reflection) - gemma3:4b
+- PHASE_7.2_RAGAS (ragas_evaluation) - gemma3:4b
+
+**Feature Flag:** `enable_llm_debug=True` (enabled in FULL preset)
+
+### 5. ✅ FIXED: Phase 21 Metrics API Endpoints (2025-12-29)
+
+Added 5 new API endpoints for Phase 21 debugging and monitoring:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/v1/search/meta-buffer/stats` | Meta-Buffer statistics |
+| `GET /api/v1/search/meta-buffer/templates` | List stored templates |
+| `GET /api/v1/search/reasoning-composer/stats` | Reasoning Composer stats |
+| `GET /api/v1/search/reasoning-composer/modules` | List available modules |
+| `GET /api/v1/search/phase21/summary` | Combined Phase 21 summary |
 
 ---
 
@@ -298,10 +338,12 @@ All lower priority events now added to `search_with_events()`:
 
 ## Files Changed in This Audit
 
-1. `orchestrator_universal.py` - Bug fixes (scratchpad arg, calculate_confidence)
-2. `PHASE_21_AUDIT_REPORT.md` - Initial findings
-3. `COMPREHENSIVE_AUDIT_REPORT.md` - This document
-4. `CLAUDE.md` - Updated with bug fix documentation
+1. `orchestrator_universal.py` - Bug fixes, LLM debug tracking (6 phases instrumented)
+2. `events.py` - Enhanced llm_call_start/complete with detailed fields
+3. `api/search.py` - Added 5 Phase 21 metrics API endpoints
+4. `PHASE_21_AUDIT_REPORT.md` - Initial findings
+5. `COMPREHENSIVE_AUDIT_REPORT.md` - This document
+6. `CLAUDE.md` - Updated with bug fix documentation
 
 ---
 
@@ -310,10 +352,11 @@ All lower priority events now added to `search_with_events()`:
 1. ✅ ~~Implement Phase 21 integration~~ **DONE**
 2. ✅ ~~Add missing SSE events~~ **DONE** (5 Phase 21 events added)
 3. ✅ ~~Add HyDE/RAGAS SSE event emissions~~ **DONE** (10+ events added)
-4. ⏳ Add Phase 21 metrics endpoints (lowest priority)
-5. ⏳ Add LLM call debugging events (lowest priority)
+4. ✅ ~~Add Phase 21 metrics endpoints~~ **DONE** (5 endpoints added)
+5. ✅ ~~Add LLM call debugging events~~ **DONE** (6 phases instrumented)
 6. ⏳ Re-run FANUC tests to verify all features working
 
 ---
 
 *Audit completed: 2025-12-29*
+*LLM Debug & Metrics update: 2025-12-29*
