@@ -46,6 +46,51 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 11** | Domain-Specific Persistent Scratchpad | ✅ **COMPLETE** |
 | **Phase 12** | SSE Graph Visualization + Enhanced Events | ✅ **COMPLETE** |
 | **Phase 13** | Universal Orchestrator + Bug Fixes | ✅ **COMPLETE** |
+| **Phase 14** | Context Utilization Tracking | ✅ **COMPLETE** |
+
+#### ✅ Phase 14: Context Utilization Tracking (Completed 2025-12-28)
+
+Comprehensive instrumentation for tracking context window utilization across all agentic pipeline agents:
+
+**New Components:**
+- **Context Utilization Metrics**: Per-agent tracking in `metrics.py`
+- **Request ID Propagation**: Unique request_id passed through entire pipeline
+- **Query Lifecycle Tracking**: `start_query()` / `complete_query()` for orchestrator
+
+**Instrumented Agents:**
+| Agent | File | Method | Tracking |
+|-------|------|--------|----------|
+| Analyzer | `analyzer.py` | `analyze()`, `create_search_plan()` | ✅ |
+| QueryClassifier | `query_classifier.py` | `classify_query()` | ✅ |
+| RetrievalEvaluator | `retrieval_evaluator.py` | `evaluate()` | ✅ |
+| SelfReflection | `self_reflection.py` | `reflect()` | ✅ |
+
+**Key Features:**
+- **Per-Agent Metrics**: Tracks input tokens, output tokens, utilization percentage
+- **Rolling Averages**: Maintains historical context usage for optimization
+- **Tool Latency Tracking**: Per-tool response time for bottleneck analysis
+- **API Endpoint**: `GET /api/v1/search/metrics` returns context utilization summary
+
+**Audit Findings (2025-12-28):**
+- Analyzer context utilization: 0.7% (optimal for analysis tasks per research)
+- Content integrity: 100% source preservation verified
+- KV-cache prefix optimization identified as next optimization target
+
+**Module Version**: `agentic/__init__.py` → v0.26.0
+
+#### ✅ Gateway Preset Integration (Completed 2025-12-28)
+
+Fixed preset propagation from Android client through gateway endpoint:
+
+- **ChatGatewayRequest Model**: Added `preset` field (default: "full")
+- **_execute_simple_search()**: Uses `request.preset` instead of hardcoded "full"
+- **_execute_agentic_pipeline()**: Uses `request.preset` for orchestrator instantiation
+- **Android Integration**: Preset selection flows: AppSettings → ChatToolIntegration → AgenticSearchService → Server
+
+**Test Results:**
+- Minimal preset: 4 features activated (`content_cache`, `query_analysis`, `scratchpad`, `verification`)
+- Full preset: 38+ features activated
+- Logs confirm preset routing: `Simple search using preset: minimal`
 
 #### ✅ Phase 13: Universal Orchestrator + Bug Fixes (Completed 2025-12-28)
 
