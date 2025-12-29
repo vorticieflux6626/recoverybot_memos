@@ -411,6 +411,22 @@ from .raise_scratchpad import (
     create_raise_scratchpad
 )
 
+# Phase 5 Template Reuse Optimization (December 2025)
+from .meta_buffer import (
+    MetaBuffer,
+    DistilledTemplate,
+    TemplateType,
+    InstantiatedTemplate,
+    get_meta_buffer
+)
+from .reasoning_composer import (
+    ReasoningComposer,
+    ReasoningModule,
+    ComposedStrategy,
+    ModuleDefinition,
+    get_reasoning_composer
+)
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -742,6 +758,17 @@ __all__ = [
     "ReasoningType",
     "UncertaintyIndicator",
     "create_raise_scratchpad",
+    # Phase 5 Template Reuse Optimization (December 2025)
+    "MetaBuffer",
+    "DistilledTemplate",
+    "TemplateType",
+    "InstantiatedTemplate",
+    "get_meta_buffer",
+    "ReasoningComposer",
+    "ReasoningModule",
+    "ComposedStrategy",
+    "ModuleDefinition",
+    "get_reasoning_composer",
 ]
 
-__version__ = "0.33.0"  # Phase 4 Scratchpad Enhancement: A-MEM semantic memory, RAISE structure
+__version__ = "0.34.0"  # Phase 5 Template Reuse: Cross-session meta-buffer, Self-Discover reasoning composition

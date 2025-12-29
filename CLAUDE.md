@@ -53,6 +53,78 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 18** | Confidence-Calibrated Halting | ✅ **COMPLETE** |
 | **Phase 19** | Enhanced Query Generation (FLARE, RQ-RAG) | ✅ **COMPLETE** |
 | **Phase 20** | Scratchpad Enhancement (A-MEM, RAISE) | ✅ **COMPLETE** |
+| **Phase 21** | Template Reuse Optimization (Meta-Buffer, Self-Discover) | ✅ **COMPLETE** |
+
+#### ✅ Phase 21: Template Reuse Optimization (Completed 2025-12-29)
+
+Implemented Cross-Session Meta-Buffer and Self-Discover Reasoning Composition:
+
+**New Modules:**
+- **`meta_buffer.py`**: Cross-session template persistence
+  - SQLite-backed storage for reasoning templates
+  - Template distillation from successful searches (confidence ≥ 0.75)
+  - Semantic retrieval via embedding similarity (threshold 0.7)
+  - Performance tracking (success rate, usage count, avg execution time)
+  - Template types: DECOMPOSITION, SEARCH_STRATEGY, SYNTHESIS, VERIFICATION, REFINEMENT
+  - Based on Buffer of Thoughts (NeurIPS 2024) - 12% cost of ToT, 11-51% accuracy improvement
+- **`reasoning_composer.py`**: Self-Discover style reasoning composition
+  - 12+ atomic reasoning modules (critical analysis, step-by-step, compare/contrast, etc.)
+  - SELECT → ADAPT → IMPLEMENT meta-action pipeline
+  - Module definitions with prompt templates and example applications
+  - Composes task-specific reasoning strategies from atomic modules
+  - Based on Self-Discover (Google DeepMind, NeurIPS 2024)
+
+**Key Features:**
+- **Template Distillation**: Extract reusable patterns from successful searches
+- **Semantic Retrieval**: Find relevant templates via embedding similarity
+- **Cross-Session Persistence**: SQLite storage survives server restarts
+- **Module Selection**: LLM selects relevant reasoning modules for each task
+- **Module Adaptation**: Customizes generic modules for specific tasks
+- **Strategy Composition**: Structures selected modules into executable plan
+
+**Reasoning Module Categories:**
+| Module | Description |
+|--------|-------------|
+| critical_analysis | Evaluate claims, identify assumptions |
+| step_by_step | Systematic approach for complex problems |
+| compare_contrast | Side-by-side analysis of options |
+| causal_reasoning | Trace cause-and-effect chains |
+| synthesis | Combine multiple sources coherently |
+| hypothesis_testing | Formulate and test predictions |
+| abstraction | Extract generalizable patterns |
+| decomposition | Break into manageable sub-problems |
+| verification | Cross-check against evidence |
+| temporal_reasoning | Analyze timelines and sequences |
+| counterfactual | Consider alternative scenarios |
+| meta_cognitive | Monitor and adjust reasoning process |
+
+**Orchestrator Integration:**
+- `_get_meta_buffer()`: Lazy-loaded SQLite-backed template store
+- `_get_reasoning_composer()`: Lazy-loaded reasoning composer
+- `_retrieve_template()`: Find relevant templates for query
+- `_distill_successful_search()`: Extract templates from high-confidence results
+- `_compose_reasoning_strategy()`: Build task-specific reasoning plan
+
+**Feature Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `enable_meta_buffer` | False | Cross-session template persistence |
+| `enable_reasoning_composer` | False | Self-Discover reasoning composition |
+
+**Preset Configuration:**
+| Preset | meta_buffer | reasoning_composer |
+|--------|-------------|-------------------|
+| minimal | False | False |
+| balanced | False | False |
+| enhanced | False | False |
+| research | True | True |
+| full | True | True |
+
+**Research Basis:**
+- Buffer of Thoughts (NeurIPS 2024): 12% cost of ToT, templates transfer across task types
+- Self-Discover (Google DeepMind): SELECT → ADAPT → IMPLEMENT for reasoning composition
+
+**Module Version**: `agentic/__init__.py` → v0.34.0
 
 #### ✅ Phase 20: Scratchpad Enhancement (Completed 2025-12-29)
 

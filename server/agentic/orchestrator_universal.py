@@ -193,6 +193,17 @@ from .raise_scratchpad import (
     create_raise_scratchpad
 )
 
+# Phase 5: Template Reuse Optimization
+from .meta_buffer import (
+    MetaBuffer,
+    TemplateType,
+    get_meta_buffer
+)
+from .reasoning_composer import (
+    ReasoningComposer,
+    get_reasoning_composer
+)
+
 logger = logging.getLogger("agentic.orchestrator_universal")
 
 
@@ -337,6 +348,10 @@ class FeatureConfig:
     enable_semantic_memory: bool = False   # A-MEM Zettelkasten-style memory network
     enable_raise_structure: bool = False   # RAISE four-component scratchpad
 
+    # Template Reuse Optimization (Phase 5 - Layer 3)
+    enable_meta_buffer: bool = False       # Cross-session template persistence
+    enable_reasoning_composer: bool = False  # Self-Discover reasoning composition
+
     # Advanced reasoning (Layer 3)
     enable_entity_tracking: bool = False   # GSW entity extraction
     enable_thought_library: bool = False   # Reusable patterns
@@ -428,6 +443,9 @@ PRESET_CONFIGS = {
         # Phase 4: Scratchpad Enhancement
         enable_semantic_memory=True,
         enable_raise_structure=True,
+        # Phase 5: Template Reuse Optimization
+        enable_meta_buffer=True,
+        enable_reasoning_composer=True,
         enable_mixed_precision=True,
         enable_entity_enhanced_retrieval=True,
         enable_entity_tracking=True,
@@ -478,6 +496,9 @@ PRESET_CONFIGS = {
         # Phase 4: Scratchpad Enhancement
         enable_semantic_memory=True,
         enable_raise_structure=True,
+        # Phase 5: Template Reuse Optimization
+        enable_meta_buffer=True,
+        enable_reasoning_composer=True,
         # Layer 3 - Advanced reasoning
         enable_entity_tracking=True,
         enable_thought_library=True,
@@ -618,6 +639,10 @@ class UniversalOrchestrator(BaseSearchPipeline):
         # Phase 4: Scratchpad Enhancement components
         self._semantic_memory: Optional[SemanticMemoryNetwork] = None
         self._raise_scratchpad: Optional[RAISEScratchpad] = None
+
+        # Phase 5: Template Reuse Optimization components
+        self._meta_buffer: Optional[MetaBuffer] = None
+        self._reasoning_composer: Optional[ReasoningComposer] = None
 
         # Graph visualization state for SSE events
         self._graph_state = UniversalGraphState()
@@ -1050,6 +1075,89 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
         scratchpad = self._get_raise_scratchpad(request_id, query)
         return scratchpad.get_quality_signal()
+
+    # ===== Phase 5: Template Reuse Optimization =====
+
+    def _get_meta_buffer(self) -> MetaBuffer:
+        """Lazy initialize meta-buffer for cross-session template persistence."""
+        if self._meta_buffer is None:
+            db_path = f"{self.db_path}/meta_buffer.db"
+            self._meta_buffer = get_meta_buffer(
+                ollama_url=self.ollama_url,
+                db_path=db_path
+            )
+        return self._meta_buffer
+
+    def _get_reasoning_composer(self) -> ReasoningComposer:
+        """Lazy initialize reasoning composer for Self-Discover composition."""
+        if self._reasoning_composer is None:
+            self._reasoning_composer = get_reasoning_composer(
+                ollama_url=self.ollama_url
+            )
+        return self._reasoning_composer
+
+    async def _retrieve_template(self, query: str, template_type: TemplateType = None):
+        """
+        Retrieve a relevant template from the meta-buffer if available.
+
+        Returns template and similarity score if found, None otherwise.
+        """
+        if not self.config.enable_meta_buffer:
+            return None
+
+        meta_buffer = self._get_meta_buffer()
+        result = await meta_buffer.retrieve_template(
+            query=query,
+            template_type=template_type,
+            min_success_rate=0.6
+        )
+        return result
+
+    async def _distill_successful_search(
+        self,
+        query: str,
+        decomposed_questions: List[str],
+        search_queries: List[str],
+        synthesis: str,
+        sources: List[Dict],
+        confidence: float,
+        execution_time_ms: float
+    ):
+        """
+        Distill a successful search into a reusable template.
+
+        Only distills if confidence >= 0.75 (high quality result).
+        """
+        if not self.config.enable_meta_buffer:
+            return None
+
+        if confidence < 0.75:
+            return None
+
+        meta_buffer = self._get_meta_buffer()
+        template = await meta_buffer.distill_from_search(
+            query=query,
+            decomposed_questions=decomposed_questions,
+            search_queries=search_queries,
+            synthesis=synthesis,
+            sources=sources,
+            confidence=confidence,
+            execution_time_ms=execution_time_ms
+        )
+        return template
+
+    async def _compose_reasoning_strategy(self, task: str, max_modules: int = 4):
+        """
+        Compose a task-specific reasoning strategy using Self-Discover.
+
+        Returns a ComposedStrategy with selected and adapted reasoning modules.
+        """
+        if not self.config.enable_reasoning_composer:
+            return None
+
+        composer = self._get_reasoning_composer()
+        strategy = await composer.compose_strategy(task, max_modules=max_modules)
+        return strategy
 
     # ===== Core Search Method =====
 
