@@ -38,10 +38,43 @@ class SearXNGSearchProvider(SearchProvider):
 
     Primary provider with no rate limits.
     Aggregates results from Google, Bing, DuckDuckGo, Brave, etc.
+
+    Supports dynamic engine selection based on query type:
+    - Academic: arxiv, semantic_scholar, google_scholar, pubmed
+    - Technical: github, stackoverflow, pypi, npm
+    - General: google, bing, duckduckgo, brave
     """
 
     # Cache TTL for availability check (seconds)
     AVAILABILITY_CACHE_TTL = 60  # Re-check every 60 seconds
+
+    # Engine groups for different query types
+    ENGINE_GROUPS = {
+        "general": "google,bing,duckduckgo,brave,wikipedia",
+        "academic": "arxiv,semantic_scholar,google_scholar,pubmed,base,crossref,wikipedia",
+        "technical": "github,stackoverflow,pypi,npm,dockerhub,google,bing",
+        "news": "google_news,bing_news,duckduckgo",
+        "all": "google,bing,duckduckgo,brave,wikipedia,arxiv,semantic_scholar,github,stackoverflow"
+    }
+
+    # Patterns to detect academic queries
+    ACADEMIC_PATTERNS = [
+        r"\bpaper\b", r"\bresearch\b", r"\bstudy\b", r"\bjournal\b",
+        r"\barxiv\b", r"\bcitation\b", r"\bpublish", r"\bpeer.?review",
+        r"\babstract\b", r"\bsurvey\b", r"\bstate.of.the.art\b",
+        r"\bnovel\b.*\bmethod", r"\bproposed\b", r"\bexperiment",
+        r"\bbaseline\b", r"\bbenchmark\b", r"\bdataset\b"
+    ]
+
+    # Patterns to detect technical queries
+    TECHNICAL_PATTERNS = [
+        r"\bcode\b", r"\bapi\b", r"\blibrary\b", r"\bframework\b",
+        r"\bbug\b", r"\berror\b", r"\bimplement", r"\bfunction\b",
+        r"\bclass\b", r"\bmethod\b", r"\bpackage\b", r"\binstall\b",
+        r"\bdocker\b", r"\bkubernetes\b", r"\bpython\b", r"\brust\b",
+        r"\bjavascript\b", r"\btypescript\b", r"\bgithub\b", r"\bnpm\b",
+        r"\bpip\b", r"\bcargo\b", r"\bdependenc"
+    ]
 
     def __init__(self, base_url: str = "http://localhost:8888"):
         self.base_url = base_url.rstrip("/")
@@ -52,6 +85,52 @@ class SearXNGSearchProvider(SearchProvider):
     def available(self) -> bool:
         """Check if SearXNG is available (cached)"""
         return self._available if self._available is not None else True
+
+    def detect_query_type(self, query: str) -> str:
+        """
+        Detect query type based on patterns.
+
+        Returns: 'academic', 'technical', or 'general'
+        """
+        query_lower = query.lower()
+
+        # Count pattern matches
+        academic_score = sum(
+            1 for p in self.ACADEMIC_PATTERNS
+            if re.search(p, query_lower, re.IGNORECASE)
+        )
+        technical_score = sum(
+            1 for p in self.TECHNICAL_PATTERNS
+            if re.search(p, query_lower, re.IGNORECASE)
+        )
+
+        # Determine type based on scores
+        if academic_score >= 2:
+            return "academic"
+        elif technical_score >= 2:
+            return "technical"
+        elif academic_score == 1 and technical_score == 0:
+            return "academic"
+        elif technical_score == 1 and academic_score == 0:
+            return "technical"
+        else:
+            return "general"
+
+    def get_engines_for_query(self, query: str, query_type: Optional[str] = None) -> str:
+        """
+        Get appropriate engines for a query.
+
+        Args:
+            query: The search query
+            query_type: Optional override ('academic', 'technical', 'general', 'all')
+
+        Returns:
+            Comma-separated engine list
+        """
+        if query_type is None:
+            query_type = self.detect_query_type(query)
+
+        return self.ENGINE_GROUPS.get(query_type, self.ENGINE_GROUPS["general"])
 
     async def check_availability(self) -> bool:
         """Check if SearXNG server is responding (with TTL cache)"""
@@ -84,8 +163,32 @@ class SearXNGSearchProvider(SearchProvider):
 
         return self._available
 
-    async def search(self, query: str, max_results: int = 10) -> List[WebSearchResult]:
+    async def search(
+        self,
+        query: str,
+        max_results: int = 10,
+        query_type: Optional[str] = None,
+        engines: Optional[str] = None
+    ) -> List[WebSearchResult]:
+        """
+        Search using SearXNG with dynamic engine selection.
+
+        Args:
+            query: Search query string
+            max_results: Maximum number of results
+            query_type: Optional type override ('academic', 'technical', 'general', 'all')
+            engines: Optional explicit engine list (comma-separated)
+
+        Returns:
+            List of WebSearchResult objects
+        """
         try:
+            # Determine engines to use
+            if engines is None:
+                engines = self.get_engines_for_query(query, query_type)
+                detected_type = query_type or self.detect_query_type(query)
+                logger.info(f"Query type detected: {detected_type}, using engines: {engines}")
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # SearXNG aggregates multiple pages if we request more results
                 # Each page typically has 10 results, so we may need multiple pages
@@ -101,7 +204,7 @@ class SearXNGSearchProvider(SearchProvider):
                         params={
                             "q": query,
                             "format": "json",
-                            "engines": "google,bing,duckduckgo,brave,wikipedia",
+                            "engines": engines,
                             "language": "en-US",
                             "pageno": page
                         }
@@ -307,23 +410,138 @@ class SearcherAgent:
     """
 
     # Domains with higher trust for research/technical content
+    # Organized by category with scoring tiers
     TRUSTED_DOMAINS = {
-        # Technical documentation
-        "docs.python.org", "developer.mozilla.org", "stackoverflow.com",
-        "github.com", "gitlab.com", "bitbucket.org",
-        # Academic/Research
-        "arxiv.org", "scholar.google.com", "researchgate.net",
-        "ieee.org", "acm.org", "nature.com", "sciencedirect.com",
-        # Official documentation
-        "docs.microsoft.com", "cloud.google.com", "aws.amazon.com",
-        "kubernetes.io", "docker.com", "nginx.org",
-        # Engineering/Hardware
-        "electronics.stackexchange.com", "hackaday.com",
-        "instructables.com", "adafruit.com", "sparkfun.com",
-        # Reference
-        "wikipedia.org", "wikimedia.org", "britannica.com",
-        # Government/Standards
-        "nist.gov", "ietf.org", "w3.org", "iso.org"
+        # ===== Academic/Research (Premium) =====
+        "arxiv.org",
+        "scholar.google.com",
+        "semanticscholar.org",
+        "researchgate.net",
+        "ieee.org",
+        "acm.org",
+        "nature.com",
+        "sciencedirect.com",
+        "springer.com",
+        "wiley.com",
+        "pubmed.ncbi.nlm.nih.gov",
+        "ncbi.nlm.nih.gov",
+        "jstor.org",
+        "ssrn.com",
+        "biorxiv.org",
+        "medrxiv.org",
+        "openreview.net",
+        "aclanthology.org",
+        "neurips.cc",
+        "proceedings.mlr.press",
+
+        # ===== Technical Documentation (Premium) =====
+        "docs.python.org",
+        "docs.rust-lang.org",
+        "docs.oracle.com",
+        "docs.microsoft.com",
+        "learn.microsoft.com",
+        "developer.apple.com",
+        "developer.android.com",
+        "developer.mozilla.org",
+        "devdocs.io",
+        "readthedocs.io",
+        "readthedocs.org",
+
+        # ===== Code Repositories (Trusted) =====
+        "github.com",
+        "gitlab.com",
+        "bitbucket.org",
+        "sourceforge.net",
+        "codeberg.org",
+        "huggingface.co",
+
+        # ===== Q&A / Community (Trusted) =====
+        "stackoverflow.com",
+        "stackexchange.com",
+        "serverfault.com",
+        "superuser.com",
+        "askubuntu.com",
+        "unix.stackexchange.com",
+        "cs.stackexchange.com",
+        "ai.stackexchange.com",
+        "datascience.stackexchange.com",
+
+        # ===== Cloud Providers (Trusted) =====
+        "cloud.google.com",
+        "aws.amazon.com",
+        "docs.aws.amazon.com",
+        "azure.microsoft.com",
+        "docs.digitalocean.com",
+        "docs.cloudflare.com",
+
+        # ===== Framework Documentation (Premium) =====
+        "kubernetes.io",
+        "docker.com",
+        "docs.docker.com",
+        "nginx.org",
+        "fastapi.tiangolo.com",
+        "flask.palletsprojects.com",
+        "docs.djangoproject.com",
+        "pytorch.org",
+        "tensorflow.org",
+        "numpy.org",
+        "pandas.pydata.org",
+        "scikit-learn.org",
+        "docs.scipy.org",
+        "matplotlib.org",
+        "langchain.com",
+        "docs.anthropic.com",
+        "platform.openai.com",
+        "ollama.com",
+
+        # ===== Hardware/Engineering (Trusted) =====
+        "electronics.stackexchange.com",
+        "hackaday.com",
+        "instructables.com",
+        "adafruit.com",
+        "sparkfun.com",
+        "raspberrypi.org",
+        "raspberrypi.com",
+        "arduino.cc",
+        "eevblog.com",
+        "allaboutcircuits.com",
+
+        # ===== Reference (Trusted) =====
+        "wikipedia.org",
+        "wikimedia.org",
+        "britannica.com",
+        "merriam-webster.com",
+        "wolframalpha.com",
+
+        # ===== Standards Bodies (Premium) =====
+        "nist.gov",
+        "ietf.org",
+        "w3.org",
+        "iso.org",
+        "rfc-editor.org",
+        "oasis-open.org",
+        "ecma-international.org",
+
+        # ===== Tech News/Analysis (Standard) =====
+        "arstechnica.com",
+        "wired.com",
+        "thenewstack.io",
+        "infoq.com",
+        "lwn.net",
+        "techcrunch.com",
+        "theverge.com"
+    }
+
+    # Premium domains get highest boost
+    PREMIUM_DOMAINS = {
+        # Academic
+        "arxiv.org", "semanticscholar.org", "openreview.net",
+        "aclanthology.org", "neurips.cc", "proceedings.mlr.press",
+        # Documentation
+        "docs.python.org", "developer.mozilla.org", "kubernetes.io",
+        "pytorch.org", "tensorflow.org", "huggingface.co",
+        # Standards
+        "nist.gov", "ietf.org", "w3.org", "rfc-editor.org"
     }
 
     # Common stopwords to exclude from keyword matching
@@ -425,11 +643,18 @@ class SearcherAgent:
     async def search(
         self,
         queries: List[str],
-        max_results_per_query: int = 3
+        max_results_per_query: int = 3,
+        query_type: Optional[str] = None
     ) -> List[WebSearchResult]:
         """
         Execute searches for multiple queries.
         Provider priority: SearXNG → DuckDuckGo → Brave
+
+        Args:
+            queries: List of search query strings
+            max_results_per_query: Max results per query
+            query_type: Optional type hint ('academic', 'technical', 'general')
+                       If None, auto-detected from first query
 
         Domain boost is only applied to results that are semantically relevant
         to prevent irrelevant results from trusted domains being over-ranked.
@@ -456,9 +681,14 @@ class SearcherAgent:
 
         logger.info(f"Using {provider_name} search provider")
 
+        # Auto-detect query type from first query if not specified
+        if query_type is None and queries and isinstance(provider, SearXNGSearchProvider):
+            query_type = provider.detect_query_type(queries[0])
+            logger.info(f"Auto-detected query type: {query_type}")
+
         # Execute searches in parallel
         tasks = [
-            self._search_single(provider, query, max_results_per_query)
+            self._search_single(provider, query, max_results_per_query, query_type)
             for query in queries[:5]  # Limit to 5 queries
         ]
 
@@ -483,14 +713,19 @@ class SearcherAgent:
                     is_trusted_domain = any(
                         td in result.source_domain for td in self.TRUSTED_DOMAINS
                     )
+                    is_premium_domain = any(
+                        pd in result.source_domain for pd in self.PREMIUM_DOMAINS
+                    )
 
                     if is_trusted_domain:
                         if is_relevant:
-                            # Full boost for relevant trusted domain results
-                            result.relevance_score = min(1.0, result.relevance_score + 0.2)
+                            # Premium domains get higher boost (0.25) vs trusted (0.15)
+                            boost = 0.25 if is_premium_domain else 0.15
+                            result.relevance_score = min(1.0, result.relevance_score + boost)
+                            tier = "premium" if is_premium_domain else "trusted"
                             logger.debug(
-                                f"Boosted relevant result: {result.title[:40]}... "
-                                f"(keyword_relevance={keyword_relevance:.2f})"
+                                f"Boosted {tier} result: {result.title[:40]}... "
+                                f"(keyword_relevance={keyword_relevance:.2f}, boost={boost})"
                             )
                         else:
                             # Penalize irrelevant results from trusted domains
@@ -547,10 +782,15 @@ class SearcherAgent:
         self,
         provider: SearchProvider,
         query: str,
-        max_results: int
+        max_results: int,
+        query_type: Optional[str] = None
     ) -> List[WebSearchResult]:
         """Execute a single search with cascading fallback"""
-        results = await provider.search(query, max_results)
+        # Pass query_type to SearXNG for dynamic engine selection
+        if isinstance(provider, SearXNGSearchProvider):
+            results = await provider.search(query, max_results, query_type=query_type)
+        else:
+            results = await provider.search(query, max_results)
 
         # Cascading fallback: SearXNG → DuckDuckGo → Brave
         if not results:
