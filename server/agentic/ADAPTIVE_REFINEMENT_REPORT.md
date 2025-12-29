@@ -663,8 +663,59 @@ The adaptive refinement loop now fully executes refinement queries when confiden
 
 ---
 
+### ✅ Phase 4 Testing (COMPLETED 2025-12-29)
+
+**Bug Fixes Applied:**
+
+1. **AttributeError: 'QueryAnalysis' object has no attribute 'complexity'**
+   - **Cause**: Code used `query_analysis.complexity.value` but `QueryAnalysis` model has `estimated_complexity`
+   - **Fix**: Changed to `query_analysis.estimated_complexity` in both streaming and non-streaming methods
+
+2. **Missing Import for RefinementDecision**
+   - **Cause**: Added code using `RefinementDecision` but didn't import it
+   - **Fix**: Added import from adaptive_refinement module
+
+3. **Adaptive Refinement Only in Streaming Method**
+   - **Cause**: `/api/v1/search/agentic` uses `_execute_pipeline()` which didn't have adaptive refinement
+   - **Fix**: Added Phase 11.5 adaptive refinement loop to `_execute_pipeline()` method
+
+**Test Results:**
+
+```
+Test Query: "FANUC servo motor overheating"
+Threshold: 0.8 (temporarily raised from 0.5 for testing)
+
+Server Logs:
+  [INFO] Adaptive refinement check: enabled=True, confidence=70.75%, threshold=80.00%
+  [INFO] Refinement decision: complete
+  [INFO] Adaptive refinement complete: 70.75% → 70.75% in 1 attempts (6203ms)
+
+Response Metadata:
+  "adaptive_refinement": {
+    "enabled": true,
+    "attempts": 1,
+    "initial_confidence": 0.7075,
+    "final_confidence": 0.7075,
+    "duration_ms": 6203
+  }
+```
+
+**Analysis:**
+- Refinement loop correctly triggered (70.75% < 80% threshold)
+- Gap identification and answer grading ran successfully
+- Decision router returned `COMPLETE` - synthesis quality was sufficient
+- No unnecessary re-searching (correct behavior)
+- Duration: 6.2 seconds for refinement evaluation
+
+**Threshold Restored:**
+- Production threshold restored to 0.5 (50%)
+- At 70.75% confidence, refinement won't trigger in production (correct)
+
+---
+
 *Report generated: 2025-12-29*
 *Module version: 0.29.0*
 *Phase 1 completed: 2025-12-29*
 *Phase 2 & 3 completed: 2025-12-29*
 *Phase 4 completed: 2025-12-29*
+*Phase 4 testing completed: 2025-12-29*

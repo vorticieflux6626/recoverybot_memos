@@ -1129,7 +1129,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     decision = self.adaptive_refinement.decide_refinement_action(
                         confidence=confidence,
                         source_count=len(sources),
-                        query_complexity=state.query_analysis.complexity.value if state.query_analysis else "medium",
+                        query_complexity=state.query_analysis.estimated_complexity if state.query_analysis else "medium",
                         iteration=refinement_attempt,
                         gap_analysis=gap_analysis,
                         answer_assessment=answer_assessment
@@ -1655,7 +1655,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 decision = self.adaptive_refinement.decide_refinement_action(
                     confidence=final_confidence,
                     source_count=len(sources),
-                    query_complexity=query_analysis.complexity.value if query_analysis else "medium",
+                    query_complexity=query_analysis.estimated_complexity if query_analysis else "medium",
                     iteration=refinement_attempt,
                     gap_analysis=gap_analysis,
                     answer_assessment=answer_assessment
