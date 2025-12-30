@@ -99,100 +99,117 @@ class MemoryService:
         tags: Optional[List[str]] = None,
         recovery_stage: Optional[str] = None,
         therapeutic_relevance: Optional[float] = None,
-        consent_given: bool = True
+        consent_given: bool = True,
+        session: Optional[AsyncSession] = None
     ) -> Memory:
         """
         Store a new memory with therapeutic context and HIPAA compliance
+
+        Args:
+            session: Optional database session. If provided, caller manages commit/rollback.
+                     If not provided, method creates and manages its own session.
         """
+        # Determine if we own the session (need to commit) or caller does
+        owns_session = session is None
+
+        if owns_session:
+            session = AsyncSessionLocal()
+
         try:
-            # Check user consent and settings
-            async with AsyncSessionLocal() as session:
-                user_settings = await self._get_user_settings(session, user_id)
-                if not user_settings:
-                    # Create default settings for new users if consent is given
-                    if consent_given:
-                        logger.warning(f"Creating default settings for user {user_id}")
-                        # Create temporary settings object for processing
-                        from models.user import UserMemorySettings
-                        user_settings = UserMemorySettings(
-                            user_id=user_id,
-                            memory_enabled=True,
-                            recovery_stage=recovery_stage or "maintenance",
-                            retention_days=2555  # 7 years default
-                        )
-                    else:
-                        raise ValueError(f"No consent given for memory storage for user {user_id}")
-                elif not user_settings.memory_enabled:
-                    raise ValueError(f"Memory storage not enabled for user {user_id}")
-                
-                # Privacy and content validation
-                if not await self.privacy_service.validate_memory_content(content, privacy_level):
-                    raise ValueError("Memory content violates privacy policy")
-                
-                # Anonymize content if required
-                anonymized_content = await self.privacy_service.anonymize_content(
-                    content, privacy_level
-                )
-                
-                # Generate embedding
-                embedding_vector = await self.embedding_service.generate_embedding(
-                    anonymized_content
-                )
-                
-                # Encrypt content
-                encrypted_content = self.encryption_service.encrypt(content)
-                content_hash = self.encryption_service.generate_hash(content)
-                
-                # Extract therapeutic context
-                therapeutic_context = await self._extract_therapeutic_context(
-                    content, user_settings.recovery_stage
-                )
-                
-                # Create memory record
-                now = datetime.now(timezone.utc)
-                memory = Memory(
-                    id=uuid.uuid4(),
-                    user_id=user_id,
-                    content_hash=content_hash,
-                    encrypted_content=encrypted_content,
-                    content_summary=await self._generate_summary(anonymized_content),
-                    memory_type=memory_type,
-                    privacy_level=privacy_level,
-                    embedding_vector=embedding_vector,
-                    embedding_model=self.settings.embedding_model,
-                    recovery_stage=recovery_stage or user_settings.recovery_stage,
-                    therapeutic_relevance=therapeutic_relevance or therapeutic_context.get('relevance', 0.5),
-                    crisis_level=therapeutic_context.get('crisis_level', 0.0),
-                    source_conversation_id=source_conversation_id,
-                    tags=tags or therapeutic_context.get('tags', []),
-                    entities=therapeutic_context.get('entities', {}),
-                    consent_given=consent_given,
-                    consent_date=now,
-                    created_at=now,
-                    updated_at=now
-                )
-                
-                # Set expiration based on retention policy
-                memory.set_expiration_date(user_settings.retention_days // 365)
-                
-                # Store in database
-                session.add(memory)
+            user_settings = await self._get_user_settings(session, user_id)
+            if not user_settings:
+                # Create default settings for new users if consent is given
+                if consent_given:
+                    logger.warning(f"Creating default settings for user {user_id}")
+                    # Create temporary settings object for processing
+                    from models.user import UserMemorySettings
+                    user_settings = UserMemorySettings(
+                        user_id=user_id,
+                        memory_enabled=True,
+                        recovery_stage=recovery_stage or "maintenance",
+                        retention_days=2555  # 7 years default
+                    )
+                else:
+                    raise ValueError(f"No consent given for memory storage for user {user_id}")
+            elif not user_settings.memory_enabled:
+                raise ValueError(f"Memory storage not enabled for user {user_id}")
+
+            # Privacy and content validation
+            if not await self.privacy_service.validate_memory_content(content, privacy_level):
+                raise ValueError("Memory content violates privacy policy")
+
+            # Anonymize content if required
+            anonymized_content = await self.privacy_service.anonymize_content(
+                content, privacy_level
+            )
+
+            # Generate embedding
+            embedding_vector = await self.embedding_service.generate_embedding(
+                anonymized_content
+            )
+
+            # Encrypt content
+            encrypted_content = self.encryption_service.encrypt(content)
+            content_hash = self.encryption_service.generate_hash(content)
+
+            # Extract therapeutic context
+            therapeutic_context = await self._extract_therapeutic_context(
+                content, user_settings.recovery_stage
+            )
+
+            # Create memory record
+            now = datetime.now(timezone.utc)
+            memory = Memory(
+                id=uuid.uuid4(),
+                user_id=user_id,
+                content_hash=content_hash,
+                encrypted_content=encrypted_content,
+                content_summary=await self._generate_summary(anonymized_content),
+                memory_type=memory_type,
+                privacy_level=privacy_level,
+                embedding_vector=embedding_vector,
+                embedding_model=self.settings.embedding_model,
+                recovery_stage=recovery_stage or user_settings.recovery_stage,
+                therapeutic_relevance=therapeutic_relevance or therapeutic_context.get('relevance', 0.5),
+                crisis_level=therapeutic_context.get('crisis_level', 0.0),
+                source_conversation_id=source_conversation_id,
+                tags=tags or therapeutic_context.get('tags', []),
+                entities=therapeutic_context.get('entities', {}),
+                consent_given=consent_given,
+                consent_date=now,
+                created_at=now,
+                updated_at=now
+            )
+
+            # Set expiration based on retention policy
+            memory.set_expiration_date(user_settings.retention_days // 365)
+
+            # Store in database
+            session.add(memory)
+
+            # Only commit if we own the session
+            if owns_session:
                 await session.commit()
                 await session.refresh(memory)
-                
-                # Store in Mem0 for enhanced retrieval
-                if self.mem0_client:
-                    try:
-                        await self._store_in_mem0(memory, anonymized_content, metadata)
-                    except Exception as e:
-                        logger.warning(f"Mem0 storage failed, continuing with database: {e}")
-                
-                logger.info(f"Memory stored successfully for user {user_id}")
-                return memory
-                
+
+            # Store in Mem0 for enhanced retrieval
+            if self.mem0_client:
+                try:
+                    await self._store_in_mem0(memory, anonymized_content, metadata)
+                except Exception as e:
+                    logger.warning(f"Mem0 storage failed, continuing with database: {e}")
+
+            logger.info(f"Memory stored successfully for user {user_id}")
+            return memory
+
         except Exception as e:
+            if owns_session:
+                await session.rollback()
             logger.error(f"Memory storage failed: {e}")
             raise
+        finally:
+            if owns_session:
+                await session.close()
     
     async def retrieve_memories(
         self,
@@ -201,65 +218,80 @@ class MemoryService:
         memory_types: Optional[List[MemoryType]] = None,
         limit: int = 10,
         min_similarity: float = 0.7,
-        include_content: bool = False
+        include_content: bool = False,
+        session: Optional[AsyncSession] = None
     ) -> List[MemorySearchResult]:
         """
         Retrieve relevant memories using semantic search and therapeutic context
+
+        Args:
+            session: Optional database session. If provided, caller manages commit/rollback.
+                     If not provided, method creates and manages its own session.
         """
+        owns_session = session is None
+        if owns_session:
+            session = AsyncSessionLocal()
+
         try:
-            async with AsyncSessionLocal() as session:
-                user_settings = await self._get_user_settings(session, user_id)
-                if not user_settings or not user_settings.memory_enabled:
-                    return []
-                
-                # Generate query embedding
-                query_embedding = await self.embedding_service.generate_embedding(query)
-                
-                # Search database with therapeutic weighting
-                memories = await self._search_memories_database(
-                    session,
-                    user_id=user_id,
-                    query_embedding=query_embedding,
-                    memory_types=memory_types,
-                    limit=limit,
-                    min_similarity=min_similarity,
-                    recovery_stage=user_settings.recovery_stage
-                )
-                
-                # Enhance with Mem0 if available
-                if self.mem0_client:
-                    try:
-                        mem0_results = await self._search_mem0(
-                            user_id, query, limit=limit // 2
-                        )
-                        memories = await self._merge_search_results(memories, mem0_results)
-                    except Exception as e:
-                        logger.warning(f"Mem0 search failed, using database only: {e}")
-                
-                # Decrypt content if requested and authorized
-                if include_content:
-                    for result in memories:
-                        if await self.privacy_service.can_access_content(
-                            user_id, result.memory.privacy_level
-                        ):
-                            try:
-                                decrypted = self.encryption_service.decrypt(
-                                    result.memory.encrypted_content
-                                )
-                                result.memory.content_summary = decrypted[:200] + "..."
-                            except Exception as e:
-                                logger.warning(f"Content decryption failed: {e}")
-                
-                # Update access tracking
+            user_settings = await self._get_user_settings(session, user_id)
+            if not user_settings or not user_settings.memory_enabled:
+                return []
+
+            # Generate query embedding
+            query_embedding = await self.embedding_service.generate_embedding(query)
+
+            # Search database with therapeutic weighting
+            memories = await self._search_memories_database(
+                session,
+                user_id=user_id,
+                query_embedding=query_embedding,
+                memory_types=memory_types,
+                limit=limit,
+                min_similarity=min_similarity,
+                recovery_stage=user_settings.recovery_stage
+            )
+
+            # Enhance with Mem0 if available
+            if self.mem0_client:
+                try:
+                    mem0_results = await self._search_mem0(
+                        user_id, query, limit=limit // 2
+                    )
+                    memories = await self._merge_search_results(memories, mem0_results)
+                except Exception as e:
+                    logger.warning(f"Mem0 search failed, using database only: {e}")
+
+            # Decrypt content if requested and authorized
+            if include_content:
                 for result in memories:
-                    result.memory.update_access_tracking()
+                    if await self.privacy_service.can_access_content(
+                        user_id, result.memory.privacy_level
+                    ):
+                        try:
+                            decrypted = self.encryption_service.decrypt(
+                                result.memory.encrypted_content
+                            )
+                            result.memory.content_summary = decrypted[:200] + "..."
+                        except Exception as e:
+                            logger.warning(f"Content decryption failed: {e}")
+
+            # Update access tracking
+            for result in memories:
+                result.memory.update_access_tracking()
+
+            if owns_session:
                 await session.commit()
-                
-                return memories
-                
+
+            return memories
+
         except Exception as e:
+            if owns_session:
+                await session.rollback()
             logger.error(f"Memory retrieval failed: {e}")
             return []
+        finally:
+            if owns_session:
+                await session.close()
     
     async def search_memories(
         self,
@@ -279,140 +311,186 @@ class MemoryService:
         self,
         memory_id: uuid.UUID,
         user_id: str,
-        updates: Dict[str, Any]
+        updates: Dict[str, Any],
+        session: Optional[AsyncSession] = None
     ) -> Optional[Memory]:
-        """Update memory with audit trail"""
+        """
+        Update memory with audit trail
+
+        Args:
+            session: Optional database session. If provided, caller manages commit/rollback.
+        """
+        owns_session = session is None
+        if owns_session:
+            session = AsyncSessionLocal()
+
         try:
-            async with AsyncSessionLocal() as session:
-                # Get existing memory
-                result = await session.execute(
-                    select(Memory).where(
-                        and_(Memory.id == memory_id, Memory.user_id == user_id)
-                    )
+            # Get existing memory
+            result = await session.execute(
+                select(Memory).where(
+                    and_(Memory.id == memory_id, Memory.user_id == user_id)
                 )
-                memory = result.scalar_one_or_none()
-                
-                if not memory:
-                    return None
-                
-                # Update fields
-                for field, value in updates.items():
-                    if hasattr(memory, field):
-                        setattr(memory, field, value)
-                
-                memory.updated_at = datetime.now(timezone.utc)
+            )
+            memory = result.scalar_one_or_none()
+
+            if not memory:
+                return None
+
+            # Update fields
+            for field, value in updates.items():
+                if hasattr(memory, field):
+                    setattr(memory, field, value)
+
+            memory.updated_at = datetime.now(timezone.utc)
+
+            if owns_session:
                 await session.commit()
                 await session.refresh(memory)
-                
-                logger.info(f"Memory {memory_id} updated for user {user_id}")
-                return memory
-                
+
+            logger.info(f"Memory {memory_id} updated for user {user_id}")
+            return memory
+
         except Exception as e:
+            if owns_session:
+                await session.rollback()
             logger.error(f"Memory update failed: {e}")
             raise
+        finally:
+            if owns_session:
+                await session.close()
     
     async def delete_memory(
         self,
         memory_id: uuid.UUID,
         user_id: str,
-        deletion_reason: str = "user_request"
+        deletion_reason: str = "user_request",
+        session: Optional[AsyncSession] = None
     ) -> bool:
-        """Soft delete memory with HIPAA compliance"""
+        """
+        Soft delete memory with HIPAA compliance
+
+        Args:
+            session: Optional database session. If provided, caller manages commit/rollback.
+        """
+        owns_session = session is None
+        if owns_session:
+            session = AsyncSessionLocal()
+
         try:
-            async with AsyncSessionLocal() as session:
-                result = await session.execute(
-                    update(Memory)
-                    .where(and_(Memory.id == memory_id, Memory.user_id == user_id))
-                    .values(
-                        is_deleted=True,
-                        deleted_at=datetime.now(timezone.utc),
-                        deletion_reason=deletion_reason
-                    )
+            result = await session.execute(
+                update(Memory)
+                .where(and_(Memory.id == memory_id, Memory.user_id == user_id))
+                .values(
+                    is_deleted=True,
+                    deleted_at=datetime.now(timezone.utc),
+                    deletion_reason=deletion_reason
                 )
-                
-                if result.rowcount == 0:
-                    return False
-                
+            )
+
+            if result.rowcount == 0:
+                return False
+
+            if owns_session:
                 await session.commit()
-                
-                # Remove from Mem0 if available
-                if self.mem0_client:
-                    try:
-                        await self._delete_from_mem0(memory_id, user_id)
-                    except Exception as e:
-                        logger.warning(f"Mem0 deletion failed: {e}")
-                
-                logger.info(f"Memory {memory_id} deleted for user {user_id}")
-                return True
-                
+
+            # Remove from Mem0 if available
+            if self.mem0_client:
+                try:
+                    await self._delete_from_mem0(memory_id, user_id)
+                except Exception as e:
+                    logger.warning(f"Mem0 deletion failed: {e}")
+
+            logger.info(f"Memory {memory_id} deleted for user {user_id}")
+            return True
+
         except Exception as e:
+            if owns_session:
+                await session.rollback()
             logger.error(f"Memory deletion failed: {e}")
             return False
+        finally:
+            if owns_session:
+                await session.close()
     
-    async def get_memory_stats(self, user_id: str) -> Dict[str, Any]:
-        """Get memory statistics for user dashboard"""
+    async def get_memory_stats(
+        self,
+        user_id: str,
+        session: Optional[AsyncSession] = None
+    ) -> Dict[str, Any]:
+        """
+        Get memory statistics for user dashboard
+
+        Args:
+            session: Optional database session. If provided, caller manages lifecycle.
+        """
+        owns_session = session is None
+        if owns_session:
+            session = AsyncSessionLocal()
+
         try:
-            async with AsyncSessionLocal() as session:
-                # Total memories
-                total_result = await session.execute(
-                    select(func.count(Memory.id)).where(
-                        and_(Memory.user_id == user_id, Memory.is_deleted == False)
+            # Total memories
+            total_result = await session.execute(
+                select(func.count(Memory.id)).where(
+                    and_(Memory.user_id == user_id, Memory.is_deleted == False)
+                )
+            )
+            total_memories = total_result.scalar()
+
+            # Memory types breakdown
+            type_result = await session.execute(
+                select(Memory.memory_type, func.count(Memory.id))
+                .where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
+                .group_by(Memory.memory_type)
+            )
+            by_type = dict(type_result.fetchall())
+
+            # Privacy levels breakdown
+            privacy_result = await session.execute(
+                select(Memory.privacy_level, func.count(Memory.id))
+                .where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
+                .group_by(Memory.privacy_level)
+            )
+            by_privacy = dict(privacy_result.fetchall())
+
+            # Date range
+            date_result = await session.execute(
+                select(
+                    func.min(Memory.created_at),
+                    func.max(Memory.created_at),
+                    func.avg(Memory.therapeutic_relevance)
+                ).where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
+            )
+            oldest, newest, avg_relevance = date_result.first()
+
+            # Crisis memories
+            crisis_result = await session.execute(
+                select(func.count(Memory.id)).where(
+                    and_(
+                        Memory.user_id == user_id,
+                        Memory.is_deleted == False,
+                        Memory.crisis_level > 0.7
                     )
                 )
-                total_memories = total_result.scalar()
-                
-                # Memory types breakdown
-                type_result = await session.execute(
-                    select(Memory.memory_type, func.count(Memory.id))
-                    .where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
-                    .group_by(Memory.memory_type)
-                )
-                by_type = dict(type_result.fetchall())
-                
-                # Privacy levels breakdown
-                privacy_result = await session.execute(
-                    select(Memory.privacy_level, func.count(Memory.id))
-                    .where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
-                    .group_by(Memory.privacy_level)
-                )
-                by_privacy = dict(privacy_result.fetchall())
-                
-                # Date range
-                date_result = await session.execute(
-                    select(
-                        func.min(Memory.created_at),
-                        func.max(Memory.created_at),
-                        func.avg(Memory.therapeutic_relevance)
-                    ).where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
-                )
-                oldest, newest, avg_relevance = date_result.first()
-                
-                # Crisis memories
-                crisis_result = await session.execute(
-                    select(func.count(Memory.id)).where(
-                        and_(
-                            Memory.user_id == user_id,
-                            Memory.is_deleted == False,
-                            Memory.crisis_level > 0.7
-                        )
-                    )
-                )
-                crisis_count = crisis_result.scalar()
-                
-                return {
-                    'total_memories': total_memories,
-                    'by_type': by_type,
-                    'by_privacy_level': by_privacy,
-                    'storage_usage_mb': total_memories * 0.1,  # Estimate
-                    'oldest_memory': oldest,
-                    'newest_memory': newest,
-                    'avg_therapeutic_relevance': float(avg_relevance or 0),
-                    'crisis_memories_count': crisis_count
-                }
-                
+            )
+            crisis_count = crisis_result.scalar()
+
+            return {
+                'total_memories': total_memories,
+                'by_type': by_type,
+                'by_privacy_level': by_privacy,
+                'storage_usage_mb': total_memories * 0.1,  # Estimate
+                'oldest_memory': oldest,
+                'newest_memory': newest,
+                'avg_therapeutic_relevance': float(avg_relevance or 0),
+                'crisis_memories_count': crisis_count
+            }
+
         except Exception as e:
             logger.error(f"Memory stats retrieval failed: {e}")
             return {}
+        finally:
+            if owns_session:
+                await session.close()
     
     # Private helper methods
     
@@ -670,173 +748,225 @@ class MemoryService:
         recovery_stage: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
-        include_content: bool = False
+        include_content: bool = False,
+        session: Optional[AsyncSession] = None
     ) -> List[Memory]:
-        """Get user memories with filtering and pagination"""
+        """
+        Get user memories with filtering and pagination
+
+        Args:
+            session: Optional database session. If provided, caller manages lifecycle.
+        """
+        owns_session = session is None
+        if owns_session:
+            session = AsyncSessionLocal()
+
         try:
-            async with AsyncSessionLocal() as session:
-                # Build query conditions
-                conditions = [
-                    Memory.user_id == user_id,
-                    Memory.is_deleted == False
-                ]
-                
-                if memory_type:
-                    conditions.append(Memory.memory_type == memory_type)
-                if privacy_level:
-                    conditions.append(Memory.privacy_level == privacy_level)
-                if recovery_stage:
-                    conditions.append(Memory.recovery_stage == recovery_stage)
-                
-                # Execute query with pagination
-                query = (
-                    select(Memory)
-                    .where(and_(*conditions))
-                    .order_by(Memory.created_at.desc())
-                    .offset(offset)
-                    .limit(limit)
-                )
-                
-                result = await session.execute(query)
-                memories = result.scalars().all()
-                
-                return list(memories)
-                
+            # Build query conditions
+            conditions = [
+                Memory.user_id == user_id,
+                Memory.is_deleted == False
+            ]
+
+            if memory_type:
+                conditions.append(Memory.memory_type == memory_type)
+            if privacy_level:
+                conditions.append(Memory.privacy_level == privacy_level)
+            if recovery_stage:
+                conditions.append(Memory.recovery_stage == recovery_stage)
+
+            # Execute query with pagination
+            query = (
+                select(Memory)
+                .where(and_(*conditions))
+                .order_by(Memory.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+            )
+
+            result = await session.execute(query)
+            memories = result.scalars().all()
+
+            return list(memories)
+
         except Exception as e:
             logger.error(f"Failed to get user memories: {e}")
             return []
+        finally:
+            if owns_session:
+                await session.close()
     
     async def get_user_memory_count(
         self,
         user_id: str,
         memory_type: Optional[MemoryType] = None,
         privacy_level: Optional[MemoryPrivacyLevel] = None,
-        recovery_stage: Optional[str] = None
+        recovery_stage: Optional[str] = None,
+        session: Optional[AsyncSession] = None
     ) -> int:
-        """Get total count of user memories with filters"""
+        """
+        Get total count of user memories with filters
+
+        Args:
+            session: Optional database session. If provided, caller manages lifecycle.
+        """
+        owns_session = session is None
+        if owns_session:
+            session = AsyncSessionLocal()
+
         try:
-            async with AsyncSessionLocal() as session:
-                # Build query conditions
-                conditions = [
-                    Memory.user_id == user_id,
-                    Memory.is_deleted == False
-                ]
-                
-                if memory_type:
-                    conditions.append(Memory.memory_type == memory_type)
-                if privacy_level:
-                    conditions.append(Memory.privacy_level == privacy_level)
-                if recovery_stage:
-                    conditions.append(Memory.recovery_stage == recovery_stage)
-                
-                # Count query
-                result = await session.execute(
-                    select(func.count(Memory.id)).where(and_(*conditions))
-                )
-                
-                return result.scalar() or 0
-                
+            # Build query conditions
+            conditions = [
+                Memory.user_id == user_id,
+                Memory.is_deleted == False
+            ]
+
+            if memory_type:
+                conditions.append(Memory.memory_type == memory_type)
+            if privacy_level:
+                conditions.append(Memory.privacy_level == privacy_level)
+            if recovery_stage:
+                conditions.append(Memory.recovery_stage == recovery_stage)
+
+            # Count query
+            result = await session.execute(
+                select(func.count(Memory.id)).where(and_(*conditions))
+            )
+
+            return result.scalar() or 0
+
         except Exception as e:
             logger.error(f"Failed to count user memories: {e}")
             return 0
+        finally:
+            if owns_session:
+                await session.close()
     
-    async def get_memory(self, memory_id: str, user_id: str) -> Optional[Memory]:
-        """Get a specific memory by ID with authorization check"""
+    async def get_memory(
+        self,
+        memory_id: str,
+        user_id: str,
+        session: Optional[AsyncSession] = None
+    ) -> Optional[Memory]:
+        """
+        Get a specific memory by ID with authorization check
+
+        Args:
+            session: Optional database session. If provided, caller manages lifecycle.
+        """
+        owns_session = session is None
+        if owns_session:
+            session = AsyncSessionLocal()
+
         try:
-            async with AsyncSessionLocal() as session:
-                result = await session.execute(
-                    select(Memory).where(
-                        and_(
-                            Memory.id == uuid.UUID(memory_id),
-                            Memory.user_id == user_id,
-                            Memory.is_deleted == False
-                        )
+            result = await session.execute(
+                select(Memory).where(
+                    and_(
+                        Memory.id == uuid.UUID(memory_id),
+                        Memory.user_id == user_id,
+                        Memory.is_deleted == False
                     )
                 )
-                
-                return result.scalar_one_or_none()
-                
+            )
+
+            return result.scalar_one_or_none()
+
         except Exception as e:
             logger.error(f"Failed to get memory {memory_id}: {e}")
             return None
+        finally:
+            if owns_session:
+                await session.close()
     
-    async def get_user_memory_stats(self, user_id: str) -> Dict[str, Any]:
-        """Get comprehensive memory statistics for user"""
+    async def get_user_memory_stats(
+        self,
+        user_id: str,
+        session: Optional[AsyncSession] = None
+    ) -> Dict[str, Any]:
+        """
+        Get comprehensive memory statistics for user
+
+        Args:
+            session: Optional database session. If provided, caller manages lifecycle.
+        """
+        owns_session = session is None
+        if owns_session:
+            session = AsyncSessionLocal()
+
         try:
-            async with AsyncSessionLocal() as session:
-                # Total memories
-                total_result = await session.execute(
-                    select(func.count(Memory.id)).where(
-                        and_(Memory.user_id == user_id, Memory.is_deleted == False)
-                    )
+            # Total memories
+            total_result = await session.execute(
+                select(func.count(Memory.id)).where(
+                    and_(Memory.user_id == user_id, Memory.is_deleted == False)
                 )
-                total_memories = total_result.scalar() or 0
-                
-                # Memory types breakdown
-                type_result = await session.execute(
-                    select(Memory.memory_type, func.count(Memory.id))
-                    .where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
-                    .group_by(Memory.memory_type)
-                )
-                memory_types = dict(type_result.fetchall())
-                
-                # Privacy levels breakdown
-                privacy_result = await session.execute(
-                    select(Memory.privacy_level, func.count(Memory.id))
-                    .where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
-                    .group_by(Memory.privacy_level)
-                )
-                privacy_levels = dict(privacy_result.fetchall())
-                
-                # Recovery stages breakdown
-                stage_result = await session.execute(
-                    select(Memory.recovery_stage, func.count(Memory.id))
-                    .where(and_(
-                        Memory.user_id == user_id, 
-                        Memory.is_deleted == False,
-                        Memory.recovery_stage.isnot(None)
-                    ))
-                    .group_by(Memory.recovery_stage)
-                )
-                recovery_stages = dict(stage_result.fetchall())
-                
-                # Average therapeutic relevance
-                avg_result = await session.execute(
-                    select(func.avg(Memory.therapeutic_relevance))
-                    .where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
-                )
-                avg_therapeutic_relevance = float(avg_result.scalar() or 0.0)
-                
-                # Last memory created
-                last_result = await session.execute(
-                    select(Memory.created_at)
-                    .where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
-                    .order_by(Memory.created_at.desc())
-                    .limit(1)
-                )
-                last_created = last_result.scalar()
-                
-                # Count memories with embeddings
-                embedding_result = await session.execute(
-                    select(func.count(Memory.id))
-                    .where(and_(
-                        Memory.user_id == user_id,
-                        Memory.is_deleted == False,
-                        Memory.embedding_vector.isnot(None)
-                    ))
-                )
-                embeddings_count = embedding_result.scalar() or 0
-                
-                return {
-                    "total_memories": total_memories,
-                    "memory_types": memory_types,
-                    "privacy_levels": privacy_levels,
-                    "recovery_stages": recovery_stages,
-                    "avg_therapeutic_relevance": avg_therapeutic_relevance,
-                    "last_created": last_created.isoformat() if last_created else None,
-                    "embeddings_count": embeddings_count
-                }
-                
+            )
+            total_memories = total_result.scalar() or 0
+
+            # Memory types breakdown
+            type_result = await session.execute(
+                select(Memory.memory_type, func.count(Memory.id))
+                .where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
+                .group_by(Memory.memory_type)
+            )
+            memory_types = dict(type_result.fetchall())
+
+            # Privacy levels breakdown
+            privacy_result = await session.execute(
+                select(Memory.privacy_level, func.count(Memory.id))
+                .where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
+                .group_by(Memory.privacy_level)
+            )
+            privacy_levels = dict(privacy_result.fetchall())
+
+            # Recovery stages breakdown
+            stage_result = await session.execute(
+                select(Memory.recovery_stage, func.count(Memory.id))
+                .where(and_(
+                    Memory.user_id == user_id,
+                    Memory.is_deleted == False,
+                    Memory.recovery_stage.isnot(None)
+                ))
+                .group_by(Memory.recovery_stage)
+            )
+            recovery_stages = dict(stage_result.fetchall())
+
+            # Average therapeutic relevance
+            avg_result = await session.execute(
+                select(func.avg(Memory.therapeutic_relevance))
+                .where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
+            )
+            avg_therapeutic_relevance = float(avg_result.scalar() or 0.0)
+
+            # Last memory created
+            last_result = await session.execute(
+                select(Memory.created_at)
+                .where(and_(Memory.user_id == user_id, Memory.is_deleted == False))
+                .order_by(Memory.created_at.desc())
+                .limit(1)
+            )
+            last_created = last_result.scalar()
+
+            # Count memories with embeddings
+            embedding_result = await session.execute(
+                select(func.count(Memory.id))
+                .where(and_(
+                    Memory.user_id == user_id,
+                    Memory.is_deleted == False,
+                    Memory.embedding_vector.isnot(None)
+                ))
+            )
+            embeddings_count = embedding_result.scalar() or 0
+
+            return {
+                "total_memories": total_memories,
+                "memory_types": memory_types,
+                "privacy_levels": privacy_levels,
+                "recovery_stages": recovery_stages,
+                "avg_therapeutic_relevance": avg_therapeutic_relevance,
+                "last_created": last_created.isoformat() if last_created else None,
+                "embeddings_count": embeddings_count
+            }
+
         except Exception as e:
             logger.error(f"Failed to get user memory stats: {e}")
             return {
@@ -848,6 +978,9 @@ class MemoryService:
                 "last_created": None,
                 "embeddings_count": 0
             }
+        finally:
+            if owns_session:
+                await session.close()
 
 
 # Global memory service instance
