@@ -976,6 +976,154 @@ class SearcherAgent:
         "controlrepair.com",           # Control system repair info
         "cincinnatirpt.com",           # 30,000+ Cincinnati parts
         "telarcorp.com",               # Van Dorn parts catalog
+        "store.milacron.com",          # OEM parts ordering
+        "onlinestore.dpg.com",         # Van Dorn, Demag, Newbury parts
+        "wisrepair.com",               # PathFinder controller repair
+        "paragontech.com",             # PathFinder 5000
+        "acsindustrial.com",           # PathFinder 3000
+        "capetronics.com",             # Van Dorn Siemens PathFinder
+        "radwell.com",                 # Legacy control parts with warranty
+        "acwei.com",                   # Siemens S5 PathFinder parts
+        "rochesterindustrialservices.com",  # CAMAC repairs 1-year warranty
+
+        # ===== FANUC Official & Semi-Official (Premium) =====
+        "techtransfer.fanucamerica.com",  # 100+ free tutorials (CRITICAL)
+        "fanucamerica.com",            # Official FANUC America
+        "crc2.frc.com",                # Customer Resource Center
+        "fanuc-academy.uk",            # Official UK training
+        "content.fanucworld.com",      # Alarm codes list
+
+        # ===== FANUC Third-Party Documentation =====
+        "therobotguyllc.com",          # KAREL manual, R-30iA maintenance
+        "manuals.plus",                # R-30iB operators manual
+        "manualmachine.com",           # R-30iB maintenance manual
+        "studylib.net",                # R-30iB Plus, DCS manuals
+        "robots.com",                  # Error codes explained
+        "diy-robotics.com",            # Mastering procedures, iRVision
+        "tristarcnc.com",              # Servo/spindle alarm codes
+        "cncspares.com",               # Servo/spindle codes UK
+        "mroelectric.com",             # Servo motor alarms
+        "okmarts.com",                 # Servo amplifier alarm codes
+        "robochallenge.pl",            # iRVision 2D manual
+        "docs.mech-mind.net",          # Automatic calibration
+        "productivity.com",            # Battery loss recovery
+
+        # ===== FANUC Training Providers =====
+        "nrtcautomation.com",          # FANUC, ABB, KUKA training
+        "ramtecohio.com",              # RAMTEC certified courses
+        "gcodetutor.com",              # Online CNC courses
+        "aleksandarhaber.com",         # 250+ free tutorials
+
+        # ===== Industrial Forums (Highest Value) =====
+        "control.com",                 # Process control, automation
+        "mrplc.com",                   # Multi-vendor PLC support
+        "cnczone.com",                 # CNC and control retrofits
+        "robotics.stackexchange.com",  # Structured Q&A
+        "engineering.stackexchange.com",  # General engineering Q&A
+        "linuxcnc.org",                # CNC retrofit community
+
+        # ===== KraussMaffei Third-Party =====
+        "pdfcoffee.com",               # MX1600 complete manual
+        "opcturkey.com",               # MC4 Ethernet driver manual
+        "machineryhost.com",           # MC5 CX full documentation
+        "directindustry.com",          # All series catalogs
+        "rgbelektronika.eu",           # CX, GX, MX, PX repair
+        "kubousek.cz",                 # Authorized training Czech
+        "bruys.nl",                    # OEM spare parts Netherlands
+        "im-machinery.de",             # Hydraulic parts Germany
+
+        # ===== PLC & Electrical Troubleshooting =====
+        "realpars.com",                # PLC digital I/O, Allen-Bradley
+        "dosupply.com",                # PLC/VFD troubleshooting flowcharts
+        "ladderlogicworld.com",        # 7-part ladder logic tutorial
+        "plcacademy.com",              # Comprehensive PLC tutorial
+        "solisplc.com",                # Allen-Bradley, large programs
+        "library.automationdirect.com",  # Symbols, 4-20mA troubleshooting
+        "cdn.automationdirect.com",    # Technical manuals PDFs
+
+        # ===== VFD & Motor Control =====
+        "cdn.logic-control.com",       # ABB VFD troubleshooting
+        "motioncontroltips.com",       # VFD no-power checks, IGBT
+        "vfds.com",                    # VFD motor damage prevention
+        "americanindustrialinc.com",   # Overcurrent fault diagnosis
+
+        # ===== Servo & Encoder Resources =====
+        "gesrepair.com",               # Servo drive troubleshooting
+        "mitchell-electronics.com",    # 8 servo motor tips
+        "ato.com",                     # Servo failure analysis
+        "gtencoder.com",               # Encoder troubleshooting FAQ
+        "encoder.com",                 # Encoder troubleshooting PDF
+        "dynapar.com",                 # Encoder signal oscilloscope
+
+        # ===== Sensors & Instrumentation =====
+        "temprel.com",                 # Thermocouple troubleshooting
+        "peaksensors.com",             # TC and RTD testing
+        "controlglobal.com",           # TC noise, grounding
+        "en.jumo.pl",                  # 18 thermocouple errors
+        "automationforum.co",          # TC troubleshooting checklist
+        "fluke.com",                   # 4-20mA, thermal imaging
+        "devarinc.com",                # 4-20mA scaling issues
+        "seametrics.com",              # Current loop sneak currents
+        "instrumentationtools.com",    # 4-20mA DVM methods
+
+        # ===== Industrial Networks =====
+        "profinetuniversity.com",      # PROFINET/PROFIBUS troubleshooting
+        "us.profinet.com",             # PROFINET fundamentals
+        "trend-networks.com",          # Network testing tools
+        "industrialautomationco.com",  # EtherNet/IP vs PROFINET
+
+        # ===== Hydraulics =====
+        "crossmfg.com",                # Step-by-step hydraulic troubleshooting
+        "advancedfluidsystems.com",    # Hydraulic flowcharts PDF
+        "machinerylubrication.com",    # 5-step methodology
+        "brennaninc.com",              # Systematic approach
+        "powermotiontech.com",         # Thermal diagnostics
+        "supremeintegratedtechnology.com",  # Pump noise, leaks
+
+        # ===== Vibration & Thermal Analysis =====
+        "vi-institute.org",            # ISO 18436 Cat I-IV
+        "mobiusinstitute.com",         # Cat I online certification
+        "avtreliability.com",          # ISO 18436 Levels 1-3
+        "ctconline.com",               # Free accelerometer basics
+        "failureprevention.com",       # Cat 1-2 certification
+
+        # ===== Safety & Compliance =====
+        "osha.gov",                    # LOTO regulations
+        "vectorsolutions.com",         # 6-step LOTO procedure
+        "safetyculture.com",           # LOTO training, checklists
+        "nfpa.org",                    # Arc flash NFPA 70E
+
+        # ===== Root Cause Analysis =====
+        "asq.org",                     # ASQ RCA e-Learning
+        "kepner-tregoe.com",           # 65+ year RCA methodology
+        "thinkreliability.com",        # Cause Mapping
+        "6sigma.us",                   # RCA templates, certification
+
+        # ===== Training Platforms =====
+        "toolingu.com",                # Tooling U-SME 600+ courses
+        "learn.toolingu.com",          # LMS platform
+        "isa.org",                     # ISA automation standards
+        "tpctraining.com",             # Electrical troubleshooting
+        "bin95.com",                   # Free motor control simulator
+        "academy.boschrexroth.com",    # Hands-on hydraulics
+        "boschrexroth.com",            # Bosch Rexroth training US
+        "yaskawa.com",                 # Drives, motion control
+        "interplaylearning.com",       # 500+ hours, 3D sims
+        "360training.com",             # 300+ industrial courses
+
+        # ===== Publications (Technical Articles) =====
+        "magazines.amiplastics.com",   # Injection World free digital
+        "smart-molding.com",           # Industry 4.0, automation
+        "moldmakingtechnology.com",    # Mold design, CAD/CAM
+        "injectionmoldingdivision.org",  # SPE technical papers
+        "reliableplant.com",           # Maintenance, reliability
+        "plantengineering.com",        # Plant maintenance
+        "controleng.com",              # Automation, control
+
+        # ===== Parts Suppliers (Technical Resources) =====
+        "grainger.com",                # Product specs, how-to
+        "mscdirect.com",               # 2.2M products, tech support
+        "motionindustries.com",        # Bearings, hydraulics expertise
 
         # ===== Reference (Trusted) =====
         "wikipedia.org",
@@ -1012,15 +1160,23 @@ class SearcherAgent:
         "docs.python.org", "developer.mozilla.org", "kubernetes.io",
         "pytorch.org", "tensorflow.org", "huggingface.co",
         # Standards
-        "nist.gov", "ietf.org", "w3.org", "rfc-editor.org",
+        "nist.gov", "ietf.org", "w3.org", "rfc-editor.org", "osha.gov",
         # Injection Molding / Euromap (Premium for IMM queries)
         "euromap.org", "ptonline.com", "rjginc.com",
         "kraussmaffei.com", "milacron.com", "sumitomo-shi-demag.us",
-        # FANUC Robot Integration
-        "fanuc.eu", "robot-forum.com",
+        "trainingacademy.kraussmaffei.com", "pdfcoffee.com",
+        # FANUC Official & High-Value (Premium)
+        "fanuc.eu", "robot-forum.com", "techtransfer.fanucamerica.com",
+        "fanucamerica.com", "diy-robotics.com", "therobotguyllc.com",
+        # Industrial Forums (Highest Value for Troubleshooting)
+        "control.com", "cnczone.com", "plctalk.net", "practicalmachinist.com",
         # Plastics Industry Technical
         "plastics-rubber.basf.com", "4spe.org", "aim.institute",
         "injectionmoldingonline.com", "dme.net",
+        # Training & Certification (Premium)
+        "toolingu.com", "isa.org", "realpars.com", "vi-institute.org",
+        # Publications (Premium Technical Content)
+        "reliableplant.com", "controleng.com", "plantengineering.com",
     }
 
     # Common stopwords to exclude from keyword matching
