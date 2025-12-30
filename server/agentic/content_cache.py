@@ -33,29 +33,35 @@ class ContentCache:
 
     Features:
     - URL-based caching with content hashing
-    - Configurable TTL (default 1 hour)
+    - Configurable TTL (from settings or default 1 hour)
     - Automatic cleanup of expired entries
     - Thread-safe operations
     """
 
-    # Default TTL in seconds (1 hour)
-    DEFAULT_TTL = 3600
-
-    # Max entries before cleanup
-    MAX_ENTRIES = 10000
-
     def __init__(
         self,
         cache_dir: Optional[str] = None,
-        ttl_seconds: int = DEFAULT_TTL
+        ttl_seconds: Optional[int] = None,
+        max_entries: Optional[int] = None
     ):
         """
         Initialize the content cache.
 
         Args:
             cache_dir: Directory to store cache database
-            ttl_seconds: Time-to-live for cache entries
+            ttl_seconds: Time-to-live for cache entries (uses settings if None)
+            max_entries: Max cache entries before cleanup (uses settings if None)
         """
+        # Get settings for defaults
+        try:
+            from config.settings import get_settings
+            settings = get_settings()
+            default_ttl = settings.content_cache_ttl
+            default_max_entries = settings.max_cache_entries
+        except ImportError:
+            default_ttl = 3600
+            default_max_entries = 10000
+
         if cache_dir is None:
             cache_dir = str(Path(__file__).parent.parent / "cache")
 
@@ -63,11 +69,12 @@ class ContentCache:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         self.db_path = self.cache_dir / "content_cache.db"
-        self.ttl_seconds = ttl_seconds
+        self.ttl_seconds = ttl_seconds if ttl_seconds is not None else default_ttl
+        self.max_entries = max_entries if max_entries is not None else default_max_entries
         self._lock = threading.Lock()
 
         self._init_db()
-        logger.info(f"Content cache initialized: {self.db_path} (TTL: {ttl_seconds}s)")
+        logger.info(f"Content cache initialized: {self.db_path} (TTL: {self.ttl_seconds}s, max: {self.max_entries})")
 
     def _init_db(self):
         """Initialize the SQLite database schema"""

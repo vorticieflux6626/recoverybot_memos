@@ -60,6 +60,18 @@ class MemOSSettings(BaseSettings):
     pdf_api_max_results: int = 10
     pdf_api_cache_ttl: int = 300  # 5 minutes
 
+    # HTTP Timeout Configuration (seconds)
+    default_http_timeout: float = 30.0  # General HTTP requests
+    llm_request_timeout: float = 90.0   # LLM inference requests (longer)
+    health_check_timeout: float = 5.0   # Quick health checks
+    embedding_timeout: float = 60.0     # Embedding generation
+
+    # Cache Configuration
+    query_cache_ttl: int = 3600         # 1 hour for query result cache
+    content_cache_ttl: int = 3600       # 1 hour for scraped content
+    semantic_cache_threshold: float = 0.88  # Similarity threshold for cache hits
+    max_cache_entries: int = 10000      # Max entries in content cache
+
     # Security Configuration
     jwt_secret_key: str = "recovery-bot-memOS-jwt-secret-key-for-authentication-2025"
     jwt_algorithm: str = "HS256"
