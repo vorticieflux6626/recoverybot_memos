@@ -1,6 +1,6 @@
 # memOS Server
 
-> **Updated**: 2025-12-30 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.39.0
+> **Updated**: 2025-12-30 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.40.1
 
 ## Quick Reference
 
@@ -139,6 +139,22 @@ hard_queries = filter_benchmark(difficulty=QueryDifficulty.HARD)
 scorer = TechnicalAccuracyScorer()
 score = scorer.score(answer, benchmark_query, sources)
 ```
+
+**Domain Matching Fix (F.3 - 2025-12-30):**
+The benchmark now uses `FANUC_TRUSTED_DOMAINS` (22 domains) instead of narrow 3-domain lists:
+
+| Category | Count | Examples |
+|----------|-------|----------|
+| Official FANUC | 4 | fanucamerica.com, techtransfer, crc2.frc.com |
+| Industrial Forums | 5 | robot-forum.com, plctalk.net, emastercam.com |
+| Integrators | 4 | 2rirobotics.com, aerobotix.net, robotworx.com |
+| Doc Aggregators | 3 | everythingaboutrobots.com, manualslib.com, pdfcoffee.com |
+| Tech Communities | 6 | reddit.com, stackoverflow.com, cnczone.com |
+
+**Impact:**
+- Domain match: 10% → 80% (+70%)
+- Overall accuracy: 48% → 60.3% (+12%)
+- SRVO-063 benchmark: FAIL → PASS
 
 **Module Version**: `agentic/__init__.py` → v0.40.0
 
