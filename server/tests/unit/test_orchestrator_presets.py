@@ -150,9 +150,9 @@ class TestPresetConfigs:
         assert config.enable_content_cache is True
         assert config.enable_semantic_cache is True
 
-        # Enhanced features disabled
+        # Enhanced features (hybrid_reranking enabled in BALANCED for quality)
         assert config.enable_hyde is False
-        assert config.enable_hybrid_reranking is False
+        assert config.enable_hybrid_reranking is True  # Now enabled in BALANCED
         assert config.enable_ragas is False
 
         # Domain features enabled (HSEA for FANUC)
