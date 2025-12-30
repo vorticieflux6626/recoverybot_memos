@@ -2931,10 +2931,17 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 enhancement_metadata["contradictions_found"] = len(contradictions)
                 enhancement_metadata["features_used"].append("contradiction_detection")
                 # Append contradiction summary to synthesis
-                if contradictions:
-                    synthesis += "\n\n**Note:** Some sources provide conflicting information:\n"
-                    for c in contradictions[:3]:
-                        synthesis += f"- {c}\n"
+                synthesis += "\n\n**Note:** Some sources provide conflicting information:\n"
+                for c in contradictions[:3]:
+                    synthesis += f"- {c}\n"
+                # Phase 5: Record contradictions in scratchpad for coordination
+                scratchpad.write_public(
+                    agent_id="contradiction_detector",
+                    key="detected_contradictions",
+                    value=contradictions[:5],  # Store up to 5 contradictions
+                    ttl_minutes=60
+                )
+                logger.info(f"[{request_id}] Recorded {len(contradictions)} contradictions in scratchpad")
 
         # PHASE 10: Self-Reflection (if enabled)
         reflection_result = None
@@ -3493,6 +3500,29 @@ class UniversalOrchestrator(BaseSearchPipeline):
             message=f"Found {len(state.raw_results)} results",
             graph_line=self._graph_state.to_line()
         )
+
+        # Phase 5: Record findings in blackboard/scratchpad for coordination
+        # Maps search results to questions for gap analysis and contradiction detection
+        question_ids = list(scratchpad.questions.keys()) if hasattr(scratchpad, 'questions') else []
+        default_question_id = question_ids[0] if question_ids else "q_0"
+        findings_recorded = 0
+        for result in state.raw_results:
+            if hasattr(result, 'snippet') and hasattr(result, 'url'):
+                try:
+                    # Assign to first question or create a generic one
+                    scratchpad.add_finding(
+                        question_id=default_question_id,
+                        content=result.snippet[:500],  # Limit content length
+                        source_url=result.url,
+                        source_title=getattr(result, 'title', ''),
+                        finding_type=FindingType.FACT,
+                        confidence=getattr(result, 'relevance_score', 0.5)
+                    )
+                    findings_recorded += 1
+                except Exception as e:
+                    logger.debug(f"[{request_id}] Failed to record finding: {e}")
+        if findings_recorded > 0:
+            logger.info(f"[{request_id}] Recorded {findings_recorded} findings in scratchpad")
 
         search_duration_ms = int((time.time() - start) * 1000)
         search_trace.append({
