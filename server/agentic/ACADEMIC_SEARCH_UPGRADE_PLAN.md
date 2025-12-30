@@ -1,5 +1,7 @@
 # Academic Domain Search Upgrade Plan
 
+> **Updated**: 2025-12-30 | **Parent**: [AGENTIC_OVERVIEW.md](./AGENTIC_OVERVIEW.md) | **Status**: Complete
+
 ## Executive Summary
 
 Comprehensive plan to enhance the memOS agentic search pipeline with academic domain integration, intelligent URL navigation, and domain-specific query transformation.

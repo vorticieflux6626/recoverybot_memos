@@ -1,5 +1,7 @@
 # HSEA Corpus Ingestion Plan
 
+> **Updated**: 2025-12-30 | **Parent**: [AGENTIC_OVERVIEW.md](./AGENTIC_OVERVIEW.md) | **Status**: Planning
+
 ## Executive Summary
 
 This document outlines a comprehensive plan to ingest all documents from `PDF_Extraction_Tools/` into the HSEA (Hierarchical Stratified Embedding Architecture) system, creating searchable entity graphs with three-layer contextual search for FANUC robotics troubleshooting.

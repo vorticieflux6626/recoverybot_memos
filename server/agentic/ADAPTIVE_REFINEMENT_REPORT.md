@@ -1,5 +1,7 @@
 # Adaptive Refinement for Low Confidence Recovery
 
+> **Updated**: 2025-12-30 | **Parent**: [AGENTIC_OVERVIEW.md](./AGENTIC_OVERVIEW.md) | **Status**: Complete
+
 ## Research Report - December 2025
 
 ### Executive Summary

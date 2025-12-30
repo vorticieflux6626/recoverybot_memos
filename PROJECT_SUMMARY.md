@@ -1,5 +1,7 @@
 # memOS Project Summary
 
+> **Updated**: 2025-12-30 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.39.0
+
 ## Project Overview
 memOS is a sophisticated **intelligent research and memory management system** for the Recovery Bot platform. Originally designed for recovery community services, it has evolved into a general-purpose AI research assistant with advanced agentic search capabilities. The system combines:
 

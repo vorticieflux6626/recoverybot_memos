@@ -1,5 +1,7 @@
 # FANUC Robot Advanced Troubleshooting Test Queries
 
+> **Updated**: 2025-12-30 | **Parent**: [AGENTIC_OVERVIEW.md](./AGENTIC_OVERVIEW.md) | **Status**: Current Test Suite
+
 This document contains 10 advanced/complex FANUC robot troubleshooting questions designed to test the effectiveness of the agentic search system. These queries are based on real-world problems found on forums like r/PLC, Robot-Forum.com, and FANUC user groups.
 
 ## Test Query Set

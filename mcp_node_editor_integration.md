@@ -1,8 +1,9 @@
 # MCP Node Editor - memOS Integration Reference
 
+> **Updated**: 2025-12-30 | **Parent**: [CLAUDE.md](./CLAUDE.md) | **Status**: Reference
+
 **System Location**: `/home/sparkone/sdd/MCP_Node_Editor`
 **Status**: Production-ready reactive execution engine
-**Version**: As of 2025-01-05
 
 ---
 

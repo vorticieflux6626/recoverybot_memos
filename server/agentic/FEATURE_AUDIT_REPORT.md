@@ -1,5 +1,7 @@
 # Agentic Module Feature Audit Report
 
+> **Updated**: 2025-12-30 | **Parent**: [AGENTIC_OVERVIEW.md](./AGENTIC_OVERVIEW.md) | **Status**: Current Reference
+
 **Date**: 2025-12-28
 **Version**: v0.25.0 (Full Feature Integration)
 **Auditor**: Claude Code

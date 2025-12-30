@@ -1,5 +1,7 @@
 # Agentic Search Module Overview
 
+> **Updated**: 2025-12-30 | **Parent**: [memOS CLAUDE.md](../../CLAUDE.md) | **Version**: 0.39.0
+
 ## Purpose
 
 The agentic search module implements an advanced multi-agent search and synthesis system for the RecoveryBot platform. It provides intelligent web search, content scraping, verification, and LLM-powered synthesis with real-time progress streaming.

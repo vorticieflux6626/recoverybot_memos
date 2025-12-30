@@ -1,5 +1,7 @@
 # Agentic Search Feature Integration Analysis
 
+> **Updated**: 2025-12-30 | **Parent**: [AGENTIC_OVERVIEW.md](./AGENTIC_OVERVIEW.md) | **Status**: Superseded (See FEATURE_AUDIT_REPORT.md)
+
 ## Current State (December 2025)
 
 The agentic module has **21+ implemented features**, but only **6 are actively used** in the main orchestrator pipeline.

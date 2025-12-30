@@ -1,5 +1,7 @@
 # TELEPHONE.md - Communication File for memOS Server Team
 
+> **Updated**: 2025-12-30 | **Parent**: [CLAUDE.md](./CLAUDE.md) | **Status**: Historical (July 2025)
+
 ## Current Status: REST API Complete ✅
 
 The core REST API for memory management is now complete and tested. All endpoints are working with:

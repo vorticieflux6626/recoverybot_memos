@@ -1,7 +1,7 @@
 # Single Source of Truth (SSOT) Cross-Project Architecture
 
-**Version**: 1.0.0
-**Last Updated**: 2025-12-24
+> **Updated**: 2025-12-30 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 1.0.0
+
 **Scope**: MCP_Node_Editor + Recovery_Bot + memOS Integration
 
 ---

@@ -1,5 +1,7 @@
 # Engineering Best Practices for Domain Corpus RAG Systems
 
+> **Updated**: 2025-12-30 | **Parent**: [AGENTIC_OVERVIEW.md](./AGENTIC_OVERVIEW.md) | **Status**: Current Reference
+
 ## Overview
 
 This document consolidates engineering best practices discovered through deep research into knowledge graph RAG systems, domain corpus engineering, and industrial maintenance ontologies. These practices are applied to the HSEA (Hierarchical Stratified Embedding Architecture) implementation for FANUC robotics troubleshooting.
