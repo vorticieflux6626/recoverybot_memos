@@ -50,6 +50,8 @@ class MemOSSettings(BaseSettings):
     classifier_model: str = "deepseek-r1:14b-qwen-distill-q8_0"  # Query classifier
     synthesizer_model: str = "qwen3:8b"  # Synthesis model
     thinking_model: str = "deepseek-r1:14b-qwen-distill-q8_0"  # Reasoning model
+    brave_api_key: Optional[str] = None  # Brave Search API key (optional fallback)
+    data_dir: str = "/home/sparkone/sdd/Recovery_Bot/memOS/data"  # Data directory
 
     # PDF Extraction Tools API (FANUC Technical Documentation)
     pdf_api_url: str = "http://localhost:8002"

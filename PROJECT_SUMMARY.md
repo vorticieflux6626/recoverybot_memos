@@ -1,7 +1,15 @@
 # memOS Project Summary
 
 ## Project Overview
-memOS is a sophisticated **memory management and quest/gamification system** designed specifically for the Recovery Bot Android application. It provides REST APIs for storing user memories, tracking recovery journey progress, and gamifying the recovery process through quests and achievements while maintaining strict HIPAA compliance for healthcare data.
+memOS is a sophisticated **intelligent research and memory management system** for the Recovery Bot platform. Originally designed for recovery community services, it has evolved into a general-purpose AI research assistant with advanced agentic search capabilities. The system combines:
+
+- **Multi-Provider Web Search**: SearXNG metasearch, DuckDuckGo, Brave API
+- **LLM-Powered Synthesis**: DeepSeek R1 classification, Qwen3 synthesis
+- **Memory Management**: HIPAA-compliant storage with semantic search
+- **Quest/Gamification**: Progress tracking and achievement systems
+- **TTS Integration**: 6 TTS engines including EmotiVoice, Edge-TTS, Sherpa-ONNX
+
+**Current Module Version**: v0.39.0 (Phase 26: Feature Synergy Integration)
 
 ## Architecture Overview
 
@@ -17,31 +25,36 @@ memOS is a sophisticated **memory management and quest/gamification system** des
 memOS/
 ├── server/                        # Main FastAPI application
 │   ├── main.py                   # Application entry point (FastAPI + middleware)
-│   ├── api/                      # REST API endpoints (5 modules)
-│   │   ├── memory.py            # Memory CRUD operations with HIPAA compliance
-│   │   ├── quest.py             # Quest system and gamification endpoints
-│   │   ├── user.py              # User settings and preferences management
-│   │   ├── auth.py              # JWT authentication endpoints
-│   │   └── health.py            # Health monitoring and diagnostics
-│   ├── config/                   # Configuration management
-│   │   ├── settings.py          # Pydantic-based configuration with validation
-│   │   ├── database.py          # Dual sync/async PostgreSQL setup
-│   │   └── logging_config.py    # HIPAA-compliant structured logging
+│   ├── api/                      # REST API endpoints (6 modules)
+│   │   ├── search.py            # Agentic search (80+ endpoints, 6000+ lines)
+│   │   ├── memory.py            # Memory CRUD with HIPAA compliance
+│   │   ├── quest.py             # Quest system and gamification
+│   │   ├── user.py              # User settings and preferences
+│   │   ├── auth.py              # JWT authentication
+│   │   ├── tts.py               # Text-to-speech (EmotiVoice, Edge-TTS, OpenVoice)
+│   │   └── health.py            # Health monitoring
+│   ├── agentic/                  # Agentic search module (75+ files)
+│   │   ├── orchestrator_universal.py  # UniversalOrchestrator (SSOT)
+│   │   ├── analyzer.py          # Query analysis
+│   │   ├── searcher.py          # Web search (SearXNG, Brave, DDG)
+│   │   ├── synthesizer.py       # LLM-powered synthesis
+│   │   ├── domain_corpus.py     # Domain-specific knowledge
+│   │   ├── bge_m3_hybrid.py     # Hybrid retrieval
+│   │   ├── hyde.py              # Query expansion
+│   │   ├── ragas.py             # Quality evaluation
+│   │   └── ...                  # 65+ additional modules
 │   ├── core/                     # Business logic services
-│   │   ├── memory_service.py    # Encrypted memory storage with Mem0 framework
-│   │   ├── quest_service.py     # Gamification system with progress tracking
-│   │   ├── embedding_service.py # Ollama-powered semantic embeddings
-│   │   ├── privacy_service.py   # HIPAA compliance and content validation
-│   │   └── encryption_service.py# AES-256 encryption for sensitive data
+│   │   ├── memory_service.py    # Encrypted memory storage
+│   │   ├── quest_service_fixed.py # Gamification system
+│   │   ├── embedding_service.py # Ollama embeddings
+│   │   ├── document_graph_service.py # PDF API integration
+│   │   └── exceptions.py        # Unified exception handling
+│   ├── config/                   # Configuration management
 │   ├── models/                   # SQLAlchemy & Pydantic models
-│   │   ├── memory.py           # Memory models with privacy levels and HIPAA compliance
-│   │   ├── quest.py            # Quest system models with achievements
-│   │   └── user.py             # User settings and consent management
-│   ├── data/                     # Database initialization and sample data
-│   ├── tests/                    # Comprehensive test suite (8+ test files)
-│   └── venv/                     # Python virtual environment
-├── memos_server.sh              # Server management script with health checks
-└── docker-compose.yml           # Multi-service development environment
+│   ├── data/                     # Databases (SQLite, caches)
+│   └── tests/                    # Comprehensive test suite (30+ test files)
+├── CLAUDE.md                     # AI assistant guidance (2700+ lines)
+└── docker-compose.yml           # Multi-service development
 ```
 
 ## Technology Stack
@@ -96,49 +109,48 @@ memOS/
 - **ACID transactions** with proper rollback handling
 - **Comprehensive indexing** for performance optimization
 
-## Current Status
+## Current Status (December 2025)
 
-### ✅ Completed Components
-- **Memory management system** with HIPAA compliance and semantic search
-- **Quest system database schema** with 16 sample quests
-- **REST API endpoints** for all major operations
-- **HIPAA-compliant logging** and audit trails
-- **Docker deployment** configuration with multi-service architecture
-- **Comprehensive test suite** with API and integration tests
-- **Server management tools** with health monitoring
-- **Agentic search architecture design** (December 2025)
+### ✅ Completed Components (26 Phases)
+
+**Agentic Search System (v0.39.0)**:
+- **UniversalOrchestrator**: Single source of truth with 5 presets (minimal→full)
+- **Multi-Provider Search**: SearXNG, DuckDuckGo, Brave with cascading fallback
+- **Advanced Retrieval**: BGE-M3 hybrid, HyDE expansion, mixed-precision embeddings
+- **Quality Control**: CRAG evaluation, Self-RAG reflection, RAGAS metrics
+- **Domain Knowledge**: FANUC robotics, Raspberry Pi troubleshooting corpuses
+- **SSE Streaming**: Real-time graph visualization `[A]→[P]→[S]→[E]→[W]→[V]→[Σ]→[R]→[✓]`
+
+**Memory & Quest System**:
+- **Memory management** with HIPAA compliance and semantic search
+- **Quest system** with 16 sample quests across 8 categories
+- **80+ REST API endpoints** across search, memory, quest, TTS modules
+
+**TTS Integration**:
+- **6 TTS engines**: EmotiVoice, Edge-TTS, OpenVoice, eSpeak-NG, Piper, Sherpa-ONNX
+- **Emotion control**: Seductive, empathetic, encouraging voice presets
+- **322 Neural Voices**: Microsoft Edge voices with pitch/rate control
+
+### Agentic Search Feature Matrix
+
+| Preset | Features | Use Case |
+|--------|----------|----------|
+| `minimal` | 8 | Fast, simple queries |
+| `balanced` | 18 | Default for most queries (Android default) |
+| `enhanced` | 28 | Complex research |
+| `research` | 39 | Academic/thorough (dynamic planning + graph cache) |
+| `full` | 42+ | Maximum capability (multi-agent coordination) |
 
 ### 🔧 Known Issues
-1. **Async/Greenlet Conflicts** - Some service operations experience event loop conflicts
-2. **Session Management** - SQLAlchemy async sessions need dependency injection refactoring
-3. **Authentication Layer** - JWT configuration incomplete despite infrastructure setup
+1. **Async/Greenlet Conflicts** - Some quest service operations still have event loop conflicts
+2. **Session Management** - SQLAlchemy async sessions partially refactored
 
-### 🚀 Next Priorities
-1. **Agentic Search Implementation** - Multi-agent search with MCP Node Editor integration
-2. **Fix async issues** in service layer operations
-3. **Complete authentication system** with proper JWT validation
-4. **Android integration** with client-side models and UI components
-5. **Production deployment** to remote server infrastructure
+### 🚀 Active Development
+1. **HSEA Controller** - Industrial troubleshooting with semantic search
+2. **IMM Corpus Builder** - Injection molding machine knowledge base
+3. **PDF API Integration** - Technical documentation extraction
 
-### 🆕 Agentic Search Roadmap (December 2025)
-
-memOS is evolving to become the **Intelligent Data Injection Hub** for Recovery Bot:
-
-| Phase | Scope | Components |
-|-------|-------|------------|
-| **Phase 1** | Foundation | Simple search endpoint, MCP Node Editor integration |
-| **Phase 2** | Core Agents | Planner + Searcher agents, ReAct reasoning loop |
-| **Phase 3** | Verification | Verifier agent, confidence scoring, source validation |
-| **Phase 4** | Integration | Android client integration, edge model query optimization |
-
-**Key Features**:
-- ReAct (Reasoning + Acting) pattern for intelligent search
-- Multi-agent orchestration via MCP Node Editor (port 7777)
-- Hybrid relevance scoring (BM25 + Semantic + Entity)
-- Query optimization for edge models (1B → 3B refinement)
-- HIPAA-compliant search result caching in memory service
-
-See `CLAUDE.md` for detailed architecture documentation.
+See `CLAUDE.md` and `server/agentic/AGENTIC_OVERVIEW.md` for detailed documentation.
 
 ## Development Workflow
 

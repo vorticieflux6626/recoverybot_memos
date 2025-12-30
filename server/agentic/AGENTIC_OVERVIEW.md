@@ -104,17 +104,44 @@ The agentic search module implements an advanced multi-agent search and synthesi
 | **Scratchpad** | `scratchpad.py` | Working memory for agents |
 | **ProgressTools** | `progress_tools.py` | Progress reporting |
 
+### Recent Additions (Phases 21-26)
+
+| Module | File | Purpose | Research Basis |
+|--------|------|---------|----------------|
+| **ContextCurator** | `context_curator.py` | Document selection and gap analysis | DIG scoring |
+| **RedundancyDetector** | `redundancy_detector.py` | Semantic deduplication | Clustering |
+| **EntropyMonitor** | `entropy_monitor.py` | Confidence-based halting | Information theory |
+| **SelfConsistencyChecker** | `self_consistency.py` | Multi-synthesis convergence | Self-consistency prompting |
+| **IterationBandit** | `iteration_bandit.py` | Adaptive refinement decisions | Multi-armed bandit |
+| **FLARERetriever** | `flare_retriever.py` | Active retrieval during synthesis | FLARE (arXiv:2305.06983) |
+| **QueryTreeDecoder** | `query_tree.py` | Hierarchical query expansion | Tree-structured QA |
+| **SemanticMemory** | `semantic_memory.py` | Concept-linked memory network | Knowledge graphs |
+| **RAISEScratchpad** | `raise_scratchpad.py` | Rich working memory | RAISE (arXiv:2024.xxxxx) |
+| **MetaBuffer** | `meta_buffer.py` | Template distillation and reuse | Buffer of Thoughts |
+| **ReasoningComposer** | `reasoning_composer.py` | Modular reasoning assembly | Chain-of-Thought |
+
+### Industrial Domain Support
+
+| Module | File | Purpose |
+|--------|------|---------|
+| **HSEAController** | `hsea_controller.py` | Hierarchical semantic search for industrial troubleshooting |
+| **FANUCCorpusBuilder** | `fanuc_corpus_builder.py` | FANUC robotics knowledge extraction |
+| **IMMCorpusBuilder** | `imm_corpus_builder.py` | Injection molding machine documentation |
+| **DocumentGraphService** | `core/document_graph_service.py` | PDF extraction API integration |
+
 ## Preset System
 
 The UniversalOrchestrator supports 5 presets with increasing feature sets:
 
-| Preset | Features | Use Case |
-|--------|----------|----------|
-| `minimal` | 8 | Fast, simple queries |
-| `balanced` | 18 | Default for most queries |
-| `enhanced` | 28 | Complex research |
-| `research` | 39 | Academic/thorough |
-| `full` | 42+ | Maximum capability |
+| Preset | Features | Use Case | Android Icon |
+|--------|----------|----------|--------------|
+| `minimal` | 8 | Fast, simple queries | FlashOn (green) |
+| `balanced` | 18 | Default for most queries | Balance (blue) |
+| `enhanced` | 28 | Complex research | TrendingUp (purple) |
+| `research` | 39 | Academic/thorough | Science (orange) |
+| `full` | 42+ | Maximum capability | AllInclusive (pink) |
+
+**Note**: Android app default changed from `full` to `balanced` on 2025-12-29 to reduce default resource consumption.
 
 ## SSE Event Flow
 
@@ -238,11 +265,27 @@ asyncio.run(test())
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 0.39.0 | 2025-12-29 | Phase 26: Feature synergy (Query Tree + CRAG, FLARE + Synthesis, Meta-Buffer) |
+| 0.38.0 | 2025-12-29 | Phase 25: Context curation (DIG scoring, redundancy detection) |
+| 0.37.0 | 2025-12-29 | Phase 24: Confidence-calibrated halting (entropy, self-consistency, bandit) |
+| 0.36.0 | 2025-12-29 | Phase 23: Enhanced query generation (FLARE, query tree) |
+| 0.35.0 | 2025-12-29 | Phase 22: Scratchpad enhancement (semantic memory, RAISE) |
+| 0.34.0 | 2025-12-29 | Phase 21: Template optimization (meta-buffer, reasoning composer) |
+| 0.33.0 | 2025-12-29 | HSEA controller for industrial troubleshooting |
+| 0.32.0 | 2025-12-29 | IMM corpus builder for injection molding |
+| 0.31.0 | 2025-12-29 | PDF API integration via DocumentGraphService |
+| 0.30.0 | 2025-12-29 | Adaptive refinement engine |
+| 0.29.0 | 2025-12-29 | Base pipeline abstraction |
+| 0.28.0 | 2025-12-29 | Orchestrator archival and backward-compat shims |
 | 0.27.1 | 2025-12-29 | Android SSE streaming, FANUC testing |
-| 0.27.0 | 2025-12-28 | Orchestrator consolidation |
+| 0.27.0 | 2025-12-28 | Orchestrator consolidation to UniversalOrchestrator |
 | 0.26.0 | 2025-12-28 | Context utilization tracking |
 | 0.25.0 | 2025-12-28 | Universal Orchestrator + 17 bug fixes |
 | 0.20.0 | 2025-12-27 | SSE graph visualization |
+| 0.19.0 | 2025-12-27 | RAGAS evaluation pipeline |
+| 0.18.0 | 2025-12-27 | HyDE query expansion |
+| 0.17.0 | 2025-12-27 | BGE-M3 hybrid retrieval |
+| 0.16.0 | 2025-12-27 | Mixed-precision embeddings |
 | 0.14.0 | 2025-12-27 | Domain corpus system |
 
 ## Related Documentation

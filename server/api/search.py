@@ -19,6 +19,8 @@ import os
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
+from config.settings import get_settings
+
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -124,14 +126,14 @@ async def get_universal_orchestrator(preset: str = "balanced") -> UniversalOrche
     global _universal_orchestrators
 
     if preset not in _universal_orchestrators:
-        import os
+        settings = get_settings()
         preset_enum = OrchestratorPreset(preset) if preset in [p.value for p in OrchestratorPreset] else OrchestratorPreset.BALANCED
         _universal_orchestrators[preset] = UniversalOrchestrator(
-            ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-            mcp_url=os.getenv("MCP_URL", "http://localhost:7777"),
-            brave_api_key=os.getenv("BRAVE_API_KEY"),
+            ollama_url=settings.ollama_base_url,
+            mcp_url=settings.mcp_url,
+            brave_api_key=settings.brave_api_key,
             preset=preset_enum,
-            db_path="/home/sparkone/sdd/Recovery_Bot/memOS/data"
+            db_path=settings.data_dir
         )
         await _universal_orchestrators[preset].initialize()
         logger.info(f"UniversalOrchestrator initialized with preset: {preset}")
@@ -199,7 +201,7 @@ async def get_classifier() -> QueryClassifier:
     if _classifier is None:
         import os
         _classifier = QueryClassifier(
-            ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+            ollama_url=get_settings().ollama_base_url
         )
         logger.info("Query classifier initialized (DeepSeek-R1 based)")
     return _classifier
@@ -785,8 +787,8 @@ async def universal_search(request: UniversalSearchRequest):
         # If overrides provided, create a custom orchestrator
         if overrides:
             orchestrator = UniversalOrchestrator(
-                ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-                mcp_url=os.getenv("MCP_URL", "http://localhost:7777"),
+                ollama_url=get_settings().ollama_base_url,
+                mcp_url=get_settings().mcp_url,
                 brave_api_key=os.getenv("BRAVE_API_KEY"),
                 preset=OrchestratorPreset(preset) if preset in [p.value for p in OrchestratorPreset] else OrchestratorPreset.BALANCED,
                 db_path="/home/sparkone/sdd/Recovery_Bot/memOS/data",
@@ -1042,8 +1044,8 @@ async def _execute_universal_streaming_search(
         # Create or get orchestrator
         if overrides:
             orchestrator = UniversalOrchestrator(
-                ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-                mcp_url=os.getenv("MCP_URL", "http://localhost:7777"),
+                ollama_url=get_settings().ollama_base_url,
+                mcp_url=get_settings().mcp_url,
                 brave_api_key=os.getenv("BRAVE_API_KEY"),
                 preset=OrchestratorPreset(preset) if preset in [p.value for p in OrchestratorPreset] else OrchestratorPreset.BALANCED,
                 db_path="/home/sparkone/sdd/Recovery_Bot/memOS/data",
@@ -1730,7 +1732,7 @@ async def get_multi_orchestrator() -> MultiAgentOrchestrator:
         orchestrator = await get_orchestrator()
 
         _multi_orchestrator = MultiAgentOrchestrator(
-            ollama_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            ollama_url=get_settings().ollama_base_url,
             scraper=orchestrator.scraper,
             searcher=orchestrator.searcher,
             max_iterations=5
@@ -2381,7 +2383,7 @@ async def initialize_graph_cache():
         from agentic.graph_cache_integration import initialize_graph_cache as init_graph
 
         import os
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
 
         integration = await init_graph(ollama_url)
         stats = integration.get_comprehensive_stats()
@@ -2950,7 +2952,7 @@ async def get_corpus_manager():
         _corpus_manager = _get_manager()
 
         # Register default schemas
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         _corpus_manager.register_corpus(create_fanuc_schema(), ollama_url)
         _corpus_manager.register_corpus(create_raspberry_pi_schema(), ollama_url)
 
@@ -3417,7 +3419,7 @@ async def register_custom_corpus(request: CorpusSchemaRequest):
         )
 
         # Register corpus
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         manager.register_corpus(schema, ollama_url)
 
         return {
@@ -3476,7 +3478,7 @@ async def entity_enhanced_query(request: EntityEnhancedQueryRequest):
     from agentic.entity_enhanced_retrieval import get_entity_enhanced_retriever
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         retriever = get_entity_enhanced_retriever(ollama_url)
 
         # Configure feature flags
@@ -3534,7 +3536,7 @@ async def get_entity_enhanced_stats():
     from agentic.entity_enhanced_retrieval import get_entity_enhanced_retriever
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         retriever = get_entity_enhanced_retriever(ollama_url)
         stats = retriever.get_stats()
 
@@ -3574,7 +3576,7 @@ async def classify_query_endpoint(request: ClassifyQueryRequest):
     from agentic.query_classifier import get_query_classifier
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         classifier = get_query_classifier(ollama_url)
 
         result = await classifier.classify(request.query, request.context)
@@ -3609,7 +3611,7 @@ async def get_classifier_stats():
     from agentic.query_classifier import get_query_classifier
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         classifier = get_query_classifier(ollama_url)
 
         return {
@@ -3634,7 +3636,7 @@ async def get_embedding_aggregator_stats():
     from agentic.embedding_aggregator import get_embedding_aggregator
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         aggregator = get_embedding_aggregator(ollama_url)
         stats = aggregator.get_stats()
 
@@ -3670,7 +3672,7 @@ async def index_entity_in_aggregator(request: IndexEntityRequest):
     from agentic.embedding_aggregator import get_embedding_aggregator
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         aggregator = get_embedding_aggregator(ollama_url)
 
         success = await aggregator.index_entity(
@@ -3720,7 +3722,7 @@ async def query_sub_manifold(request: SubManifoldQueryRequest):
     from agentic.embedding_aggregator import get_embedding_aggregator
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         aggregator = get_embedding_aggregator(ollama_url)
 
         results = await aggregator.retrieve_sub_manifold(
@@ -3813,7 +3815,7 @@ async def get_mixed_precision_stats():
     from agentic.mixed_precision_embeddings import get_mixed_precision_service
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         service = get_mixed_precision_service(ollama_url)
 
         stats = service.get_stats()
@@ -3845,7 +3847,7 @@ async def index_mixed_precision(request: MixedPrecisionIndexRequest):
     from agentic.mixed_precision_embeddings import get_mixed_precision_service
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         service = get_mixed_precision_service(ollama_url)
 
         result = await service.index_document(
@@ -3895,7 +3897,7 @@ async def mixed_precision_search(request: MixedPrecisionSearchRequest):
     from agentic.mixed_precision_embeddings import get_mixed_precision_service
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         service = get_mixed_precision_service(ollama_url)
 
         results, stats = await service.search(
@@ -3955,7 +3957,7 @@ async def mrl_hierarchical_search(request: MRLSearchRequest):
     from agentic.mixed_precision_embeddings import get_mixed_precision_service
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         service = get_mixed_precision_service(ollama_url)
 
         results, stats = await service.mrl_hierarchical_search(
@@ -4006,7 +4008,7 @@ async def create_anchor(request: CreateAnchorRequest):
     from agentic.mixed_precision_embeddings import get_mixed_precision_service
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         service = get_mixed_precision_service(ollama_url)
 
         anchor = await service.create_anchor_from_examples(
@@ -4051,7 +4053,7 @@ async def semantic_arithmetic(request: SemanticArithmeticRequest):
     from agentic.mixed_precision_embeddings import get_mixed_precision_service
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = get_settings().ollama_base_url
         service = get_mixed_precision_service(ollama_url)
 
         # Get embeddings
@@ -5038,7 +5040,7 @@ async def _execute_direct_answer(
         data={"model": request.model, "pipeline": "direct_answer"}
     ))
 
-    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    ollama_url = get_settings().ollama_base_url
 
     # Build messages
     messages = []
