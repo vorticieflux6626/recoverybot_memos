@@ -114,6 +114,39 @@ class BenchmarkReport:
 # FANUC BENCHMARK TEST CASES
 # ============================================
 
+# Realistic FANUC-related domains that web searches actually return
+# These include official sources, forums, integrators, and documentation aggregators
+FANUC_TRUSTED_DOMAINS: List[str] = [
+    # Official FANUC sources
+    "fanucamerica.com",
+    "techtransfer.fanucamerica.com",
+    "crc2.frc.com",
+    "fanuc-academy.uk",
+    # Industrial robotics forums
+    "robot-forum.com",
+    "plctalk.net",
+    "practicalmachinist.com",
+    "eng-tips.com",
+    "forum.diy-robotics.com",
+    # FANUC service providers/integrators
+    "2rirobotics.com",
+    "aerobotix.net",
+    "robotic.support",
+    "robotworx.com",
+    # Documentation aggregators
+    "everythingaboutrobots.com",
+    "manualslib.com",
+    "pdfcoffee.com",
+    # Technical communities
+    "reddit.com",
+    "emastercam.com",
+    "cnczone.com",
+    # General technical
+    "stackoverflow.com",
+    "electronics.stackexchange.com",
+    "robotics.stackexchange.com",
+]
+
 FANUC_BENCHMARK: List[BenchmarkQuery] = [
     # === EASY: Direct Error Code Lookups ===
     BenchmarkQuery(
@@ -121,7 +154,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.ERROR_CODE,
         difficulty=QueryDifficulty.EASY,
         expected_entities=["SRVO-063", "encoder", "pulsecoder", "calibration"],
-        expected_domains=["fanucamerica.com", "robot-forum.com", "techtransfer.fanucamerica.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["encoder failure", "RCAL", "mastering"],
         ground_truth_summary="SRVO-063 is a servo alarm indicating encoder/pulsecoder issues requiring recalibration",
         tags=["servo", "encoder", "calibration"]
@@ -131,7 +164,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.ERROR_CODE,
         difficulty=QueryDifficulty.EASY,
         expected_entities=["MOTN-023", "motion", "position"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["motion planning", "position error"],
         ground_truth_summary="MOTN-023 is a motion alarm related to position/trajectory planning",
         tags=["motion", "trajectory"]
@@ -141,7 +174,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.ERROR_CODE,
         difficulty=QueryDifficulty.EASY,
         expected_entities=["SYST-100", "system", "controller"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["system error", "controller"],
         ground_truth_summary="SYST-100 is a system-level alarm in the controller",
         tags=["system", "controller"]
@@ -151,7 +184,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.ERROR_CODE,
         difficulty=QueryDifficulty.EASY,
         expected_entities=["HOST-001", "communication", "network"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["host communication", "ethernet", "timeout"],
         ground_truth_summary="HOST-001 indicates host communication failure",
         tags=["communication", "network"]
@@ -161,7 +194,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.ERROR_CODE,
         difficulty=QueryDifficulty.EASY,
         expected_entities=["INTP-127", "interpreter", "program"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["program error", "syntax", "execution"],
         ground_truth_summary="INTP-127 is an interpreter alarm during program execution",
         tags=["interpreter", "program"]
@@ -173,7 +206,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.TROUBLESHOOTING,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["servo", "motor", "encoder", "vibration"],
-        expected_domains=["fanucamerica.com", "robot-forum.com", "plctalk.net"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["servo tuning", "mechanical wear", "encoder feedback"],
         ground_truth_summary="Jerking motion can be caused by servo tuning, encoder issues, or mechanical wear",
         tags=["motion", "servo", "mechanical"]
@@ -183,7 +216,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.TROUBLESHOOTING,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["SRVO", "overcurrent", "amplifier", "motor"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["current monitoring", "amplifier", "motor load"],
         safety_critical=True,
         ground_truth_summary="Intermittent overcurrent requires checking amplifier, motor, cabling, and load conditions",
@@ -194,7 +227,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.TROUBLESHOOTING,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["iRVision", "camera", "calibration", "drift"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["vision calibration", "camera mounting", "lighting"],
         ground_truth_summary="Vision drift can be caused by camera mounting, lighting, or calibration decay",
         tags=["vision", "calibration", "iRVision"]
@@ -204,7 +237,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.TROUBLESHOOTING,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["home", "position", "mastering", "encoder"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["mastering", "reference position", "encoder reset"],
         ground_truth_summary="Home position issues typically require remastering or encoder reference reset",
         tags=["mastering", "home", "position"]
@@ -214,7 +247,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.TROUBLESHOOTING,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["payload", "identification", "inertia", "mass"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["payload calculation", "inertia estimation", "tool weight"],
         ground_truth_summary="Payload identification requires proper motion conditions and tool mounting",
         tags=["payload", "calibration", "performance"]
@@ -226,7 +259,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.PROCEDURE,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["RCAL", "calibration", "encoder", "mastering"],
-        expected_domains=["fanucamerica.com", "techtransfer.fanucamerica.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["calibration procedure", "encoder reset", "reference position"],
         safety_critical=True,
         ground_truth_summary="RCAL is performed via MENU > SYSTEM > MASTER/CAL with specific axis motions",
@@ -237,7 +270,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.PROCEDURE,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["backup", "restore", "program", "USB", "memory"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["file management", "USB transfer", "program files"],
         ground_truth_summary="Backup via FILE > BACKUP, restore via FILE > RESTORE using USB or network",
         tags=["backup", "restore", "program"]
@@ -247,7 +280,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.PROCEDURE,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["zero", "mastering", "position", "fixture"],
-        expected_domains=["fanucamerica.com", "techtransfer.fanucamerica.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["mastering fixture", "zero position", "encoder reset"],
         safety_critical=True,
         ground_truth_summary="Zero mastering uses fixtures to align axes at known positions",
@@ -258,7 +291,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.PROCEDURE,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["user frame", "coordinate", "TCP", "teaching"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["coordinate system", "three-point method", "frame setup"],
         ground_truth_summary="User frames defined via three-point or four-point teaching method",
         tags=["frames", "coordinates", "setup"]
@@ -268,7 +301,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.PROCEDURE,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["TCP", "tool", "calibration", "offset"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["TCP definition", "six-point method", "tool offset"],
         ground_truth_summary="TCP calibration via six-point method touching reference point from different angles",
         tags=["TCP", "tool", "calibration"]
@@ -280,7 +313,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.TROUBLESHOOTING,
         difficulty=QueryDifficulty.HARD,
         expected_entities=["collision", "detection", "ACAL", "sensitivity", "torque"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["collision detection", "sensitivity tuning", "payload", "friction"],
         safety_critical=True,
         ground_truth_summary="False collision detection requires tuning sensitivity, payload verification, and friction compensation",
@@ -291,7 +324,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.TROUBLESHOOTING,
         difficulty=QueryDifficulty.HARD,
         expected_entities=["DCS", "safe position", "safety", "monitoring"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["DCS configuration", "safe zones", "position monitoring"],
         safety_critical=True,
         ground_truth_summary="DCS Safe Position errors require checking configuration, encoder accuracy, and zone definitions",
@@ -302,7 +335,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.TROUBLESHOOTING,
         difficulty=QueryDifficulty.HARD,
         expected_entities=["motor", "overheating", "temperature", "duty cycle"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["thermal management", "duty cycle", "current limiting", "cooling"],
         safety_critical=True,
         ground_truth_summary="Motor overheating can be caused by excessive duty cycle, undersized motor, or cooling issues",
@@ -313,7 +346,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.TROUBLESHOOTING,
         difficulty=QueryDifficulty.HARD,
         expected_entities=["EtherNet/IP", "communication", "PLC", "network", "timeout"],
-        expected_domains=["fanucamerica.com", "robot-forum.com", "plctalk.net"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["network diagnostics", "RPI settings", "timeout configuration"],
         ground_truth_summary="Sporadic drops require checking network infrastructure, RPI timing, and timeout settings",
         tags=["network", "communication", "PLC"]
@@ -323,7 +356,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.TROUBLESHOOTING,
         difficulty=QueryDifficulty.HARD,
         expected_entities=["cycle time", "speed", "acceleration", "CNT", "motion"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["motion optimization", "CNT settings", "speed override", "path planning"],
         ground_truth_summary="Cycle time optimization involves CNT settings, speed adjustments, and path optimization",
         tags=["performance", "optimization", "motion"]
@@ -335,7 +368,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.CONCEPTUAL,
         difficulty=QueryDifficulty.EXPERT,
         expected_entities=["KAREL", "memory", "program", "variables", "allocation"],
-        expected_domains=["fanucamerica.com", "techtransfer.fanucamerica.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["memory allocation", "variable scope", "program structure"],
         ground_truth_summary="KAREL memory management involves proper variable scoping, array sizing, and routine structure",
         tags=["KAREL", "programming", "advanced"]
@@ -345,7 +378,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.PROCEDURE,
         difficulty=QueryDifficulty.EXPERT,
         expected_entities=["servo", "gain", "tuning", "SVGN", "bandwidth"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["position gain", "velocity gain", "feedforward", "stability"],
         safety_critical=True,
         ground_truth_summary="Servo tuning involves adjusting position, velocity, and integral gains with stability monitoring",
@@ -356,7 +389,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.CONCEPTUAL,
         difficulty=QueryDifficulty.EXPERT,
         expected_entities=["multi-robot", "coordination", "interference", "zone", "semaphore"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["zone monitoring", "interference regions", "synchronization"],
         safety_critical=True,
         ground_truth_summary="Multi-robot coordination uses zones, semaphores, and interference checking for safe operation",
@@ -367,7 +400,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.PROCEDURE,
         difficulty=QueryDifficulty.EXPERT,
         expected_entities=["iRVision", "3D", "sensor", "calibration", "point cloud"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["3D calibration", "point cloud processing", "sensor mounting"],
         ground_truth_summary="3D vision integration requires sensor calibration, mounting alignment, and point cloud configuration",
         tags=["vision", "3D", "integration"]
@@ -377,7 +410,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.TROUBLESHOOTING,
         difficulty=QueryDifficulty.EXPERT,
         expected_entities=["conveyor", "tracking", "encoder", "synchronization", "line tracking"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["line tracking", "encoder feedback", "trigger timing"],
         ground_truth_summary="Conveyor tracking issues involve encoder setup, trigger timing, and synchronization window",
         tags=["conveyor", "tracking", "synchronization"]
@@ -389,7 +422,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.COMPARISON,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["R-30iA", "R-30iB", "controller", "features"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["controller generations", "feature comparison", "compatibility"],
         ground_truth_summary="R-30iB has improved processing, safety features, and network capabilities over R-30iA",
         tags=["controller", "comparison", "features"]
@@ -399,7 +432,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.COMPARISON,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["collaborative", "cobot", "industrial", "safety"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["safety requirements", "payload", "speed", "application suitability"],
         safety_critical=True,
         ground_truth_summary="Cobots suit human-collaborative work with lower payloads; industrial robots for high-speed isolated work",
@@ -412,7 +445,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.PARAMETER,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["$MCR_GRP", "system variable", "configuration"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["system variables", "group configuration", "motion control"],
         ground_truth_summary="$MCR_GRP controls motion group settings including acceleration and deceleration",
         tags=["parameters", "system variables"]
@@ -422,7 +455,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.PARAMETER,
         difficulty=QueryDifficulty.MEDIUM,
         expected_entities=["$SPEED", "$MOTYPE", "motion", "override"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["speed override", "motion type", "program control"],
         ground_truth_summary="$SPEED controls motion speed override; $MOTYPE sets motion type (joint/linear)",
         tags=["parameters", "motion", "speed"]
@@ -434,7 +467,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.TROUBLESHOOTING,
         difficulty=QueryDifficulty.HARD,
         expected_entities=["stop", "pause", "signal", "interlock"],
-        expected_domains=["fanucamerica.com", "robot-forum.com", "plctalk.net"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["external signals", "interlocks", "hold conditions"],
         ground_truth_summary="Random stops without alarms typically caused by external hold signals or interlocks",
         tags=["troubleshooting", "signals", "interlocks"]
@@ -444,7 +477,7 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         category=QueryCategory.PROCEDURE,
         difficulty=QueryDifficulty.EASY,
         expected_entities=["battery", "backup", "encoder", "memory"],
-        expected_domains=["fanucamerica.com", "robot-forum.com"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
         required_concepts=["battery replacement", "data backup", "encoder position"],
         safety_critical=True,
         ground_truth_summary="Replace batteries while powered to preserve encoder positions; backup data first",
