@@ -57,6 +57,57 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 22** | PDF Extraction Tools Integration | ✅ **COMPLETE** |
 | **Phase 23** | HSEA Three-Stratum Indexing | ✅ **COMPLETE** |
 | **Phase 24** | Engineering Remediation + Error Standardization | ✅ **COMPLETE** |
+| **Phase 25** | Feature Combination Audit + Calibration Plan | ✅ **COMPLETE** |
+
+#### ✅ Phase 25: Feature Combination Audit (Completed 2025-12-29)
+
+6-agent parallel research validated the feature combination architecture against 2025 research best practices.
+
+**Validation Results:**
+| Category | Status | Confidence |
+|----------|--------|------------|
+| RAG Technique Combinations | **CORRECT** | High |
+| Reasoning Framework Combinations | **CORRECT** | High |
+| Retrieval Optimization | **CORRECT** | High |
+| Quality Control Patterns | **MOSTLY CORRECT** | Medium-High |
+| Memory & Caching Architecture | **CORRECT** | High |
+| Multi-Agent Orchestration | **CORRECT** | High |
+
+**Key Findings:**
+1. **Pipeline order is correct**: `Query → HyDE → Search → CRAG → Scrape → Synthesize → Self-RAG → Response`
+2. **Reasoning layers are NOT redundant** - they operate at different abstraction levels:
+   - Layer 4: AIME (orchestration)
+   - Layer 3: Pre-Act (execution planning)
+   - Layer 2: GoT (reasoning structure)
+   - Layer 1: BoT (reasoning content)
+3. **Semantic cache threshold 0.88** is appropriate for mxbai-embed-large
+4. **A-MEM + RAISE are complementary** - cross-session vs per-request
+5. **Preset-based configuration aligns** with LangGraph, CrewAI, AutoGen patterns
+
+**Calibration Recommendations (P1):**
+- Align confidence weights: 40% verification, 25% diversity, 20% depth, 15% synthesis
+- UCB bandit c: 2.0 → 1.5 with warm-start priors
+- Self-consistency: Conditional 3-5 samples with early termination
+
+**Optimization Recommendations (P2):**
+- RAISE → A-MEM promotion for high-confidence findings (≥0.8)
+- STE-based cache eviction (KVFlow-inspired)
+- Time-decay for semantic cache freshness
+
+**Enhancement Recommendations (P3):**
+- Feature flag bundling (group related flags)
+- Circuit breaker for parallel search
+- LangGraph-style checkpointing
+
+**Research Validation Sources:**
+- CRAG: arXiv:2401.15884
+- Self-RAG: arXiv:2310.11511
+- HyDE: arXiv:2212.10496
+- GoT: arXiv:2308.09687
+- BoT: arXiv:2406.04271
+- AIME: ByteDance 2025 (77.6% GAIA)
+
+**Module Version**: `agentic/__init__.py` → v0.38.0
 
 #### ✅ Phase 24: Engineering Remediation (Completed 2025-12-29)
 

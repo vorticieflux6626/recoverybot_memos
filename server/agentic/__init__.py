@@ -819,4 +819,4 @@ __all__ = [
     "get_reasoning_composer",
 ]
 
-__version__ = "0.35.0"  # Phase 22: PDF Extraction Tools integration for FANUC technical documentation RAG
+__version__ = "0.38.0"  # Phase 25: Feature Combination Audit validated architecture + calibration plan
