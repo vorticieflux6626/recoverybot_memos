@@ -16,6 +16,7 @@ import hashlib
 import json
 import logging
 import os
+import random
 import sqlite3
 import threading
 import time
@@ -139,6 +140,24 @@ class ContentCache:
         normalized = " ".join(query.lower().split())
         return hashlib.sha256(normalized.encode()).hexdigest()[:32]
 
+    def _jitter_ttl(self, base_ttl: int, jitter_pct: float = 0.1) -> int:
+        """
+        Add random jitter to TTL to prevent cache stampede.
+
+        When multiple workers have cached the same content with identical TTLs,
+        they all expire at the same time, causing a "stampede" of simultaneous
+        refresh requests. Adding jitter spreads out the expiration times.
+
+        Args:
+            base_ttl: Base TTL in seconds
+            jitter_pct: Percentage of jitter (0.1 = ±10%)
+
+        Returns:
+            TTL with random jitter applied
+        """
+        jitter = int(base_ttl * jitter_pct)
+        return base_ttl + random.randint(-jitter, jitter)
+
     def get_content(self, url: str) -> Optional[Dict[str, Any]]:
         """
         Get cached content for a URL.
@@ -208,7 +227,8 @@ class ContentCache:
         url_hash = self._hash_url(url)
         content_hash = self._hash_content(content) if content else ""
         now = time.time()
-        ttl = ttl_override if ttl_override is not None else self.ttl_seconds
+        base_ttl = ttl_override if ttl_override is not None else self.ttl_seconds
+        ttl = self._jitter_ttl(base_ttl)  # Add jitter to prevent cache stampede
         expires_at = now + ttl
 
         with self._lock:
@@ -285,7 +305,8 @@ class ContentCache:
         query_hash = self._hash_query(query)
         now = time.time()
         # Query results have shorter TTL (15 min) as they may need fresher data
-        ttl = ttl_override if ttl_override is not None else 900
+        base_ttl = ttl_override if ttl_override is not None else 900
+        ttl = self._jitter_ttl(base_ttl)  # Add jitter to prevent cache stampede
         expires_at = now + ttl
 
         # Remove from_cache flag before storing
