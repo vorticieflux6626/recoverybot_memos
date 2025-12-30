@@ -1679,11 +1679,33 @@ GET  /api/tts/models/status              - Check which models are loaded
     - `academic`: arxiv, semantic_scholar, google_scholar, pubmed, base, crossref
     - `technical`: github, stackoverflow, pypi, npm, dockerhub
     - `general`: google, bing, duckduckgo, brave, wikipedia
-  - **80+ Trusted Domains**: Organized by category with tiered scoring
-  - **Premium Domains** (0.25 boost): arxiv.org, semanticscholar.org, pytorch.org, huggingface.co
-  - **Trusted Domains** (0.15 boost): stackoverflow.com, github.com, wikipedia.org
+  - **316 Trusted Domains**: Industrial automation knowledge base with tiered scoring
+  - **62 Premium Domains** (0.25 boost): literature.rockwellautomation.com, moldmasters.com, manualslib.com, bannerengineering.com, husky.co, incoe.com
+  - **Trusted Domains** (0.15 boost): stackoverflow.com, github.com, wikipedia.org, robot-forum.com, plasticsmachinerymagazine.com
+  - **Domain Categories** (12 total):
+    - **FANUC**: fanucamerica.com, techtransfer.fanucamerica.com, crc2.frc.com, fanuc-academy.uk
+    - **Allen-Bradley/Rockwell**: rockwellautomation.com, literature.rockwellautomation.com, plctalk.net
+    - **Siemens**: support.industry.siemens.com, siemens.com, siemens-healthineers.com
+    - **Industrial Sensors**: bannerengineering.com, turck.us, ifm.com, sick.com, omron.com, balluff.com
+    - **Hot Runner Systems**: moldmasters.com, husky.co, incoe.com, hitcontrols.com, synventive.com
+    - **IMM Manufacturers**: kraussmaffei.com, milacron.com, engel.at, arburg.com, jsw-plastics.com
+    - **Conveyors/Material Handling**: flexicon.com, dorner.com, mk-group.com, hytrol.com
+    - **Granulators/Size Reduction**: cumberland-plastics.com, rapid-granulator.com, herbold.com
+    - **TCUs/Chillers**: advantage-engineering.com, conairgroup.com, mokon.com, thermalcare.com
+    - **Dryers/Dehumidifiers**: novatec.com, wittmann-group.com, maguire.com
+    - **Forums**: robot-forum.com, plctalk.net, practicalmachinist.com, eng-tips.com
+    - **Manual Aggregators**: manualslib.com (9.6M+ PDFs), automationdirect.com
   - Key file: `agentic/searcher.py` - `TRUSTED_DOMAINS`, `PREMIUM_DOMAINS`, `ENGINE_GROUPS`
   - Documentation: `agentic/ACADEMIC_SEARCH_UPGRADE_PLAN.md`
+- **Industrial Automation Domain Integration** (NEW - December 2025):
+  - Comprehensive knowledge base for troubleshooting industrial equipment
+  - **Test Results** (specific equipment queries): 50-80% domain match rate
+    - KraussMaffei MC6 Euromap 67: 8/10 (80%) trusted domain matches
+    - FANUC R-30iB servo alarm: 6/10 (60%)
+    - Cincinnati Milacron CAMAC 486: 5/10 (50%)
+    - Van Dorn PathFinder: 6/10 (60%)
+    - Mold-Masters hot runner: 7/10 (70%)
+  - **Optimization**: Use specific brand/model terms for best results (generic queries may get diluted)
 - **Post-Scrape Content Coverage Evaluation** (NEW - December 2025):
   - Evaluates scraped content against decomposed questions using qwen3:8b
   - Identifies specific information gaps (e.g., missing costs, requirements, contact info)
