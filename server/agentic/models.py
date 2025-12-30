@@ -8,7 +8,7 @@ Follows the unified response format from UNIFIED_ARCHITECTURE_RECOMMENDATIONS.md
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 import uuid
 
 
@@ -330,8 +330,8 @@ class SearchResponse(BaseModel):
     meta: SearchMeta
     errors: List[Dict[str, str]] = Field(default_factory=list)
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "data": {
@@ -357,6 +357,7 @@ class SearchResponse(BaseModel):
                 "errors": []
             }
         }
+    )
 
 
 class SearchResult(BaseModel):

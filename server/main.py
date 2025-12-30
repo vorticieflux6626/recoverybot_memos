@@ -3,6 +3,9 @@ memOS Server Main Application
 FastAPI server for Recovery Bot memory system with HIPAA compliance
 """
 
+# MUST be first import to suppress third-party deprecation warnings
+import suppress_warnings  # noqa: F401
+
 import asyncio
 import logging
 import signal
