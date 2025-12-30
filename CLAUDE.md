@@ -38,7 +38,7 @@ memOS is the **central intelligence layer** for the Recovery Bot ecosystem, resp
 ### Core Architecture Principle
 memOS serves as the **Single Source of Truth (SSOT)** for user context, memory, and intelligent data retrieval. All context augmentation flows through memOS before reaching the primary LLM.
 
-## Current Status (2025-12-29)
+## Current Status (2025-12-30)
 
 ### Next-Gen Enhancement Plan (December 2025)
 
@@ -83,6 +83,58 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 25** | Feature Combination Audit + Calibration Plan | ✅ **COMPLETE** |
 | **Phase 26** | Feature Synergy Integration | ✅ **COMPLETE** |
 | **Phase 27** | FANUC Ingestion Pipeline Design | ✅ **RESEARCH COMPLETE** |
+| **Part F** | Benchmark Test Suite + Technical Accuracy Scorer | ✅ **COMPLETE** |
+
+#### ✅ Part F: Benchmark Test Suite (Completed 2025-12-30)
+
+Comprehensive domain-specific benchmark system for FANUC troubleshooting quality evaluation:
+
+**New Components:**
+- **`agentic/benchmark.py`** (~900 lines): Complete benchmark framework
+
+**Benchmark Test Set (F.1):**
+| Category | Count | Examples |
+|----------|-------|----------|
+| error_code | 8 | SRVO-063, MOTN-023, SYST-032 |
+| troubleshooting | 7 | Vibration, noise, intermittent issues |
+| procedure | 5 | Mastering, calibration, backup |
+| comparison | 4 | Control modes, safety features |
+| conceptual | 4 | DCS, RCAL, servo systems |
+| parameter | 3 | $PARAM_GROUP adjustments |
+
+**Difficulty Distribution:**
+- EASY: 8 queries (single error code lookup)
+- MEDIUM: 10 queries (multi-step reasoning)
+- HARD: 8 queries (cross-domain knowledge)
+- EXPERT: 5 queries (system integration)
+
+**Technical Accuracy Scorer (F.2):**
+| Metric | Weight | Description |
+|--------|--------|-------------|
+| entity_coverage | 0.25 | Expected entities found |
+| concept_coverage | 0.25 | Required concepts present |
+| domain_match | 0.20 | Sources from trusted domains |
+| safety_present | 0.10 | Safety terms when required |
+| procedure_completeness | 0.10 | Step/action density |
+| term_accuracy | 0.10 | Technical term presence |
+
+**Usage:**
+```python
+from agentic import FANUC_BENCHMARK, TechnicalAccuracyScorer, run_benchmark
+
+# Run full benchmark
+report = await run_benchmark(orchestrator)
+print(f"Pass rate: {report.pass_rate:.1%}")
+
+# Filter by difficulty
+hard_queries = filter_benchmark(difficulty=QueryDifficulty.HARD)
+
+# Score single answer
+scorer = TechnicalAccuracyScorer()
+score = scorer.score(answer, benchmark_query, sources)
+```
+
+**Module Version**: `agentic/__init__.py` → v0.40.0
 
 #### ✅ Phase 27: FANUC Ingestion Pipeline Design (Research Complete 2025-12-30)
 
@@ -1599,14 +1651,16 @@ Passed: 4/4
 
 **Module Version**: `agentic/__init__.py` → v0.4.0
 
-## Current Status (2025-12-29)
+## Current Status (2025-12-30)
 
-**Module Version**: `agentic/__init__.py` → v0.39.0 (Phase 26: Feature Synergy Integration)
+**Module Version**: `agentic/__init__.py` → v0.40.0 (Part F: Benchmark Test Suite + Technical Accuracy Scorer)
 
 ### Recently Completed (December 2025)
 
 | Phase | Feature | Description |
 |-------|---------|-------------|
+| Part F | Benchmark Suite | 31 FANUC queries + TechnicalAccuracyScorer |
+| Phase 27 | FANUC Ingestion | 7-stage pipeline design, GLiNER, PathRAG |
 | Phase 26 | Feature Synergy | Query Tree + CRAG, FLARE + Synthesis, Meta-Buffer templates |
 | Phase 25 | Context Curation | DIG scoring, redundancy detection, context curator |
 | Phase 24 | Confidence Halting | Entropy monitoring, self-consistency, iteration bandit |
