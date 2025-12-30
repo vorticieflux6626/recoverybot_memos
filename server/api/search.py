@@ -1651,7 +1651,8 @@ async def get_performance_metrics_endpoint():
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "version": "1.0.0",
                 "description": "Agentic search performance metrics"
-            }
+            },
+            "errors": []
         }
 
     except Exception as e:
@@ -5884,7 +5885,8 @@ async def hsea_search(request: HSEASearchRequest):
             },
             "meta": {
                 "timestamp": datetime.now(timezone.utc).isoformat()
-            }
+            },
+            "errors": []
         })
 
     except Exception as e:
@@ -6063,7 +6065,8 @@ async def hsea_stats():
             "data": stats,
             "meta": {
                 "timestamp": datetime.now(timezone.utc).isoformat()
-            }
+            },
+            "errors": []
         })
 
     except Exception as e:

@@ -642,6 +642,435 @@ HMI_ACRONYMS: Dict[str, AcronymInfo] = {
 
 
 # ============================================
+# RJG Scientific Molding Acronyms
+# ============================================
+SCIENTIFIC_MOLDING_ACRONYMS: Dict[str, AcronymInfo] = {
+    # RJG Products
+    "eDART": AcronymInfo(
+        expansion="Electronic Data Acquisition in Real Time",
+        category="rjg",
+        description="RJG cavity pressure monitoring system"
+    ),
+    "COPILOT": AcronymInfo(
+        expansion="CoPilot Process Monitoring Dashboard",
+        category="rjg",
+        description="RJG real-time process visualization",
+        aliases=["CoPilot"]
+    ),
+    "LEYII": AcronymInfo(
+        expansion="Lynx Temperature Controller",
+        category="rjg",
+        description="RJG intelligent temperature controller"
+    ),
+    # Scientific Molding Methodology
+    "DIII": AcronymInfo(
+        expansion="Decoupled III Molding Process",
+        category="scientific_molding",
+        description="RJG advanced velocity-to-pressure transfer method",
+        aliases=["D3", "Decoupled III"]
+    ),
+    "DII": AcronymInfo(
+        expansion="Decoupled II Molding Process",
+        category="scientific_molding",
+        description="Velocity/pressure decoupled molding",
+        aliases=["D2", "Decoupled II"]
+    ),
+    "VP": AcronymInfo(
+        expansion="Velocity-to-Pressure Transfer",
+        category="scientific_molding",
+        description="Switchover point from fill to pack phase"
+    ),
+    "FPH": AcronymInfo(
+        expansion="Fill-Pack-Hold Process Phases",
+        category="scientific_molding",
+        description="Three main injection phases"
+    ),
+    # Quality and Statistics
+    "CPK": AcronymInfo(
+        expansion="Process Capability Index",
+        category="quality",
+        description="Statistical measure of process capability (target: >1.33)",
+        aliases=["Cpk", "Cp"]
+    ),
+    "SPC": AcronymInfo(
+        expansion="Statistical Process Control",
+        category="quality",
+        description="Statistical monitoring of process variation"
+    ),
+    "DOE": AcronymInfo(
+        expansion="Design of Experiments",
+        category="quality",
+        description="Systematic method to determine process relationships"
+    ),
+    "OEE": AcronymInfo(
+        expansion="Overall Equipment Effectiveness",
+        category="quality",
+        description="Machine availability × performance × quality"
+    ),
+    "FPY": AcronymInfo(
+        expansion="First Pass Yield",
+        category="quality",
+        description="Percentage of parts good on first attempt"
+    ),
+    "PPM": AcronymInfo(
+        expansion="Parts Per Million Defects",
+        category="quality",
+        description="Quality metric for defect rate"
+    ),
+    # Material Properties
+    "MFR": AcronymInfo(
+        expansion="Melt Flow Rate",
+        category="material",
+        description="Material flow property (g/10 min)",
+        aliases=["MFI", "MIF"]
+    ),
+    "MVR": AcronymInfo(
+        expansion="Melt Volume Rate",
+        category="material",
+        description="Volumetric flow rate (cm³/10 min)"
+    ),
+    "TG": AcronymInfo(
+        expansion="Glass Transition Temperature",
+        category="material",
+        description="Temperature where amorphous polymer becomes rubbery",
+        aliases=["Tg"]
+    ),
+    "TM": AcronymInfo(
+        expansion="Melt Temperature",
+        category="material",
+        description="Temperature where crystalline polymer flows",
+        aliases=["Tm"]
+    ),
+    # Cavity Pressure Sensors
+    "CPT": AcronymInfo(
+        expansion="Cavity Pressure Transducer",
+        category="sensor",
+        description="Sensor measuring pressure inside mold cavity"
+    ),
+    "PSI": AcronymInfo(
+        expansion="Pounds per Square Inch",
+        category="measurement",
+        description="Pressure unit commonly used in US molding"
+    ),
+    # Machine Interface
+    "EM67": AcronymInfo(
+        expansion="Euromap 67 Interface Standard",
+        category="interface",
+        description="Robot-IMM communication standard"
+    ),
+    "EM77": AcronymInfo(
+        expansion="Euromap 77 Interface Standard",
+        category="interface",
+        description="Real-time data acquisition standard"
+    ),
+    "EM82": AcronymInfo(
+        expansion="Euromap 82 Interface Standard",
+        category="interface",
+        description="OPC-UA based machine communication"
+    ),
+    # Process Terms
+    "SVP": AcronymInfo(
+        expansion="Specific Viscosity Profile",
+        category="scientific_molding",
+        description="Viscosity curve during injection"
+    ),
+    "GST": AcronymInfo(
+        expansion="Gate Seal Time",
+        category="scientific_molding",
+        description="Time for gate to freeze off"
+    ),
+    "CTI": AcronymInfo(
+        expansion="Cooling Time Index",
+        category="scientific_molding",
+        description="Standardized cooling time calculation"
+    ),
+    # Defect Terms
+    "BSR": AcronymInfo(
+        expansion="Burn/Scorch/Record Groove",
+        category="defect",
+        description="Thermal degradation defects"
+    ),
+}
+
+
+# ============================================
+# PLC/Automation Acronyms (Allen-Bradley, Siemens, AutomationDirect)
+# ============================================
+PLC_ACRONYMS: Dict[str, AcronymInfo] = {
+    # General PLC
+    "PLC": AcronymInfo(
+        expansion="Programmable Logic Controller",
+        category="plc",
+        description="Industrial control computer for automation"
+    ),
+    "PAC": AcronymInfo(
+        expansion="Programmable Automation Controller",
+        category="plc",
+        description="Advanced PLC with PC-like capabilities"
+    ),
+    "DCS": AcronymInfo(
+        expansion="Distributed Control System",
+        category="plc",
+        description="Process control system with distributed I/O",
+        aliases=["Distributed Controls"]
+    ),
+    "SCADA": AcronymInfo(
+        expansion="Supervisory Control and Data Acquisition",
+        category="plc",
+        description="Industrial monitoring and control system"
+    ),
+    "RTU": AcronymInfo(
+        expansion="Remote Terminal Unit",
+        category="plc",
+        description="Remote I/O controller for SCADA systems"
+    ),
+
+    # Allen-Bradley/Rockwell Specific
+    "RSLogix": AcronymInfo(
+        expansion="Rockwell Software Logix Programming",
+        category="allen_bradley",
+        description="PLC programming software for Allen-Bradley"
+    ),
+    "RSLinx": AcronymInfo(
+        expansion="Rockwell Software Linx Communication",
+        category="allen_bradley",
+        description="Communication server for Allen-Bradley PLCs"
+    ),
+    "AOI": AcronymInfo(
+        expansion="Add-On Instruction",
+        category="allen_bradley",
+        description="Reusable custom instruction in ControlLogix/CompactLogix",
+        aliases=["Add On Instruction"]
+    ),
+    "UDT": AcronymInfo(
+        expansion="User-Defined Data Type",
+        category="allen_bradley",
+        description="Custom data structure in Allen-Bradley PLCs"
+    ),
+    "GSV": AcronymInfo(
+        expansion="Get System Value",
+        category="allen_bradley",
+        description="Instruction to read controller system data"
+    ),
+    "SSV": AcronymInfo(
+        expansion="Set System Value",
+        category="allen_bradley",
+        description="Instruction to write controller system data"
+    ),
+    "MSG": AcronymInfo(
+        expansion="Message Instruction",
+        category="allen_bradley",
+        description="Communication instruction between PLCs"
+    ),
+    "CIP": AcronymInfo(
+        expansion="Common Industrial Protocol",
+        category="allen_bradley",
+        description="Protocol for EtherNet/IP and DeviceNet"
+    ),
+    "EDS": AcronymInfo(
+        expansion="Electronic Data Sheet",
+        category="allen_bradley",
+        description="Device configuration file for network devices"
+    ),
+    "ACD": AcronymInfo(
+        expansion="Archive Copy of Device",
+        category="allen_bradley",
+        description="Studio 5000 project file format"
+    ),
+    "RPI": AcronymInfo(
+        expansion="Requested Packet Interval",
+        category="allen_bradley",
+        description="Communication scan rate in milliseconds"
+    ),
+
+    # Siemens Specific
+    "TIA": AcronymInfo(
+        expansion="Totally Integrated Automation",
+        category="siemens",
+        description="Siemens integrated automation framework"
+    ),
+    "WinCC": AcronymInfo(
+        expansion="Windows Control Center",
+        category="siemens",
+        description="Siemens SCADA and HMI software"
+    ),
+    "OB": AcronymInfo(
+        expansion="Organization Block",
+        category="siemens",
+        description="Siemens S7 main program structure",
+        aliases=["Organisation Block"]
+    ),
+    "FB": AcronymInfo(
+        expansion="Function Block",
+        category="siemens",
+        description="Siemens S7 reusable logic with instance data"
+    ),
+    "FC": AcronymInfo(
+        expansion="Function",
+        category="siemens",
+        description="Siemens S7 reusable logic without instance data"
+    ),
+    "DB": AcronymInfo(
+        expansion="Data Block",
+        category="siemens",
+        description="Siemens S7 data storage area"
+    ),
+    "SFB": AcronymInfo(
+        expansion="System Function Block",
+        category="siemens",
+        description="Built-in Siemens function block"
+    ),
+    "SFC": AcronymInfo(
+        expansion="System Function",
+        category="siemens",
+        description="Built-in Siemens function"
+    ),
+    "MPI": AcronymInfo(
+        expansion="Multi-Point Interface",
+        category="siemens",
+        description="Siemens S7 programming interface"
+    ),
+    "PG": AcronymInfo(
+        expansion="Programming Device",
+        category="siemens",
+        description="Computer for programming Siemens PLCs"
+    ),
+    "CPU": AcronymInfo(
+        expansion="Central Processing Unit",
+        category="plc",
+        description="Main processor module in PLC"
+    ),
+    "IM": AcronymInfo(
+        expansion="Interface Module",
+        category="siemens",
+        description="Siemens rack interconnect module"
+    ),
+
+    # Communication Protocols
+    "EIP": AcronymInfo(
+        expansion="EtherNet/IP",
+        category="protocol",
+        description="Industrial Ethernet protocol (Rockwell, ODVA)"
+    ),
+    "PN": AcronymInfo(
+        expansion="Profinet",
+        category="protocol",
+        description="Siemens industrial Ethernet standard"
+    ),
+    "DP": AcronymInfo(
+        expansion="Decentralized Periphery",
+        category="protocol",
+        description="Profibus DP remote I/O"
+    ),
+    "OPC": AcronymInfo(
+        expansion="Open Platform Communications",
+        category="protocol",
+        description="Industrial data exchange standard"
+    ),
+    "OPC-UA": AcronymInfo(
+        expansion="OPC Unified Architecture",
+        category="protocol",
+        description="Modern secure industrial protocol",
+        aliases=["OPCUA", "OPC UA"]
+    ),
+
+    # I/O and Addressing
+    "DI": AcronymInfo(
+        expansion="Digital Input",
+        category="io",
+        description="Discrete/binary input signal"
+    ),
+    "DO": AcronymInfo(
+        expansion="Digital Output",
+        category="io",
+        description="Discrete/binary output signal"
+    ),
+    "AI": AcronymInfo(
+        expansion="Analog Input",
+        category="io",
+        description="4-20mA or 0-10V input signal"
+    ),
+    "AO": AcronymInfo(
+        expansion="Analog Output",
+        category="io",
+        description="4-20mA or 0-10V output signal"
+    ),
+    "HSC": AcronymInfo(
+        expansion="High-Speed Counter",
+        category="io",
+        description="Fast pulse counting input"
+    ),
+    "PWM": AcronymInfo(
+        expansion="Pulse Width Modulation",
+        category="io",
+        description="Variable duty cycle output"
+    ),
+
+    # Programming Instructions
+    "XIC": AcronymInfo(
+        expansion="Examine If Closed",
+        category="ladder_logic",
+        description="Normally open contact instruction"
+    ),
+    "XIO": AcronymInfo(
+        expansion="Examine If Open",
+        category="ladder_logic",
+        description="Normally closed contact instruction"
+    ),
+    "OTE": AcronymInfo(
+        expansion="Output Energize",
+        category="ladder_logic",
+        description="Standard output coil instruction"
+    ),
+    "OTL": AcronymInfo(
+        expansion="Output Latch",
+        category="ladder_logic",
+        description="Latching output instruction"
+    ),
+    "OTU": AcronymInfo(
+        expansion="Output Unlatch",
+        category="ladder_logic",
+        description="Unlatching output instruction"
+    ),
+    "TON": AcronymInfo(
+        expansion="Timer On-Delay",
+        category="ladder_logic",
+        description="Delays turning on"
+    ),
+    "TOF": AcronymInfo(
+        expansion="Timer Off-Delay",
+        category="ladder_logic",
+        description="Delays turning off"
+    ),
+    "RTO": AcronymInfo(
+        expansion="Retentive Timer On",
+        category="ladder_logic",
+        description="Accumulating timer"
+    ),
+    "CTU": AcronymInfo(
+        expansion="Count Up",
+        category="ladder_logic",
+        description="Up counter instruction"
+    ),
+    "CTD": AcronymInfo(
+        expansion="Count Down",
+        category="ladder_logic",
+        description="Down counter instruction"
+    ),
+    "JSR": AcronymInfo(
+        expansion="Jump to Subroutine",
+        category="ladder_logic",
+        description="Call subroutine/routine"
+    ),
+    "RET": AcronymInfo(
+        expansion="Return",
+        category="ladder_logic",
+        description="Return from subroutine"
+    ),
+}
+
+
+# ============================================
 # Combined Dictionary
 # ============================================
 INDUSTRIAL_ACRONYMS: Dict[str, AcronymInfo] = {
@@ -653,6 +1082,8 @@ INDUSTRIAL_ACRONYMS: Dict[str, AcronymInfo] = {
     **PROTOCOL_ACRONYMS,
     **CONTROLLER_ACRONYMS,
     **HMI_ACRONYMS,
+    **SCIENTIFIC_MOLDING_ACRONYMS,
+    **PLC_ACRONYMS,
 }
 
 
@@ -863,4 +1294,8 @@ def get_dictionary_stats() -> Dict[str, int]:
         "imm_terms": len(IMM_ACRONYMS),
         "safety_terms": len(SAFETY_ACRONYMS),
         "protocol_terms": len(PROTOCOL_ACRONYMS),
+        "controller_terms": len(CONTROLLER_ACRONYMS),
+        "hmi_terms": len(HMI_ACRONYMS),
+        "scientific_molding_terms": len(SCIENTIFIC_MOLDING_ACRONYMS),
+        "plc_terms": len(PLC_ACRONYMS),
     }

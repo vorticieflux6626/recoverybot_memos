@@ -243,6 +243,22 @@ from .domain_corpus import (
     get_corpus_manager,
     initialize_default_corpuses
 )
+from .rjg_corpus_scraper import (
+    RJGCorpusScraper,
+    ScrapeResult,
+    create_rjg_corpus_schema,
+    get_rjg_scraper,
+    RJG_SEED_URLS,
+    RJG_ARTICLE_URLS
+)
+from .plc_corpus_scraper import (
+    PLCCorpusScraper,
+    ScrapeResult as PLCScrapeResult,
+    create_plc_corpus_schema,
+    get_plc_scraper,
+    PLC_SEED_URLS,
+    PLC_ARTICLE_URLS
+)
 from .acronym_dictionary import (
     AcronymInfo,
     INDUSTRIAL_ACRONYMS,
@@ -675,6 +691,20 @@ __all__ = [
     "create_raspberry_pi_schema",
     "get_corpus_manager",
     "initialize_default_corpuses",
+    # RJG Scientific Molding Corpus (December 2025)
+    "RJGCorpusScraper",
+    "ScrapeResult",
+    "create_rjg_corpus_schema",
+    "get_rjg_scraper",
+    "RJG_SEED_URLS",
+    "RJG_ARTICLE_URLS",
+    # PLC/Automation Corpus (December 2025)
+    "PLCCorpusScraper",
+    "PLCScrapeResult",
+    "create_plc_corpus_schema",
+    "get_plc_scraper",
+    "PLC_SEED_URLS",
+    "PLC_ARTICLE_URLS",
     # Industrial Acronym Dictionary (December 2025)
     "AcronymInfo",
     "INDUSTRIAL_ACRONYMS",

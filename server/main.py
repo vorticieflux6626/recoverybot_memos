@@ -66,6 +66,15 @@ except ImportError as e:
     TTS_ENABLED = False
     logging.getLogger("memos_server").warning(f"TTS API disabled: {e}")
 
+# System health aggregator router (reads SYSTEM_MANIFEST.yaml)
+try:
+    from api.system_health import router as system_health_router
+    SYSTEM_HEALTH_ENABLED = True
+except ImportError as e:
+    system_health_router = None
+    SYSTEM_HEALTH_ENABLED = False
+    logging.getLogger("memos_server").warning(f"System health API disabled: {e}")
+
 # Configure logging
 setup_logging()
 logger = logging.getLogger("memos_server")
@@ -164,6 +173,11 @@ if MODELS_ENABLED and models_router:
 if TTS_ENABLED and tts_router:
     app.include_router(tts_router, prefix="/api")
     logger.info("TTS endpoints enabled at /api/tts/*")
+
+# Include system health aggregator if available
+if SYSTEM_HEALTH_ENABLED and system_health_router:
+    app.include_router(system_health_router)
+    logger.info("System health endpoints enabled at /api/v1/system/*")
 
 # Mount static files for Sherpa-ONNX TTS models
 # Models are served from: /api/models/sherpa-onnx/{model_dir}/{file}

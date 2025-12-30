@@ -6,7 +6,8 @@ Provides CRUD operations and refresh functionality for model metadata.
 """
 
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -90,7 +91,7 @@ async def refresh_model_specs(
         )
 
 
-@router.get("/specs", response_model=List[ModelSpecResponse])
+@router.get("/specs")
 async def get_model_specs(
     capability: Optional[str] = Query(default=None, description="Filter by capability (e.g., 'reasoning', 'code', 'vision')"),
     max_vram: Optional[float] = Query(default=None, description="Max VRAM in GB"),
@@ -122,7 +123,17 @@ async def get_model_specs(
                 if capability in s.capabilities
             ]
 
-        return specs_list
+        return {
+            "success": True,
+            "data": {
+                "models": [s.model_dump() for s in specs_list],
+                "count": len(specs_list)
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        }
 
     except Exception as e:
         logger.error(f"Failed to get model specs: {e}")
@@ -270,7 +281,11 @@ async def get_gpu_status():
         summary = await monitor.get_summary()
         return {
             "success": True,
-            "data": summary
+            "data": summary,
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
         }
     except Exception as e:
         logger.error(f"Failed to get GPU status: {e}")

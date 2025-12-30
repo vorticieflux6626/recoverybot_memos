@@ -928,6 +928,7 @@ class SearcherAgent:
         "plasticstoday.com",
         "plasticsnews.com",
         "rjginc.com",                  # RJG Scientific Molding
+        "rjginc.learnupon.com",        # RJG eDart Training Portal
         "traininteractive.com",
         "aim.institute",               # American Injection Molding Institute
         "4spe.org",                    # Society of Plastics Engineers
@@ -937,6 +938,13 @@ class SearcherAgent:
         "elastron.com",                # Defect troubleshooting guides
         "waykenrm.com",                # Molding problems/solutions
         "guanxin-machinery.com",       # Error codes/troubleshooting
+        "imflux.com",                  # P&G Adaptive Process Control
+        "plastechcorp.com",            # Engineering thermoplastics
+
+        # ===== Cavity Pressure Monitoring / Scientific Molding Sensors =====
+        "priamus.com",                 # Priamus cavity pressure monitoring
+        "kistler.com",                 # Kistler piezoelectric sensors
+        "rfrreading.com",              # RFR Reading mold sensors
 
         # ===== Machine Manufacturers (Premium for IMM) =====
         "kraussmaffei.com",
@@ -1294,9 +1302,11 @@ class SearcherAgent:
         "literature.rockwellautomation.com", "rockwellautomation.com",
         "support.industry.siemens.com",
         # Injection Molding / Euromap (Premium for IMM queries)
-        "euromap.org", "ptonline.com", "rjginc.com",
+        "euromap.org", "ptonline.com", "rjginc.com", "rjginc.learnupon.com",
         "kraussmaffei.com", "milacron.com", "sumitomo-shi-demag.us",
-        "trainingacademy.kraussmaffei.com", "pdfcoffee.com",
+        "trainingacademy.kraussmaffei.com", "pdfcoffee.com", "imflux.com",
+        # Scientific Molding / Cavity Pressure (Premium)
+        "priamus.com", "kistler.com",
         # FANUC Official & High-Value (Premium)
         "fanuc.eu", "robot-forum.com", "techtransfer.fanucamerica.com",
         "fanucamerica.com", "diy-robotics.com", "therobotguyllc.com",

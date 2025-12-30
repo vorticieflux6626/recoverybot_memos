@@ -28,6 +28,54 @@
    source venv/bin/activate  # REQUIRED before pytest, python, pip
    ```
 
+## SSOT Responsibilities
+
+memOS is the authoritative source for:
+
+| Data Domain | Description |
+|-------------|-------------|
+| **User Authentication** | JWT tokens, sessions, user identity |
+| **User Profiles** | Preferences, settings, consent |
+| **Quests & Progress** | All quest logic, achievements, gamification |
+| **User Memories** | Semantic memory storage with privacy controls |
+| **Chat Context** | Conversation history, context injection |
+| **Agentic Search** | Orchestration, caching, synthesis |
+
+## Dependencies
+
+| Service | Port | Required | Purpose |
+|---------|------|----------|---------|
+| Ollama | 11434 | Yes | LLM inference |
+| PostgreSQL | 5432 | Yes | Primary database with pgvector |
+| SearXNG | 8888 | No | Metasearch (fallback to DDG) |
+| Redis | 6379 | No | Session caching |
+| PDF Tools API | 8002 | No | FANUC document retrieval |
+
+## Testing
+
+```bash
+# Activate venv first
+cd /home/sparkone/sdd/Recovery_Bot/memOS/server
+source venv/bin/activate
+
+# Run all tests
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ -v --cov=agentic --cov-report=term-missing
+
+# Run specific test file
+pytest tests/unit/test_orchestrator_presets.py -v
+
+# Run integration tests only
+pytest tests/integration/ -v
+```
+
+**Test Directories:**
+- `tests/unit/` - Isolated unit tests
+- `tests/integration/` - Cross-component tests
+- `tests/contracts/` - API contract validation (via root tests/)
+
 ## Overview
 
 memOS is a memory management, quest/gamification, and **intelligent data injection** system for the Recovery Bot Android application. It provides REST APIs for storing user memories, tracking progress through quests and achievements, and **orchestrating agentic AI workflows for enhanced research and troubleshooting assistance**.
