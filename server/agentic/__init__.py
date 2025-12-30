@@ -487,6 +487,21 @@ from .reasoning_composer import (
     get_reasoning_composer
 )
 
+# Part F: Evaluation & Metrics (December 2025)
+from .benchmark import (
+    BenchmarkQuery,
+    BenchmarkResult,
+    BenchmarkReport,
+    TechnicalAccuracyScorer,
+    BenchmarkRunner,
+    QueryDifficulty,
+    QueryCategory,
+    FANUC_BENCHMARK,
+    run_benchmark,
+    get_benchmark_stats,
+    filter_benchmark
+)
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -840,6 +855,18 @@ __all__ = [
     "ComposedStrategy",
     "ModuleDefinition",
     "get_reasoning_composer",
+    # Part F: Evaluation & Metrics (December 2025)
+    "BenchmarkQuery",
+    "BenchmarkResult",
+    "BenchmarkReport",
+    "TechnicalAccuracyScorer",
+    "BenchmarkRunner",
+    "QueryDifficulty",
+    "QueryCategory",
+    "FANUC_BENCHMARK",
+    "run_benchmark",
+    "get_benchmark_stats",
+    "filter_benchmark",
 ]
 
-__version__ = "0.39.0"  # Phase 26: Feature Synergy Integration (Query Tree + CRAG, FLARE + Synthesis, Meta-Buffer templates)
+__version__ = "0.40.0"  # Part F: Benchmark Test Suite + Technical Accuracy Scorer
