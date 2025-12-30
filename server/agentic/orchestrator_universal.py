@@ -3359,8 +3359,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
         # Notify graph cache before search phase (for caching/prefetching)
         scratchpad_state = {
             "mission": request.query,
-            "sub_questions": [q.text if hasattr(q, 'text') else str(q)
-                            for q in (scratchpad.mission.sub_questions if scratchpad.mission else [])],
+            "sub_questions": [q.question_text if hasattr(q, 'question_text') else str(q)
+                            for q in scratchpad.questions.values()] if hasattr(scratchpad, 'questions') else [],
         }
         cached_data = await self._graph_before_agent(request_id, AgentType.SEARCHER, scratchpad_state)
         if cached_data.get("cached_subqueries"):
@@ -3691,7 +3691,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
         # Notify graph cache before scrape phase
         scratchpad_state = {
-            "findings": [{"content": f.content[:200]} for f in (scratchpad.findings[:10] if scratchpad else [])]
+            "findings": [{"content": f.content[:200]} for f in list(scratchpad.findings.values())[:10]] if scratchpad and hasattr(scratchpad, 'findings') else []
         }
         cached_data = await self._graph_before_agent(request_id, AgentType.SCRAPER, scratchpad_state)
 
