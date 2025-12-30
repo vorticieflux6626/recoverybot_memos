@@ -82,6 +82,50 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 24** | Engineering Remediation + Error Standardization | ✅ **COMPLETE** |
 | **Phase 25** | Feature Combination Audit + Calibration Plan | ✅ **COMPLETE** |
 | **Phase 26** | Feature Synergy Integration | ✅ **COMPLETE** |
+| **Phase 27** | FANUC Ingestion Pipeline Design | ✅ **RESEARCH COMPLETE** |
+
+#### ✅ Phase 27: FANUC Ingestion Pipeline Design (Research Complete 2025-12-30)
+
+Comprehensive research and pipeline design for optimal FANUC technical manual ingestion:
+
+**System Audit Findings (6 Critical Gaps):**
+| Gap | Impact | Priority |
+|-----|--------|----------|
+| No embeddings generated | Vector search unusable | P0 |
+| Incomplete HSEA export | Graph relationships lost | P0 |
+| Sparse entity graph (99.986%) | Multi-hop reasoning impossible | P1 |
+| Dormant learning modules | No automatic expansion | P1 |
+| BM25-only search | Missing semantic retrieval | P1 |
+| No pattern matching | Generic troubleshooting | P2 |
+
+**7-Stage Ingestion Pipeline Designed:**
+1. **Semantic Chunking**: Structure-aware with atomic units (tables, error sections)
+2. **Hybrid Entity Extraction**: Pattern matching (100% precision) + GLiNER (zero-shot)
+3. **Causal Relation Extraction**: Diagnostic chains (symptom → error → remedy)
+4. **Graph Assembly**: Matryoshka embeddings at 3 granularities (128/256/768d)
+5. **HybridRAG Search**: BM25 + Vector + PathRAG with RRF fusion (k=60)
+6. **Enhanced HSEA Export**: Relationships + embeddings + diagnostic paths
+7. **Continual Learning**: Curriculum Levels 2-5 activation
+
+**Research Sources:**
+- GLiNER (NAACL 2024) for zero-shot NER
+- PathRAG (2025) for causal chain retrieval
+- Matryoshka embeddings (NeurIPS 2022) for multi-resolution
+- HybridRAG (ACM ICAIF 2024) for vector+graph fusion
+
+**Implementation Artifacts (PDF_Extraction_Tools):**
+- `FANUC_INGESTION_PIPELINE_DESIGN.md`: Full architecture
+- `docs/FANUC_NLP_INGESTION_BEST_PRACTICES.md`: Research synthesis
+- `scripts/generate_embeddings.py`: Matryoshka generation
+- `scripts/bootstrap_symptoms.py`: Level 2 curriculum bootstrap
+
+**Target Metrics:**
+| Metric | Current | Target |
+|--------|---------|--------|
+| Total entities | 8,626 | 15,000+ |
+| Graph edges | ~9,716 | 40,000+ |
+| Embeddings | 0 | 8,449+ |
+| Curriculum stages | 1/5 | 5/5 |
 
 #### ✅ Phase 26: Feature Synergy Integration (Completed 2025-12-29)
 
