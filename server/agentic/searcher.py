@@ -2088,6 +2088,36 @@ class SearcherAgent:
 
         return "\n---\n".join(formatted)
 
+    async def close(self) -> None:
+        """
+        Close all provider HTTP clients and release resources.
+
+        Should be called when the SearcherAgent is no longer needed,
+        or use the async context manager pattern for automatic cleanup.
+        """
+        close_tasks = []
+
+        # Close all providers that have close methods
+        if hasattr(self.searxng, 'close'):
+            close_tasks.append(self.searxng.close())
+        if hasattr(self.brave, 'close'):
+            close_tasks.append(self.brave.close())
+        if hasattr(self.duckduckgo, 'close'):
+            close_tasks.append(self.duckduckgo.close())
+
+        if close_tasks:
+            await asyncio.gather(*close_tasks, return_exceptions=True)
+
+        logger.debug("SearcherAgent: All provider clients closed")
+
+    async def __aenter__(self) -> "SearcherAgent":
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Async context manager exit - ensures cleanup."""
+        await self.close()
+
 
 # =============================================================================
 # Domain Performance Tracking

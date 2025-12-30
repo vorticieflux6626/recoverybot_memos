@@ -452,3 +452,33 @@ class BaseSearchPipeline(ABC):
             "ollama_url": self.ollama_url,
             "mcp_url": self.mcp_url
         }
+
+    async def close(self) -> None:
+        """
+        Close all HTTP clients and release resources.
+
+        Should be called when the orchestrator is no longer needed,
+        or use the async context manager pattern for automatic cleanup.
+        """
+        import asyncio
+
+        close_tasks = []
+
+        # Close agents with HTTP clients
+        if hasattr(self, 'searcher') and hasattr(self.searcher, 'close'):
+            close_tasks.append(self.searcher.close())
+        if hasattr(self, 'scraper') and hasattr(self.scraper, 'close'):
+            close_tasks.append(self.scraper.close())
+
+        if close_tasks:
+            await asyncio.gather(*close_tasks, return_exceptions=True)
+
+        logger.debug(f"{self.__class__.__name__}: All HTTP clients closed")
+
+    async def __aenter__(self) -> "BaseSearchPipeline":
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Async context manager exit - ensures cleanup."""
+        await self.close()
