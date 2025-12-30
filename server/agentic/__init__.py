@@ -243,6 +243,18 @@ from .domain_corpus import (
     get_corpus_manager,
     initialize_default_corpuses
 )
+from .acronym_dictionary import (
+    AcronymInfo,
+    INDUSTRIAL_ACRONYMS,
+    FANUC_ERROR_CODES,
+    expand_acronyms,
+    expand_acronym,
+    expand_error_code_prefixes,
+    get_acronym_info,
+    get_related_terms,
+    get_category_acronyms,
+    get_dictionary_stats
+)
 from .query_classifier import (
     QueryClassifier,
     QueryClassification,
@@ -648,6 +660,17 @@ __all__ = [
     "create_raspberry_pi_schema",
     "get_corpus_manager",
     "initialize_default_corpuses",
+    # Industrial Acronym Dictionary (December 2025)
+    "AcronymInfo",
+    "INDUSTRIAL_ACRONYMS",
+    "FANUC_ERROR_CODES",
+    "expand_acronyms",
+    "expand_acronym",
+    "expand_error_code_prefixes",
+    "get_acronym_info",
+    "get_related_terms",
+    "get_category_acronyms",
+    "get_dictionary_stats",
     # Query Classification (December 2025)
     "QueryClassifier",
     "QueryClassification",

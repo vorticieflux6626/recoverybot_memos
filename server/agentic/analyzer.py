@@ -23,6 +23,7 @@ import httpx
 from .models import QueryAnalysis, SearchPlan
 from .context_limits import get_analyzer_limits, ANALYZER_LIMITS, get_model_context_window
 from .metrics import get_performance_metrics
+from .acronym_dictionary import expand_acronyms, get_acronym_info, get_related_terms
 
 
 def extract_json_object(text: str) -> Optional[str]:
@@ -81,7 +82,8 @@ class QueryAnalyzer:
         self,
         ollama_url: str = "http://localhost:11434",
         model: str = "gemma3:4b",
-        entity_tracker: Optional["EntityTracker"] = None
+        entity_tracker: Optional["EntityTracker"] = None,
+        enable_acronym_expansion: bool = True
     ):
         self.ollama_url = ollama_url
         self.model = model
@@ -90,6 +92,35 @@ class QueryAnalyzer:
         # GSW Entity Tracking (Phase 2)
         self._entity_tracker = entity_tracker
         self._entity_extraction_enabled = entity_tracker is not None
+
+        # Acronym Expansion (Part E.1)
+        self._enable_acronym_expansion = enable_acronym_expansion
+
+    def _expand_query_acronyms(self, query: str) -> tuple[str, List[str]]:
+        """
+        Expand known industrial acronyms in query.
+
+        Returns:
+            Tuple of (expanded_query, list_of_related_terms)
+        """
+        if not self._enable_acronym_expansion:
+            return query, []
+
+        # Expand acronyms inline (e.g., "SRVO-063" -> "SRVO (Servo Alarm)-063")
+        expanded = expand_acronyms(query, inline=True)
+
+        # Collect related terms for query expansion
+        related = []
+        words = query.upper().split()
+        for word in words:
+            # Strip punctuation for matching
+            clean_word = ''.join(c for c in word if c.isalnum())
+            if clean_word:
+                info = get_acronym_info(clean_word)
+                if info:
+                    related.extend(get_related_terms(clean_word))
+
+        return expanded, related
 
     async def analyze(
         self,
@@ -110,12 +141,22 @@ class QueryAnalyzer:
         """
         logger.info(f"Analyzing query: {query[:100]}...")
 
-        # Build analysis prompt
-        prompt = self._build_analysis_prompt(query, context)
+        # Expand industrial acronyms for better understanding
+        expanded_query, related_terms = self._expand_query_acronyms(query)
+        if expanded_query != query:
+            logger.debug(f"Expanded query: {expanded_query[:100]}...")
+
+        # Build analysis prompt with expanded query
+        prompt = self._build_analysis_prompt(expanded_query, context)
 
         try:
             result = await self._call_ollama(prompt, request_id)
-            analysis = self._parse_analysis(result, query)
+            analysis = self._parse_analysis(result, query)  # Use original for response
+
+            # Add related terms from acronym expansion to key_topics
+            if related_terms:
+                analysis.key_topics = list(set(analysis.key_topics + related_terms))
+
             logger.info(f"Query analysis: requires_search={analysis.requires_search}, "
                        f"type={analysis.query_type}, complexity={analysis.estimated_complexity}")
             return analysis
