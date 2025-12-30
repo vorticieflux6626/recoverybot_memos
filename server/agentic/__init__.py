@@ -819,4 +819,4 @@ __all__ = [
     "get_reasoning_composer",
 ]
 
-__version__ = "0.38.0"  # Phase 25: Feature Combination Audit validated architecture + calibration plan
+__version__ = "0.39.0"  # Phase 26: Feature Synergy Integration (Query Tree + CRAG, FLARE + Synthesis, Meta-Buffer templates)

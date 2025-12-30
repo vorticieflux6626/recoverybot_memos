@@ -1914,7 +1914,23 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         ))
                         if crag_result.refined_queries:
                             await emitter.emit(events.crag_refining(request_id, crag_result.refined_queries))
-                            state.add_pending_queries(crag_result.refined_queries)
+                            # Integrate with Query Tree for parallel exploration
+                            if self.config.enable_query_tree:
+                                logger.debug(f"[{request_id}] Expanding CRAG queries with Query Tree")
+                                expanded_queries = []
+                                for rq in crag_result.refined_queries[:3]:
+                                    tree_expanded = await self._expand_queries_with_tree(
+                                        rq,
+                                        retrieval_func=lambda q: self.searcher.search([q])
+                                    )
+                                    expanded_queries.extend(tree_expanded)
+                                # Dedupe
+                                seen = set()
+                                unique_expanded = [q for q in expanded_queries if not (q in seen or seen.add(q))]
+                                state.add_pending_queries(unique_expanded[:8])
+                                logger.info(f"[{request_id}] Query Tree expanded: {len(crag_result.refined_queries)} → {len(unique_expanded)}")
+                            else:
+                                state.add_pending_queries(crag_result.refined_queries)
 
                     await emitter.emit(graph_node_completed(request_id, "crag", True, graph, crag_ms))
 
@@ -2045,6 +2061,31 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
             synthesis_start = time.time()
 
+            # Build thought_context from Meta-Buffer templates if available
+            thought_context = None
+            if self.config.enable_meta_buffer:
+                template_parts = []
+                if hasattr(state, 'retrieved_template') and state.retrieved_template:
+                    template = state.retrieved_template
+                    template_parts.append(f"Previous successful pattern for similar query:")
+                    template_parts.append(f"Template: {template.structure}")
+                    if template.example_outcomes:
+                        template_parts.append(f"Examples: {template.example_outcomes[:2]}")
+                    logger.debug(f"[{request_id}] Applying Meta-Buffer template: {template.id}")
+
+                if hasattr(state, 'composed_reasoning_strategy') and state.composed_reasoning_strategy:
+                    strategy = state.composed_reasoning_strategy
+                    module_names = [m.value if hasattr(m, 'value') else str(m) for m in strategy.selected_modules]
+                    template_parts.append(f"\nReasoning approach: {', '.join(module_names)}")
+                    # Add adapted prompts for key modules
+                    for module, prompt in list(strategy.adapted_prompts.items())[:3]:
+                        module_name = module.value if hasattr(module, 'value') else str(module)
+                        template_parts.append(f"  {module_name}: {prompt[:200]}...")
+                    logger.debug(f"[{request_id}] Applying composed reasoning strategy: {module_names}")
+
+                if template_parts:
+                    thought_context = "\n".join(template_parts)
+
             # LLM Debug: Track synthesis call (reasoning model)
             synthesis_prompt = f"Query: {request.query}\nSources: {len(scraped_content)}"
             llm_start = await self._emit_llm_start(
@@ -2056,7 +2097,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
             )
 
             synthesis = await self._phase_synthesis(
-                request, state, scraped_content, search_trace, request_id
+                request, state, scraped_content, search_trace, request_id,
+                thought_context=thought_context
             )
 
             # LLM Debug: Complete synthesis tracking
@@ -3532,7 +3574,28 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
             # Handle corrective actions
             if evaluation.recommended_action == CorrectiveAction.REFINE_QUERY:
-                state.add_pending_queries(evaluation.refined_queries[:3])
+                refined_queries = evaluation.refined_queries[:3]
+                # Integrate with Query Tree for parallel exploration
+                if self.config.enable_query_tree and refined_queries:
+                    logger.debug(f"[{request_id}] Expanding {len(refined_queries)} CRAG refined queries with Query Tree")
+                    expanded_queries = []
+                    for rq in refined_queries:
+                        tree_expanded = await self._expand_queries_with_tree(
+                            rq,
+                            retrieval_func=lambda q: self.searcher.search([q])
+                        )
+                        expanded_queries.extend(tree_expanded)
+                    # Dedupe while preserving order
+                    seen = set()
+                    unique_expanded = []
+                    for q in expanded_queries:
+                        if q not in seen:
+                            seen.add(q)
+                            unique_expanded.append(q)
+                    state.add_pending_queries(unique_expanded[:8])  # Limit to 8 total
+                    logger.info(f"[{request_id}] Query Tree expanded CRAG queries: {len(refined_queries)} → {len(unique_expanded)}")
+                else:
+                    state.add_pending_queries(refined_queries)
             elif evaluation.recommended_action == CorrectiveAction.WEB_FALLBACK:
                 # Trigger additional web search - searcher.search() expects a list
                 fallback_results = await self.searcher.search([f"detailed {request.query}"])
@@ -3828,6 +3891,34 @@ class UniversalOrchestrator(BaseSearchPipeline):
             context={"additional_context": additional_context} if additional_context else None,
             request_id=request_id
         )
+
+        # FLARE integration: Check for uncertainty and retrieve more if needed
+        if self.config.enable_flare_retrieval and synthesis:
+            context_strs = [sc.get("content", "")[:1000] for sc in scraped_content_dicts]
+            additional_docs = await self._flare_enhanced_retrieval(
+                query=request.query,
+                partial_synthesis=synthesis,
+                context=context_strs,
+                retrieval_func=lambda q: self.searcher.search([q])
+            )
+            if additional_docs:
+                logger.info(f"[{request_id}] FLARE triggered: {len(additional_docs)} additional docs retrieved")
+                # Append new docs to content and re-synthesize
+                for i, doc in enumerate(additional_docs[:3]):  # Limit to 3 new docs
+                    scraped_content_dicts.append({
+                        "url": f"flare_doc_{i+1}",
+                        "content": doc[:request.max_content_per_source]
+                    })
+                # Re-synthesize with augmented context
+                synthesis = await self.synthesizer.synthesize_with_content(
+                    query=request.query,
+                    search_results=search_results,
+                    scraped_content=scraped_content_dicts,
+                    verifications=None,
+                    context={"additional_context": additional_context} if additional_context else None,
+                    request_id=request_id
+                )
+                logger.info(f"[{request_id}] FLARE-augmented synthesis complete")
 
         # Calculate and log context utilization
         total_content_chars = sum(len(sc.get("content", "")) for sc in scraped_content_dicts)
