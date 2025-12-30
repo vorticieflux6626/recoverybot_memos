@@ -147,7 +147,66 @@ async def create_database_schema():
             """))
             
             logger.info("✅ Performance indexes created")
-        
+
+            # Step 2.5: Enable Row-Level Security for HIPAA compliance
+            logger.info("🔐 Enabling Row-Level Security...")
+
+            # Enable RLS on user-scoped tables
+            user_tables = [
+                'memories',
+                'user_memory_settings',
+                'user_quests',
+                'user_tasks',
+                'user_achievements',
+                'user_quest_stats'
+            ]
+
+            for table in user_tables:
+                # Enable RLS (idempotent)
+                await conn.execute(text(f"""
+                    ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;
+                """))
+
+                # Create user isolation policy (SELECT/UPDATE/DELETE)
+                await conn.execute(text(f"""
+                    DROP POLICY IF EXISTS {table}_user_isolation ON {table};
+                """))
+                await conn.execute(text(f"""
+                    CREATE POLICY {table}_user_isolation ON {table}
+                    FOR ALL
+                    USING (user_id = current_setting('app.current_user_id', true));
+                """))
+
+                # Create insert policy (allows inserting own data)
+                await conn.execute(text(f"""
+                    DROP POLICY IF EXISTS {table}_user_insert ON {table};
+                """))
+                await conn.execute(text(f"""
+                    CREATE POLICY {table}_user_insert ON {table}
+                    FOR INSERT
+                    WITH CHECK (user_id = current_setting('app.current_user_id', true));
+                """))
+
+            # Create admin bypass role (for migrations and admin operations)
+            await conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'memos_admin') THEN
+                        CREATE ROLE memos_admin;
+                    END IF;
+                END $$;
+            """))
+
+            # Grant BYPASSRLS to admin role (requires superuser)
+            try:
+                await conn.execute(text("""
+                    ALTER ROLE memos_admin BYPASSRLS;
+                """))
+            except Exception as e:
+                logger.warning(f"Could not set BYPASSRLS (requires superuser): {e}")
+
+            logger.info("✅ Row-Level Security enabled on user tables")
+
         # Step 3: Verify table creation
         logger.info("🔍 Verifying table creation...")
         async with async_engine.connect() as conn:
@@ -208,6 +267,7 @@ async def create_database_schema():
         logger.info("   ✓ Memory storage table created")
         logger.info("   ✓ User settings table created")
         logger.info("   ✓ Performance indexes created")
+        logger.info("   ✓ Row-Level Security enabled (HIPAA)")
         logger.info("   ✓ Health check passed")
         logger.info("\n🚀 Ready for API server startup!")
         

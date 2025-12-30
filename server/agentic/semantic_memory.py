@@ -587,6 +587,209 @@ class SemanticMemoryNetwork:
             "similarity_threshold": self.similarity_threshold
         }
 
+    # =========================================================================
+    # Memory Decay and Consolidation
+    # =========================================================================
+
+    def calculate_memory_strength(
+        self,
+        memory: Memory,
+        decay_rate: float = 0.1,
+        access_boost: float = 0.05
+    ) -> float:
+        """
+        Calculate current memory strength based on decay and access patterns.
+
+        Inspired by Ebbinghaus forgetting curve:
+        - Memories decay exponentially over time
+        - Each access strengthens the memory
+        - High access count resists decay
+
+        Args:
+            memory: The memory to evaluate
+            decay_rate: Rate of exponential decay (0.1 = ~10% per day)
+            access_boost: Strength boost per access
+
+        Returns:
+            Strength value between 0 and 1
+        """
+        current_time = time.time()
+
+        # Time since last access (in days)
+        days_since_access = (current_time - memory.last_accessed) / 86400.0
+
+        # Base strength from access count (logarithmic)
+        # More accesses = stronger memory
+        access_strength = min(1.0, 0.3 + access_boost * np.log1p(memory.access_count))
+
+        # Apply exponential decay
+        # S(t) = S0 * e^(-decay_rate * t)
+        decay_factor = np.exp(-decay_rate * days_since_access)
+
+        # Final strength combines access history with decay
+        strength = access_strength * decay_factor
+
+        return float(max(0.0, min(1.0, strength)))
+
+    def get_memory_strength(self, memory_id: str) -> Optional[float]:
+        """Get the current strength of a specific memory."""
+        memory = self.memories.get(memory_id)
+        if not memory:
+            return None
+        return self.calculate_memory_strength(memory)
+
+    async def find_similar_with_decay(
+        self,
+        query: str,
+        top_k: int = 5,
+        memory_type: Optional[MemoryType] = None,
+        recency_weight: float = 0.3
+    ) -> List[Tuple[Memory, float, float]]:
+        """
+        Find similar memories with decay-adjusted scoring.
+
+        The final score combines:
+        - Semantic similarity (1 - recency_weight)
+        - Memory strength from decay (recency_weight)
+
+        Args:
+            query: Search query
+            top_k: Number of results
+            memory_type: Filter by type
+            recency_weight: Weight given to recency (0-1)
+
+        Returns:
+            List of (memory, combined_score, raw_similarity) tuples
+        """
+        query_embedding = await self._get_embedding(query)
+        if not query_embedding:
+            return []
+
+        scored_memories = []
+
+        for memory_id, memory in self.memories.items():
+            if memory_type and memory.memory_type != memory_type:
+                continue
+            if not memory.embedding:
+                continue
+
+            # Semantic similarity
+            similarity = self._cosine_similarity(query_embedding, memory.embedding)
+
+            # Memory strength (incorporates decay)
+            strength = self.calculate_memory_strength(memory)
+
+            # Combined score
+            combined = (1 - recency_weight) * similarity + recency_weight * strength
+
+            scored_memories.append((memory, combined, similarity))
+
+        # Sort by combined score
+        scored_memories.sort(key=lambda x: x[1], reverse=True)
+        return scored_memories[:top_k]
+
+    def consolidate_memories(
+        self,
+        strength_threshold: float = 0.1,
+        min_age_days: float = 7.0,
+        dry_run: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Remove or archive weak memories (memory consolidation).
+
+        Memories with strength below threshold and older than min_age
+        are candidates for removal. This mimics biological memory
+        consolidation where unimportant memories fade.
+
+        Args:
+            strength_threshold: Remove memories below this strength
+            min_age_days: Only consider memories older than this
+            dry_run: If True, only report what would be removed
+
+        Returns:
+            Statistics about consolidation
+        """
+        current_time = time.time()
+        min_age_seconds = min_age_days * 86400
+
+        to_remove = []
+        preserved = []
+
+        for memory_id, memory in self.memories.items():
+            age = current_time - memory.created_at
+
+            # Skip recent memories
+            if age < min_age_seconds:
+                preserved.append({
+                    "id": memory_id,
+                    "reason": "too_recent",
+                    "age_days": age / 86400
+                })
+                continue
+
+            strength = self.calculate_memory_strength(memory)
+
+            if strength < strength_threshold:
+                to_remove.append({
+                    "id": memory_id,
+                    "type": memory.memory_type.value,
+                    "strength": round(strength, 4),
+                    "age_days": round(age / 86400, 1),
+                    "access_count": memory.access_count
+                })
+            else:
+                preserved.append({
+                    "id": memory_id,
+                    "reason": "strong_enough",
+                    "strength": round(strength, 4)
+                })
+
+        # Remove weak memories (unless dry run)
+        removed_count = 0
+        if not dry_run:
+            for item in to_remove:
+                memory_id = item["id"]
+                memory = self.memories.get(memory_id)
+                if memory:
+                    # Remove from type index
+                    self._type_index[memory.memory_type].discard(memory_id)
+                    # Remove connections pointing to this memory
+                    for other in self.memories.values():
+                        other.connections = [
+                            c for c in other.connections
+                            if c.target_id != memory_id
+                        ]
+                    # Remove the memory
+                    del self.memories[memory_id]
+                    removed_count += 1
+
+        return {
+            "removed": removed_count if not dry_run else 0,
+            "would_remove": len(to_remove),
+            "preserved": len(preserved),
+            "candidates": to_remove[:10],  # Sample of candidates
+            "dry_run": dry_run,
+            "threshold": strength_threshold,
+            "min_age_days": min_age_days
+        }
+
+    def boost_memory(self, memory_id: str, boost_amount: float = 0.1) -> bool:
+        """
+        Boost a memory's strength by simulating additional accesses.
+
+        Use this to manually strengthen important memories.
+        """
+        memory = self.memories.get(memory_id)
+        if not memory:
+            return False
+
+        # Simulate access
+        memory.access_count += int(boost_amount * 10)
+        memory.last_accessed = time.time()
+
+        logger.debug(f"Boosted memory {memory_id}, new access_count: {memory.access_count}")
+        return True
+
 
 # Singleton instance
 _semantic_memory: Optional[SemanticMemoryNetwork] = None

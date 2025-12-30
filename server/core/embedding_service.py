@@ -7,6 +7,7 @@ import asyncio
 import logging
 import httpx
 import numpy as np
+from collections import OrderedDict
 from typing import List, Optional, Dict, Any, Tuple
 from functools import lru_cache
 
@@ -31,8 +32,8 @@ class EmbeddingService:
         self.embedding_model = self.settings.ollama_embedding_model
         self.embedding_dimensions = self.settings.embedding_dimensions
         
-        # Cache for frequently used embeddings
-        self._embedding_cache = {}
+        # LRU cache for frequently used embeddings (OrderedDict maintains access order)
+        self._embedding_cache: OrderedDict[int, List[float]] = OrderedDict()
         self._cache_max_size = 1000
     
     async def generate_embedding(self, text: str) -> List[float]:
@@ -42,9 +43,11 @@ class EmbeddingService:
         if not text or not text.strip():
             return [0.0] * self.embedding_dimensions
         
-        # Check cache first
+        # Check cache first (LRU: move to end on access)
         text_hash = hash(text.strip().lower())
         if text_hash in self._embedding_cache:
+            # Move to end to mark as recently used
+            self._embedding_cache.move_to_end(text_hash)
             return self._embedding_cache[text_hash]
         
         try:
@@ -274,13 +277,16 @@ class EmbeddingService:
     
     def _cache_embedding(self, text_hash: int, embedding: List[float]):
         """
-        Cache embedding with LRU eviction
+        Cache embedding with true LRU eviction.
+
+        Uses OrderedDict.popitem(last=False) to remove the least recently
+        accessed item (first in order). New items are added at the end,
+        and accessed items are moved to end via move_to_end().
         """
         if len(self._embedding_cache) >= self._cache_max_size:
-            # Remove oldest item (simple FIFO for now)
-            oldest_key = next(iter(self._embedding_cache))
-            del self._embedding_cache[oldest_key]
-        
+            # Remove least recently used item (first in OrderedDict)
+            self._embedding_cache.popitem(last=False)
+
         self._embedding_cache[text_hash] = embedding
     
     async def clear_cache(self):

@@ -195,6 +195,46 @@ async def get_db_dependency() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
+async def set_user_context(session: AsyncSession, user_id: str) -> None:
+    """
+    Set the current user context for Row-Level Security.
+
+    Call this at the start of any user-scoped database operation to ensure
+    RLS policies filter data correctly. The setting persists for the session.
+
+    Usage:
+        async with get_async_db() as session:
+            await set_user_context(session, user_id)
+            # Now RLS will filter to only this user's data
+            memories = await session.execute(select(Memory))
+    """
+    await session.execute(
+        text("SET LOCAL app.current_user_id = :user_id"),
+        {"user_id": user_id}
+    )
+
+
+async def get_db_with_user_context(
+    user_id: str
+) -> AsyncGenerator[AsyncSession, None]:
+    """
+    Database dependency that sets user context for RLS.
+
+    This is a higher-level dependency for endpoints that need user isolation.
+    The RLS policies will automatically filter all queries to the user's data.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            await set_user_context(session, user_id)
+            yield session
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Database session error: {type(e).__name__}: {str(e)}")
+            raise
+        finally:
+            await session.close()
+
+
 if __name__ == "__main__":
     # Test database connection
     async def test_connection():

@@ -115,39 +115,38 @@ async def get_quest_details(
     Get detailed information about a specific quest
     """
     try:
-        async with db as session:
-            from models.quest import Quest
-            from sqlalchemy.orm import selectinload
-            from sqlalchemy import select
-            import uuid
-            
-            result = await session.execute(
-                select(Quest)
-                .where(Quest.id == uuid.UUID(quest_id))
-                .options(selectinload(Quest.tasks))
-            )
-            quest = result.scalar_one_or_none()
-            
-            if not quest:
-                raise HTTPException(status_code=404, detail="Quest not found")
-            
-            return QuestResponse(
-                id=str(quest.id),
-                title=quest.title,
-                description=quest.description,
-                category=quest.category,
-                points=quest.points,
-                min_recovery_stage=quest.min_recovery_stage,
-                max_active_days=quest.max_active_days,
-                cooldown_hours=quest.cooldown_hours,
-                prerequisites=quest.prerequisites or [],
-                verification_type=quest.verification_type,
-                task_count=len(quest.tasks),
-                is_active=quest.is_active,
-                created_at=quest.created_at,
-                updated_at=quest.updated_at
-            )
-            
+        from models.quest import Quest
+        from sqlalchemy.orm import selectinload
+        from sqlalchemy import select
+        import uuid
+
+        result = await db.execute(
+            select(Quest)
+            .where(Quest.id == uuid.UUID(quest_id))
+            .options(selectinload(Quest.tasks))
+        )
+        quest = result.scalar_one_or_none()
+
+        if not quest:
+            raise HTTPException(status_code=404, detail="Quest not found")
+
+        return QuestResponse(
+            id=str(quest.id),
+            title=quest.title,
+            description=quest.description,
+            category=quest.category,
+            points=quest.points,
+            min_recovery_stage=quest.min_recovery_stage,
+            max_active_days=quest.max_active_days,
+            cooldown_hours=quest.cooldown_hours,
+            prerequisites=quest.prerequisites or [],
+            verification_type=quest.verification_type,
+            task_count=len(quest.tasks),
+            is_active=quest.is_active,
+            created_at=quest.created_at,
+            updated_at=quest.updated_at
+        )
+
     except HTTPException:
         raise
     except Exception as e:
@@ -227,129 +226,128 @@ async def get_user_quests(
     Get all quests for a user (Android expects UserProgressResponse)
     """
     try:
-        async with db as session:
-            from models.quest import UserQuest
-            from sqlalchemy.orm import selectinload
-            from sqlalchemy import select, and_
-            
-            # Build query
-            conditions = [UserQuest.user_id == user_id]
-            
-            if state:
-                conditions.append(UserQuest.state == state)
-            elif not include_completed:
-                conditions.append(UserQuest.state.notin_([
-                    QuestState.COMPLETED,
-                    QuestState.VERIFIED,
-                    QuestState.REWARDED
-                ]))
-            
-            result = await session.execute(
-                select(UserQuest)
-                .where(and_(*conditions))
-                .options(
-                    selectinload(UserQuest.quest).selectinload(Quest.tasks),
-                    selectinload(UserQuest.tasks)
+        from models.quest import UserQuest
+        from sqlalchemy.orm import selectinload
+        from sqlalchemy import select, and_
+
+        # Build query
+        conditions = [UserQuest.user_id == user_id]
+
+        if state:
+            conditions.append(UserQuest.state == state)
+        elif not include_completed:
+            conditions.append(UserQuest.state.notin_([
+                QuestState.COMPLETED,
+                QuestState.VERIFIED,
+                QuestState.REWARDED
+            ]))
+
+        result = await db.execute(
+            select(UserQuest)
+            .where(and_(*conditions))
+            .options(
+                selectinload(UserQuest.quest).selectinload(Quest.tasks),
+                selectinload(UserQuest.tasks)
+            )
+            .order_by(UserQuest.started_at.desc())
+        )
+
+        user_quests = result.scalars().all()
+
+        user_quest_responses = []
+        for uq in user_quests:
+            completed_tasks = sum(1 for task in uq.tasks if task.state == TaskState.COMPLETED)
+            total_tasks = len(uq.quest.tasks)
+            progress_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+
+            # Build user task responses
+            user_task_responses = []
+            for user_task in uq.tasks:
+                # Find the corresponding quest task
+                quest_task = next((qt for qt in uq.quest.tasks if qt.id == user_task.task_id), None)
+                if quest_task:
+                    user_task_responses.append(UserTaskResponse(
+                        id=str(user_task.id),
+                        task_id=str(user_task.task_id),
+                        task=TaskResponse(
+                            id=str(quest_task.id),
+                            title=quest_task.title,
+                            description=quest_task.description,
+                            order_index=quest_task.order_index,
+                            is_required=quest_task.is_required,
+                            verification_data=quest_task.verification_data or {}
+                        ),
+                        state=user_task.state,
+                        completed_at=user_task.completed_at,
+                        evidence_data=user_task.evidence_data
+                    ))
+
+            # Build quest task responses for the nested quest
+            quest_task_responses = [
+                TaskResponse(
+                    id=str(task.id),
+                    title=task.title,
+                    description=task.description,
+                    order_index=task.order_index,
+                    is_required=task.is_required,
+                    verification_data=task.verification_data or {}
                 )
-                .order_by(UserQuest.started_at.desc())
-            )
-            
-            user_quests = result.scalars().all()
-            
-            user_quest_responses = []
-            for uq in user_quests:
-                completed_tasks = sum(1 for task in uq.tasks if task.state == TaskState.COMPLETED)
-                total_tasks = len(uq.quest.tasks)
-                progress_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
-                
-                # Build user task responses
-                user_task_responses = []
-                for user_task in uq.tasks:
-                    # Find the corresponding quest task
-                    quest_task = next((qt for qt in uq.quest.tasks if qt.id == user_task.task_id), None)
-                    if quest_task:
-                        user_task_responses.append(UserTaskResponse(
-                            id=str(user_task.id),
-                            task_id=str(user_task.task_id),
-                            task=TaskResponse(
-                                id=str(quest_task.id),
-                                title=quest_task.title,
-                                description=quest_task.description,
-                                order_index=quest_task.order_index,
-                                is_required=quest_task.is_required,
-                                verification_data=quest_task.verification_data or {}
-                            ),
-                            state=user_task.state,
-                            completed_at=user_task.completed_at,
-                            evidence_data=user_task.evidence_data
-                        ))
-                
-                # Build quest task responses for the nested quest
-                quest_task_responses = [
-                    TaskResponse(
-                        id=str(task.id),
-                        title=task.title,
-                        description=task.description,
-                        order_index=task.order_index,
-                        is_required=task.is_required,
-                        verification_data=task.verification_data or {}
-                    )
-                    for task in uq.quest.tasks
-                ]
-                
-                user_quest_responses.append(UserQuestResponse(
-                    id=str(uq.id),
-                    quest_id=str(uq.quest.id),  # Added quest_id field
-                    quest=QuestResponse(
-                        id=str(uq.quest.id),
-                        title=uq.quest.title,
-                        description=uq.quest.description,
-                        category=uq.quest.category,
-                        points=uq.quest.points,
-                        min_recovery_stage=uq.quest.min_recovery_stage,
-                        max_active_days=uq.quest.max_active_days,
-                        cooldown_hours=uq.quest.cooldown_hours,
-                        prerequisites=uq.quest.prerequisites or [],
-                        verification_type=uq.quest.verification_type,
-                        task_count=len(uq.quest.tasks),
-                        is_active=uq.quest.is_active,
-                        created_at=uq.quest.created_at,
-                        updated_at=uq.quest.updated_at,
-                        tasks=quest_task_responses  # Added actual quest tasks
-                    ),
-                    state=uq.state,
-                    started_at=uq.started_at,
-                    completed_at=uq.completed_at,
-                    verified_at=uq.verified_at,
-                    progress_percentage=progress_percentage,
-                    points_earned=uq.points_earned,
-                    tasks_completed=completed_tasks,
-                    total_tasks=total_tasks,
-                    tasks=user_task_responses  # Added actual user tasks
-                ))
-            
-            # Get user stats
-            stats = await quest_service.get_user_stats(db, user_id)
-            stats_response = QuestStatsResponse(
-                user_id=stats.user_id,
-                total_points=stats.total_points,
-                current_streak_days=stats.current_streak_days,
-                longest_streak_days=stats.longest_streak_days,
-                last_activity_date=stats.last_activity_date,
-                total_quests_completed=stats.total_quests_completed,
-                level=stats.level,
-                weekly_points=stats.weekly_points,
-                monthly_points=stats.monthly_points,
-                next_level_points=0  # TODO: Calculate next level points
-            )
-            
-            return UserProgressResponse(
-                userQuests=user_quest_responses,
-                stats=stats_response,
-                achievements=[],  # TODO: Add achievements
-                newAchievements=[]
-            )
-            
+                for task in uq.quest.tasks
+            ]
+
+            user_quest_responses.append(UserQuestResponse(
+                id=str(uq.id),
+                quest_id=str(uq.quest.id),  # Added quest_id field
+                quest=QuestResponse(
+                    id=str(uq.quest.id),
+                    title=uq.quest.title,
+                    description=uq.quest.description,
+                    category=uq.quest.category,
+                    points=uq.quest.points,
+                    min_recovery_stage=uq.quest.min_recovery_stage,
+                    max_active_days=uq.quest.max_active_days,
+                    cooldown_hours=uq.quest.cooldown_hours,
+                    prerequisites=uq.quest.prerequisites or [],
+                    verification_type=uq.quest.verification_type,
+                    task_count=len(uq.quest.tasks),
+                    is_active=uq.quest.is_active,
+                    created_at=uq.quest.created_at,
+                    updated_at=uq.quest.updated_at,
+                    tasks=quest_task_responses  # Added actual quest tasks
+                ),
+                state=uq.state,
+                started_at=uq.started_at,
+                completed_at=uq.completed_at,
+                verified_at=uq.verified_at,
+                progress_percentage=progress_percentage,
+                points_earned=uq.points_earned,
+                tasks_completed=completed_tasks,
+                total_tasks=total_tasks,
+                tasks=user_task_responses  # Added actual user tasks
+            ))
+
+        # Get user stats
+        stats = await quest_service.get_user_stats(db, user_id)
+        stats_response = QuestStatsResponse(
+            user_id=stats.user_id,
+            total_points=stats.total_points,
+            current_streak_days=stats.current_streak_days,
+            longest_streak_days=stats.longest_streak_days,
+            last_activity_date=stats.last_activity_date,
+            total_quests_completed=stats.total_quests_completed,
+            level=stats.level,
+            weekly_points=stats.weekly_points,
+            monthly_points=stats.monthly_points,
+            next_level_points=0  # TODO: Calculate next level points
+        )
+
+        return UserProgressResponse(
+            userQuests=user_quest_responses,
+            stats=stats_response,
+            achievements=[],  # TODO: Add achievements
+            newAchievements=[]
+        )
+
     except Exception as e:
         logger.error(f"Failed to get quests for user {user_id}: {e}")
         raise HTTPException(

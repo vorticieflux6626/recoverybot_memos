@@ -1,6 +1,29 @@
-# memOS Server Development Status
+# memOS Server
 
-## Project Overview
+> **Updated**: 2025-12-30 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.39.0
+
+## Quick Reference
+
+| Action | Command | Notes |
+|--------|---------|-------|
+| Start Server | `cd server && uvicorn main:app --host 0.0.0.0 --port 8001` | Development mode |
+| Run Tests | `cd server && pytest tests/` | Run test suite |
+| DB Migration | `cd server && alembic upgrade head` | Apply migrations |
+| Format Code | `cd server && ruff format .` | Python formatting |
+| Lint Code | `cd server && ruff check .` | Python linting |
+| Ollama Config | `source setup_ollama_optimization.sh && systemctl restart ollama` | Apply optimizations |
+
+## Critical Rules
+
+1. **NEVER** push from wrong directory - verify with `pwd && git remote -v` first
+2. **NEVER** use sync operations inside async functions - always use `await` with aiohttp/asyncpg
+3. **NEVER** hardcode API keys - use environment variables via `settings.py`
+4. **ALWAYS** use `StateFlow.update{}` pattern when updating shared state (no Mutex)
+5. **ALWAYS** include `request_id` in error responses for debugging
+6. **ALWAYS** return unified response format: `{success, data, meta, errors}`
+
+## Overview
+
 memOS is a memory management, quest/gamification, and **intelligent data injection** system for the Recovery Bot Android application. It provides REST APIs for storing user memories, tracking progress through quests and achievements, and **orchestrating agentic AI workflows for enhanced research and troubleshooting assistance**.
 
 ## Strategic Vision: Intelligent Research Hub
