@@ -1125,6 +1125,89 @@ class SearcherAgent:
         "mscdirect.com",               # 2.2M products, tech support
         "motionindustries.com",        # Bearings, hydraulics expertise
 
+        # ===== Allen-Bradley / Rockwell Automation (Premium) =====
+        "literature.rockwellautomation.com",  # Direct PDF manual access
+        "rockwellautomation.com",      # 40,000+ technotes
+        "compatibility.rockwellautomation.com",  # Firmware, compatibility
+        "pesquality.com",              # PowerFlex 40 fault codes
+        "precision-elec.com",          # PowerFlex 755 troubleshooting
+        "wireless-telemetry.com",      # PowerFlex 753 fault codes PDF
+        "blog.acsindustrial.com",      # Repair-focused troubleshooting
+
+        # ===== Siemens Additional =====
+        "cache.industry.siemens.com",  # PDF cache for manuals
+        "kwoco-plc.com",               # Siemens drive fault codes
+
+        # ===== Industrial Sensors (Banner, Turck, IFM, Omron, SICK) =====
+        "bannerengineering.com",       # Sensor technical library
+        "info.bannerengineering.com",  # PDF documentation
+        "turck.us",                    # FAQ database, wiring diagrams
+        "ifm.com",                     # Product documentation finder
+        "ia.omron.com",                # Sensor technical guides
+        "sick.com",                    # Troubleshooting services
+        "balluff.com",                 # NPN vs PNP guides
+        "accautomation.ca",            # Sensor wiring tutorials
+        "tc-inc.com",                  # Thermocouple/RTD guide
+        "piecal.com",                  # Calibrator troubleshooting
+        "800loadcel.com",              # Load cell troubleshooting
+        "apecusa.com",                 # Load cell problems/solutions
+        "mhforce.com",                 # Morehouse load cell guide
+
+        # ===== TCUs / Thermolators =====
+        "advantageengineering.com",    # Service manuals, alert codes
+        "mokon.com",                   # Support portal, troubleshooting
+        "regloplas.com",               # FAQ/troubleshooting
+        "regloplasusa.com",            # US troubleshooting
+        "sterlco.com",                 # Sterling resources portal
+        "diecastmachinery.com",        # TCU troubleshooting guides
+        "aecinternet.com",             # AEC temperature controllers
+
+        # ===== Chillers =====
+        "trane.com",                   # Industrial chiller manuals
+        "star-supply.com",             # Trane alert codes PDF
+        "acerrorcode.com",             # Chiller error codes guide
+        "generalairproducts.com",      # Controller alarm manual
+
+        # ===== Dryers & Material Handling =====
+        "conairgroup.com",             # Dryer/granulator manuals
+        "novatec.com",                 # Knowledge center (excellent)
+        "wittmann-group.com",          # Download center
+        "motan.com",                   # Drying products/technical
+
+        # ===== Hot Runner Systems =====
+        "moldmasters.com",             # User manuals, troubleshooting PDF
+        "husky.co",                    # Ultra series, UltraShot manuals
+        "incoe.com",                   # Interactive troubleshooting
+        "yudoeu.com",                  # YUDO user handbook
+        "ewikon.com",                  # EWIKON manuals
+        "synventive.com",              # Download center
+
+        # ===== Conveyors =====
+        "dornerconveyors.com",         # Manuals, service videos
+        "hytrol.com",                  # Manuals index
+        "cdn.hytrol.com",              # Direct PDF access
+        "flexlink.com",                # Technical library
+        "mknorthamerica.com",          # Operating manuals
+        "accurateindustrial.com",      # Belt tracking guide
+        "spantechconveyors.com",       # Common problems guide
+        "sparksbelting.com",           # Tracking diagnostics
+
+        # ===== Granulators / Grinders =====
+        "cumberlandplastics.com",      # Resources portal
+        "rapidgranulator.com",         # Downloads, FAQ
+        "granulator-blades.com",       # Common problems FAQ
+        "servicesforplastics.com",     # All brand blade specs
+        "bladesmachinery.com",         # Parts and service
+
+        # ===== Manual Aggregators =====
+        "manualslib.com",              # 9.6M+ PDFs, free access
+        "manualzz.com",                # AI-assisted search
+        "manualsdir.com",              # Industrial equipment
+
+        # ===== AutomationDirect =====
+        "automationdirect.com",        # Main site
+        "support.automationdirect.com",  # Troubleshooting guides
+
         # ===== Reference (Trusted) =====
         "wikipedia.org",
         "wikimedia.org",
@@ -1161,6 +1244,9 @@ class SearcherAgent:
         "pytorch.org", "tensorflow.org", "huggingface.co",
         # Standards
         "nist.gov", "ietf.org", "w3.org", "rfc-editor.org", "osha.gov",
+        # Allen-Bradley / Rockwell (Premium - 40,000+ technotes)
+        "literature.rockwellautomation.com", "rockwellautomation.com",
+        "support.industry.siemens.com",
         # Injection Molding / Euromap (Premium for IMM queries)
         "euromap.org", "ptonline.com", "rjginc.com",
         "kraussmaffei.com", "milacron.com", "sumitomo-shi-demag.us",
@@ -1173,6 +1259,14 @@ class SearcherAgent:
         # Plastics Industry Technical
         "plastics-rubber.basf.com", "4spe.org", "aim.institute",
         "injectionmoldingonline.com", "dme.net",
+        # Sensors (Premium Manufacturers)
+        "bannerengineering.com", "turck.us", "sick.com", "ifm.com",
+        # Hot Runner Systems (Premium)
+        "moldmasters.com", "husky.co", "incoe.com",
+        # Plastics Auxiliary Equipment (Premium)
+        "novatec.com", "conairgroup.com", "advantageengineering.com",
+        # Manual Aggregators (Premium - 9.6M+ PDFs)
+        "manualslib.com", "automationdirect.com",
         # Training & Certification (Premium)
         "toolingu.com", "isa.org", "realpars.com", "vi-institute.org",
         # Publications (Premium Technical Content)
