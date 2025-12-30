@@ -427,7 +427,10 @@ PRESET_CONFIGS = {
         # Layer 2+ features disabled for balance
         enable_hyde=False,
         enable_hybrid_reranking=False,
-        enable_ragas=False
+        enable_ragas=False,
+        # HSEA for FANUC knowledge (fast, high-value)
+        enable_domain_corpus=True,  # Required for HSEA to run
+        enable_hsea_context=True
     ),
     OrchestratorPreset.ENHANCED: FeatureConfig(
         # Layer 2 quality features
