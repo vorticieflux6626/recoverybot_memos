@@ -1007,12 +1007,30 @@ class SearcherAgent:
         "robochallenge.pl",            # iRVision 2D manual
         "docs.mech-mind.net",          # Automatic calibration
         "productivity.com",            # Battery loss recovery
+        "icdn.tradew.com",             # R-J3iB Controller KAREL Reference
+        "haascnc.com",                 # R-30iB Mate Plus Maintenance Manual
+        "cnc1.com",                    # Boot system, SRAM backup procedures
+        "kfasllc.com",                 # Memory management (CMOS, SRAM, FROM)
+        "dnc-electronics.co.uk",       # FANUC memory type history
+        "cncmanual.com",               # KAREL Reference Manual (947 pages)
+        "dokumen.tips",                # R-J3 Controller variables listing
+        "kupdf.net",                   # Downloadable system variable PDFs
+        "img1.wsimg.com",              # $DMR_GRP mastering variables
+        "mh142.com",                   # Comprehensive Teach Pendant wiki
+        "motioncontrolsrobotics.com",  # iPendant features, mode operation
+        "robotsdoneright.com",         # TP model compatibility
 
         # ===== FANUC Training Providers =====
         "nrtcautomation.com",          # FANUC, ABB, KUKA training
         "ramtecohio.com",              # RAMTEC certified courses
         "gcodetutor.com",              # Online CNC courses
         "aleksandarhaber.com",         # 250+ free tutorials
+        "onerobotics.com",             # KAREL tutorials, Robot Whispering book (Premium)
+        "robodk.com",                  # Offline programming, FANUC integration
+        "underautomation.com",         # SDK documentation for R[], PR[], SR[]
+        "doc.eyeplus.asyril.com",      # EYE+ KAREL examples
+        "academy.universal-robots.com",  # Free UR programming academy
+        "automationtraining.ca",       # Allen-Bradley, Siemens, CODESYS
 
         # ===== Industrial Forums (Highest Value) =====
         "control.com",                 # Process control, automation
@@ -1031,6 +1049,17 @@ class SearcherAgent:
         "kubousek.cz",                 # Authorized training Czech
         "bruys.nl",                    # OEM spare parts Netherlands
         "im-machinery.de",             # Hydraulic parts Germany
+        "ahead.kraussmaffei.com",      # MC1-MC6 control evolution history
+        "sigmatek-automation.com",     # OPC-UA/LASAL integration for KraussMaffei
+
+        # ===== Cincinnati Milacron Third-Party =====
+        "dcrepaironline.com",          # DC Repair - Cincinnati-area Milacron specialist
+
+        # ===== HMI Software Resources =====
+        "plcprogramming.io",           # FactoryTalk View tutorial (complete guide)
+        "sonicautomation.co.th",       # FactoryTalk View SE User's Guide
+        "tecogrp.com",                 # WinCC Flexible 2008 manual
+        "corsosystems.com",            # High-Performance HMI Handbook
 
         # ===== PLC & Electrical Troubleshooting =====
         "realpars.com",                # PLC digital I/O, Allen-Bradley
@@ -1071,6 +1100,23 @@ class SearcherAgent:
         "us.profinet.com",             # PROFINET fundamentals
         "trend-networks.com",          # Network testing tools
         "industrialautomationco.com",  # EtherNet/IP vs PROFINET
+        "odva.org",                    # ODVA Developer's Guide (EtherNet/IP, DeviceNet)
+        "profibus.com",                # PI Installation Guidelines
+        "profinetcommander.com",       # PROFINET Commander Manual
+        "lantronix.com",               # Modbus Protocol Guide
+        "ccontrols.com",               # Contemporary Controls - Modbus intro
+        "wevolver.com",                # Modbus RTU comprehensive guide
+        "ipc2u.com",                   # Modbus examples
+        "unserver.xyz",                # Complete Modbus guide
+        "rtautomation.com",            # Real Time Automation EtherNet/IP
+        "copperhilltech.com",          # DeviceNet troubleshooting
+        "cisco.com",                   # PROFINET switch configuration
+
+        # ===== QNX Real-Time Operating System =====
+        "qnx.com",                     # QNX developer documentation
+        "blackberry.qnx.com",          # QNX Neutrino RTOS overview
+        "openqnx.com",                 # OpenQNX community resources
+        "qnx.net",                     # QNX Microkernel architecture
 
         # ===== Hydraulics =====
         "crossmfg.com",                # Step-by-step hydraulic troubleshooting
@@ -1254,6 +1300,7 @@ class SearcherAgent:
         # FANUC Official & High-Value (Premium)
         "fanuc.eu", "robot-forum.com", "techtransfer.fanucamerica.com",
         "fanucamerica.com", "diy-robotics.com", "therobotguyllc.com",
+        "onerobotics.com", "mh142.com",  # KAREL tutorials, TP wiki
         # Industrial Forums (Highest Value for Troubleshooting)
         "control.com", "cnczone.com", "plctalk.net", "practicalmachinist.com",
         # Plastics Industry Technical

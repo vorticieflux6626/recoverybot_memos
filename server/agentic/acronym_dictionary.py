@@ -537,6 +537,107 @@ PROTOCOL_ACRONYMS: Dict[str, AcronymInfo] = {
         category="protocol",
         description="Lightweight IoT messaging"
     ),
+    "OPC-UA": AcronymInfo(
+        expansion="Open Platform Communications Unified Architecture",
+        category="protocol",
+        description="Industrial interoperability standard",
+        aliases=["OPC UA", "OPC"],
+        related=["PROFINET", "EIP"]
+    ),
+    "CIP": AcronymInfo(
+        expansion="Common Industrial Protocol",
+        category="protocol",
+        description="Base for EtherNet/IP, DeviceNet, ControlNet"
+    ),
+}
+
+
+# ============================================
+# Controller System Acronyms
+# ============================================
+CONTROLLER_ACRONYMS: Dict[str, AcronymInfo] = {
+    # Cincinnati Milacron Controllers
+    "CAMAC": AcronymInfo(
+        expansion="Cincinnati Milacron Controller",
+        category="milacron",
+        description="Legacy IMM controller (486, VEL, VSX, VTL variants)",
+        aliases=["CAMAC 486", "CAMAC VEL"]
+    ),
+    "MOSAIC": AcronymInfo(
+        expansion="Milacron Operator Supervisory and Control",
+        category="milacron",
+        description="Current Milacron IMM controller platform",
+        aliases=["MOSAIC+", "MOSAIC Plus"]
+    ),
+    # Van Dorn Controllers
+    "PATHFINDER": AcronymInfo(
+        expansion="Van Dorn PathFinder Controller",
+        category="van_dorn",
+        description="Van Dorn IMM controller series (1000-5000)",
+        aliases=["PathFinder", "Pathfinder 3000", "Pathfinder 5000"]
+    ),
+    # KraussMaffei Controllers
+    "MC": AcronymInfo(
+        expansion="Motion Control (KraussMaffei)",
+        category="kraussmaffei",
+        description="KraussMaffei controller series (MC1-MC6)",
+        aliases=["MC4", "MC5", "MC6"]
+    ),
+    # Real-Time Operating Systems
+    "QNX": AcronymInfo(
+        expansion="QNX Neutrino RTOS",
+        category="rtos",
+        description="Real-time operating system for industrial controllers",
+        aliases=["Neutrino", "QNX Neutrino"]
+    ),
+    # FANUC Controller Models
+    "R-30iB": AcronymInfo(
+        expansion="FANUC R-30iB Controller",
+        category="fanuc",
+        description="FANUC robot controller platform",
+        aliases=["R30iB", "R-30iB Plus", "R-30iB Mate"]
+    ),
+    "R-J3iB": AcronymInfo(
+        expansion="FANUC R-J3iB Controller",
+        category="fanuc",
+        description="Legacy FANUC robot controller"
+    ),
+}
+
+
+# ============================================
+# HMI System Acronyms
+# ============================================
+HMI_ACRONYMS: Dict[str, AcronymInfo] = {
+    "FACTORYTALK": AcronymInfo(
+        expansion="Rockwell FactoryTalk Software Suite",
+        category="hmi",
+        description="Allen-Bradley/Rockwell HMI and MES platform",
+        aliases=["FactoryTalk View", "FT View"]
+    ),
+    "WINCC": AcronymInfo(
+        expansion="Siemens WinCC HMI Software",
+        category="hmi",
+        description="Siemens visualization and SCADA system",
+        aliases=["WinCC Flexible", "WinCC Professional"]
+    ),
+    "PANELVIEW": AcronymInfo(
+        expansion="Allen-Bradley PanelView HMI",
+        category="hmi",
+        description="Rockwell operator interface terminal",
+        aliases=["PanelView Plus", "PanelView 5000"]
+    ),
+    "KEPSERVER": AcronymInfo(
+        expansion="Kepware OPC Server",
+        category="hmi",
+        description="Industrial connectivity platform",
+        aliases=["KEPServerEX"]
+    ),
+    "IGNITION": AcronymInfo(
+        expansion="Inductive Automation Ignition",
+        category="hmi",
+        description="SCADA and industrial automation platform"
+    ),
 }
 
 
@@ -550,6 +651,8 @@ INDUSTRIAL_ACRONYMS: Dict[str, AcronymInfo] = {
     **IMM_ACRONYMS,
     **SAFETY_ACRONYMS,
     **PROTOCOL_ACRONYMS,
+    **CONTROLLER_ACRONYMS,
+    **HMI_ACRONYMS,
 }
 
 
