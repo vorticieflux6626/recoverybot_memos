@@ -4042,9 +4042,27 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 logger.info(f"[{request_id}] FLARE triggered: {len(additional_docs)} additional docs retrieved")
                 # Append new docs to content and re-synthesize
                 for i, doc in enumerate(additional_docs[:3]):  # Limit to 3 new docs
+                    # Handle both WebSearchResult objects and raw strings
+                    if hasattr(doc, 'snippet'):
+                        # WebSearchResult object - extract snippet and url
+                        content = doc.snippet[:request.max_content_per_source] if doc.snippet else ""
+                        url = doc.url if hasattr(doc, 'url') else f"flare_doc_{i+1}"
+                    elif hasattr(doc, 'content'):
+                        # Dict-like object with content field
+                        content = doc.content[:request.max_content_per_source] if doc.content else ""
+                        url = doc.get('url', f"flare_doc_{i+1}") if hasattr(doc, 'get') else f"flare_doc_{i+1}"
+                    elif isinstance(doc, str):
+                        # Raw string
+                        content = doc[:request.max_content_per_source]
+                        url = f"flare_doc_{i+1}"
+                    else:
+                        # Unknown type - try to convert to string
+                        content = str(doc)[:request.max_content_per_source]
+                        url = f"flare_doc_{i+1}"
+
                     scraped_content_dicts.append({
-                        "url": f"flare_doc_{i+1}",
-                        "content": doc[:request.max_content_per_source]
+                        "url": url,
+                        "content": content
                     })
                 # Re-synthesize with augmented context
                 synthesis = await self.synthesizer.synthesize_with_content(
