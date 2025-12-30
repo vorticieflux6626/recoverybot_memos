@@ -269,6 +269,101 @@ class BM25Index:
             "b": self.b
         }
 
+    def save_to_db(self, conn: sqlite3.Connection):
+        """
+        Persist BM25 index structures to SQLite for fast reload.
+
+        Stores:
+        - Inverted index as JSON
+        - Document frequencies
+        - Vocabulary
+        - Index statistics
+        """
+        cursor = conn.cursor()
+
+        # Create BM25 index table if not exists
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bm25_index (
+                term TEXT PRIMARY KEY,
+                doc_postings TEXT,  -- JSON: {doc_id: term_freq}
+                doc_freq INTEGER
+            )
+        """)
+
+        # Store each term's posting list
+        for term in self.vocabulary:
+            postings = dict(self.inverted_index.get(term, {}))
+            cursor.execute(
+                "INSERT OR REPLACE INTO bm25_index (term, doc_postings, doc_freq) VALUES (?, ?, ?)",
+                (term, json.dumps(postings), self.doc_freq.get(term, 0))
+            )
+
+        # Store index stats
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bm25_stats (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+
+        stats = {
+            "avg_doc_length": str(self.avg_doc_length),
+            "k1": str(self.k1),
+            "b": str(self.b),
+            "doc_count": str(len(self.documents))
+        }
+
+        for key, value in stats.items():
+            cursor.execute(
+                "INSERT OR REPLACE INTO bm25_stats (key, value) VALUES (?, ?)",
+                (key, value)
+            )
+
+        conn.commit()
+        logger.info(f"Saved BM25 index: {len(self.vocabulary)} terms, {len(self.documents)} docs")
+
+    def load_from_db(self, conn: sqlite3.Connection) -> bool:
+        """
+        Load BM25 index from SQLite for fast startup.
+
+        Returns True if successfully loaded, False if no saved index exists.
+        """
+        cursor = conn.cursor()
+
+        # Check if BM25 index table exists
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='bm25_index'"
+        )
+        if not cursor.fetchone():
+            return False
+
+        # Load inverted index
+        cursor.execute("SELECT term, doc_postings, doc_freq FROM bm25_index")
+        rows = cursor.fetchall()
+
+        if not rows:
+            return False
+
+        for term, postings_json, doc_freq in rows:
+            postings = json.loads(postings_json)
+            self.inverted_index[term] = {k: int(v) for k, v in postings.items()}
+            self.doc_freq[term] = doc_freq
+            self.vocabulary.add(term)
+
+        # Load stats
+        cursor.execute("SELECT key, value FROM bm25_stats")
+        for key, value in cursor.fetchall():
+            if key == "avg_doc_length":
+                self.avg_doc_length = float(value)
+            elif key == "k1":
+                self.k1 = float(value)
+            elif key == "b":
+                self.b = float(value)
+
+        # Note: documents and doc_lengths are loaded separately from main documents table
+        logger.info(f"Loaded BM25 index: {len(self.vocabulary)} terms")
+        return True
+
 
 # =============================================================================
 # BGE-M3 Hybrid Retriever
@@ -356,7 +451,148 @@ class BGEM3HybridRetriever:
         """)
 
         conn.commit()
+
+        # Try to load persisted BM25 index for fast startup
+        if self.bm25_index.load_from_db(conn):
+            logger.info("BM25 index loaded from persistence")
+        else:
+            logger.info("No persisted BM25 index found, will rebuild on document load")
+
         conn.close()
+
+    # ===== PATTERNS FOR RETRIEVAL MODE SELECTION =====
+    # Patterns that indicate exact-match queries (prefer sparse/BM25)
+    EXACT_MATCH_PATTERNS = [
+        # Error codes
+        r"[A-Z]{2,5}-\d{3,4}",  # SRVO-063, MOTN-023
+        r"[A-Z]{4}\d{4}",       # ABCD1234 style codes
+        r"\bERR[-_]?\d+\b",     # ERR-123, ERR123
+
+        # Part numbers
+        r"[A-Z]\d{2}[A-Z]-\d{4,5}",  # A06B-0001
+        r"\b[A-Z]{2,3}\d{4,6}\b",     # ABC12345
+
+        # Version numbers
+        r"\bv?\d+\.\d+\.\d+\b",       # v1.2.3, 1.2.3
+
+        # Model numbers
+        r"\bR-30i[AB]\b",            # FANUC controllers
+        r"\bM-\d{2,4}i[ABC]\b",      # FANUC robots
+        r"\bMC[3-6]\b",              # KraussMaffei controllers
+
+        # Parameters
+        r"\$[A-Z_]+\[\d+\]",         # $PARAM[1]
+        r"\$[A-Z_]+\.[A-Z_]+",       # $MCR.ALARM
+    ]
+
+    # Patterns that indicate conceptual/semantic queries (prefer dense)
+    SEMANTIC_PATTERNS = [
+        r"\bhow\s+to\b",
+        r"\bwhat\s+is\b",
+        r"\bwhy\s+does\b",
+        r"\bexplain\b",
+        r"\bdifference\s+between\b",
+        r"\bcompare\b",
+        r"\bbest\s+practice",
+        r"\brecommend",
+        r"\balternative",
+        r"\bsimilar\s+to\b",
+    ]
+
+    # ===== RRF K PARAMETERS BY DOMAIN TYPE =====
+    # Lower k = more weight to top-ranked documents
+    # Higher k = more uniform weighting across ranks
+    # Domain-specific tuning based on result distribution characteristics
+    RRF_K_BY_DOMAIN = {
+        # Technical domains: Prefer strong top matches (lower k)
+        "fanuc": 40,           # Error codes need exact matches
+        "imm": 45,             # Machine codes need precision
+        "error_code": 35,      # Highest precision for exact codes
+        "part_number": 35,     # Part numbers need exact matches
+
+        # Academic domains: More uniform weighting (higher k)
+        "academic": 70,        # Research needs diverse sources
+        "research": 70,        # Multiple viewpoints valuable
+
+        # Technical docs: Balanced
+        "technical": 55,       # Mix of exact and conceptual
+        "qa": 50,              # Q&A benefits from diversity
+
+        # Default
+        "general": 60,
+        "default": 60,
+    }
+
+    def select_retrieval_mode(
+        self,
+        query: str,
+        query_type: Optional[str] = None
+    ) -> RetrievalMode:
+        """
+        Select optimal retrieval mode based on query characteristics.
+
+        Args:
+            query: The search query
+            query_type: Optional pre-classified query type
+
+        Returns:
+            RetrievalMode appropriate for the query
+
+        Rules:
+        1. Exact-match patterns (error codes, part numbers) → SPARSE_ONLY
+        2. Semantic patterns (how to, explain, compare) → DENSE_ONLY
+        3. Technical queries with specific terms → HYBRID
+        4. Default → HYBRID
+        """
+        query_lower = query.lower()
+
+        # Check for exact-match patterns first
+        for pattern in self.EXACT_MATCH_PATTERNS:
+            if re.search(pattern, query, re.IGNORECASE):
+                logger.info(f"Retrieval mode: SPARSE_ONLY (matched exact pattern)")
+                return RetrievalMode.SPARSE_ONLY
+
+        # Query type hints
+        if query_type:
+            query_type_lower = query_type.lower()
+            if query_type_lower in ["error_code", "part_number", "exact_match", "fanuc", "imm"]:
+                # Even with query type hint, check if there's a semantic pattern
+                has_semantic = any(
+                    re.search(p, query_lower) for p in self.SEMANTIC_PATTERNS
+                )
+                if has_semantic:
+                    logger.info(f"Retrieval mode: HYBRID (exact type + semantic question)")
+                    return RetrievalMode.HYBRID
+                logger.info(f"Retrieval mode: SPARSE_ONLY (query_type={query_type})")
+                return RetrievalMode.SPARSE_ONLY
+
+        # Check for semantic patterns
+        for pattern in self.SEMANTIC_PATTERNS:
+            if re.search(pattern, query_lower):
+                logger.info(f"Retrieval mode: DENSE_ONLY (matched semantic pattern)")
+                return RetrievalMode.DENSE_ONLY
+
+        # Default to hybrid
+        logger.info(f"Retrieval mode: HYBRID (default)")
+        return RetrievalMode.HYBRID
+
+    def get_rrf_k(self, query_type: Optional[str] = None) -> int:
+        """
+        Get domain-appropriate RRF k parameter.
+
+        Args:
+            query_type: Query type/domain for k selection
+
+        Returns:
+            RRF k parameter (lower = more top-heavy ranking)
+        """
+        if not query_type:
+            return self.RRF_K_BY_DOMAIN["default"]
+
+        query_type_lower = query_type.lower()
+        k = self.RRF_K_BY_DOMAIN.get(query_type_lower, self.RRF_K_BY_DOMAIN["default"])
+        logger.debug(f"RRF k={k} for query_type={query_type}")
+        return k
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
@@ -464,7 +700,19 @@ class BGEM3HybridRetriever:
                 metadata=doc_data.get("metadata", {})
             )
             results.append(doc)
+
+        # Persist BM25 index after batch addition
+        self.save_bm25_index()
+
         return results
+
+    def save_bm25_index(self):
+        """Persist BM25 index to SQLite for fast reload on restart."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            self.bm25_index.save_to_db(conn)
+        finally:
+            conn.close()
 
     async def search(
         self,
@@ -472,7 +720,8 @@ class BGEM3HybridRetriever:
         top_k: int = 10,
         mode: RetrievalMode = RetrievalMode.HYBRID,
         dense_candidates: int = 100,
-        sparse_candidates: int = 100
+        sparse_candidates: int = 100,
+        query_type: Optional[str] = None
     ) -> List[HybridSearchResult]:
         """
         Hybrid search combining dense and sparse retrieval.
@@ -488,6 +737,7 @@ class BGEM3HybridRetriever:
             mode: Retrieval mode (dense_only, sparse_only, hybrid)
             dense_candidates: Number of dense candidates
             sparse_candidates: Number of sparse candidates
+            query_type: Optional query type for domain-specific RRF tuning
         """
         if not self.documents:
             return []
@@ -533,8 +783,10 @@ class BGEM3HybridRetriever:
 
         # Fusion
         if self.use_rrf:
-            # Reciprocal Rank Fusion
-            self._apply_rrf(results)
+            # Reciprocal Rank Fusion with domain-specific k
+            rrf_k = self.get_rrf_k(query_type)
+            logger.info(f"Using RRF with k={rrf_k} for query_type={query_type or 'default'}")
+            self._apply_rrf(results, k=rrf_k)
         else:
             # Weighted linear combination
             for result in results.values():
@@ -552,6 +804,46 @@ class BGEM3HybridRetriever:
         )
 
         return sorted_results[:top_k]
+
+    async def search_with_auto_mode(
+        self,
+        query: str,
+        top_k: int = 10,
+        query_type: Optional[str] = None,
+        dense_candidates: int = 100,
+        sparse_candidates: int = 100
+    ) -> List[HybridSearchResult]:
+        """
+        Search with automatic retrieval mode selection.
+
+        Automatically selects SPARSE_ONLY, DENSE_ONLY, or HYBRID mode
+        based on query characteristics.
+
+        Args:
+            query: Search query
+            top_k: Number of results to return
+            query_type: Optional pre-classified query type for hints
+            dense_candidates: Number of dense candidates (for hybrid/dense)
+            sparse_candidates: Number of sparse candidates (for hybrid/sparse)
+
+        Returns:
+            List of search results
+        """
+        # Auto-select retrieval mode
+        mode = self.select_retrieval_mode(query, query_type)
+
+        # Log mode selection
+        logger.info(f"Auto-selected retrieval mode: {mode.value} for query: {query[:50]}...")
+
+        # Execute search with selected mode and domain-specific RRF
+        return await self.search(
+            query=query,
+            top_k=top_k,
+            mode=mode,
+            dense_candidates=dense_candidates,
+            sparse_candidates=sparse_candidates,
+            query_type=query_type
+        )
 
     def _dense_search(
         self,

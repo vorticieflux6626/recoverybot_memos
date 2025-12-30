@@ -428,9 +428,9 @@ PRESET_CONFIGS = {
     ),
     OrchestratorPreset.BALANCED: FeatureConfig(
         # All Layer 1 defaults are True
-        # Layer 2+ features disabled for balance
+        # Layer 2 hybrid reranking enabled for +2-5% NDCG (lightweight)
         enable_hyde=False,
-        enable_hybrid_reranking=False,
+        enable_hybrid_reranking=True,  # BGE-M3 dense+sparse fusion
         enable_ragas=False,
         # HSEA for FANUC knowledge (fast, high-value)
         enable_domain_corpus=True,  # Required for HSEA to run

@@ -1305,6 +1305,316 @@ class SearcherAgent:
         "urbandictionary.com",
     }
 
+    # ===== DOMAIN CATEGORIES =====
+    # Maps domains to their category for dynamic boost calculation
+    DOMAIN_CATEGORIES = {
+        # Academic
+        "arxiv.org": "academic",
+        "scholar.google.com": "academic",
+        "semanticscholar.org": "academic",
+        "researchgate.net": "academic",
+        "ieee.org": "academic",
+        "acm.org": "academic",
+        "nature.com": "academic",
+        "sciencedirect.com": "academic",
+        "springer.com": "academic",
+        "wiley.com": "academic",
+        "pubmed.ncbi.nlm.nih.gov": "academic",
+        "ncbi.nlm.nih.gov": "academic",
+        "jstor.org": "academic",
+        "ssrn.com": "academic",
+        "biorxiv.org": "academic",
+        "medrxiv.org": "academic",
+        "openreview.net": "academic",
+        "aclanthology.org": "academic",
+        "neurips.cc": "academic",
+        "proceedings.mlr.press": "academic",
+
+        # Technical Documentation
+        "docs.python.org": "technical_docs",
+        "docs.rust-lang.org": "technical_docs",
+        "docs.oracle.com": "technical_docs",
+        "docs.microsoft.com": "technical_docs",
+        "learn.microsoft.com": "technical_docs",
+        "developer.apple.com": "technical_docs",
+        "developer.android.com": "technical_docs",
+        "developer.mozilla.org": "technical_docs",
+        "devdocs.io": "technical_docs",
+        "readthedocs.io": "technical_docs",
+        "readthedocs.org": "technical_docs",
+        "kubernetes.io": "technical_docs",
+        "docker.com": "technical_docs",
+        "docs.docker.com": "technical_docs",
+        "nginx.org": "technical_docs",
+        "fastapi.tiangolo.com": "technical_docs",
+        "flask.palletsprojects.com": "technical_docs",
+        "docs.djangoproject.com": "technical_docs",
+        "pytorch.org": "technical_docs",
+        "tensorflow.org": "technical_docs",
+        "numpy.org": "technical_docs",
+        "pandas.pydata.org": "technical_docs",
+        "scikit-learn.org": "technical_docs",
+        "docs.scipy.org": "technical_docs",
+        "matplotlib.org": "technical_docs",
+        "langchain.com": "technical_docs",
+        "docs.anthropic.com": "technical_docs",
+        "platform.openai.com": "technical_docs",
+        "ollama.com": "technical_docs",
+
+        # Code Repositories
+        "github.com": "code",
+        "gitlab.com": "code",
+        "bitbucket.org": "code",
+        "sourceforge.net": "code",
+        "codeberg.org": "code",
+        "huggingface.co": "code",
+
+        # Q&A / Community
+        "stackoverflow.com": "qa",
+        "stackexchange.com": "qa",
+        "serverfault.com": "qa",
+        "superuser.com": "qa",
+        "askubuntu.com": "qa",
+        "unix.stackexchange.com": "qa",
+        "cs.stackexchange.com": "qa",
+        "ai.stackexchange.com": "qa",
+        "datascience.stackexchange.com": "qa",
+        "electronics.stackexchange.com": "qa",
+        "robotics.stackexchange.com": "qa",
+        "engineering.stackexchange.com": "qa",
+
+        # Cloud Providers
+        "cloud.google.com": "cloud",
+        "aws.amazon.com": "cloud",
+        "docs.aws.amazon.com": "cloud",
+        "azure.microsoft.com": "cloud",
+        "docs.digitalocean.com": "cloud",
+        "docs.cloudflare.com": "cloud",
+
+        # Hardware/Engineering
+        "hackaday.com": "hardware",
+        "instructables.com": "hardware",
+        "adafruit.com": "hardware",
+        "sparkfun.com": "hardware",
+        "raspberrypi.org": "hardware",
+        "raspberrypi.com": "hardware",
+        "arduino.cc": "hardware",
+        "eevblog.com": "hardware",
+        "allaboutcircuits.com": "hardware",
+
+        # FANUC
+        "fanuc.eu": "fanuc",
+        "fanucamerica.com": "fanuc",
+        "techtransfer.fanucamerica.com": "fanuc",
+        "crc2.frc.com": "fanuc",
+        "fanuc-academy.uk": "fanuc",
+        "content.fanucworld.com": "fanuc",
+        "therobotguyllc.com": "fanuc",
+        "manuals.plus": "fanuc",
+        "manualmachine.com": "fanuc",
+        "studylib.net": "fanuc",
+        "robots.com": "fanuc",
+        "diy-robotics.com": "fanuc",
+        "tristarcnc.com": "fanuc",
+        "cncspares.com": "fanuc",
+        "mroelectric.com": "fanuc",
+        "okmarts.com": "fanuc",
+        "robochallenge.pl": "fanuc",
+        "docs.mech-mind.net": "fanuc",
+        "productivity.com": "fanuc",
+        "nrtcautomation.com": "fanuc",
+        "ramtecohio.com": "fanuc",
+        "gcodetutor.com": "fanuc",
+        "aleksandarhaber.com": "fanuc",
+        "robot-forum.com": "fanuc",
+
+        # Injection Molding / Plastics
+        "ptonline.com": "imm",
+        "plasticstoday.com": "imm",
+        "plasticsnews.com": "imm",
+        "rjginc.com": "imm",
+        "traininteractive.com": "imm",
+        "aim.institute": "imm",
+        "4spe.org": "imm",
+        "injectionmoldingonline.com": "imm",
+        "vitalplastics.com": "imm",
+        "nexeoplastics.com": "imm",
+        "elastron.com": "imm",
+        "waykenrm.com": "imm",
+        "guanxin-machinery.com": "imm",
+        "kraussmaffei.com": "imm",
+        "trainingacademy.kraussmaffei.com": "imm",
+        "press.kraussmaffei.com": "imm",
+        "milacron.com": "imm",
+        "sumitomo-shi-demag.us": "imm",
+        "sumitomo-shi-demag.eu": "imm",
+        "euromap.org": "imm",
+        "plastech.pl": "imm",
+        "astor.com.pl": "imm",
+        "zacobria.com": "imm",
+        "machinebuilding.net": "imm",
+        "plastics-rubber.basf.com": "imm",
+        "dupont.com": "imm",
+        "sabic.com": "imm",
+        "covestro.com": "imm",
+        "entecpolymers.com": "imm",
+        "dme.net": "imm",
+        "hasco.com": "imm",
+        "pdfcoffee.com": "imm",
+        "opcturkey.com": "imm",
+        "machineryhost.com": "imm",
+        "directindustry.com": "imm",
+        "rgbelektronika.eu": "imm",
+        "kubousek.cz": "imm",
+        "bruys.nl": "imm",
+        "im-machinery.de": "imm",
+        "moldmasters.com": "imm",
+        "husky.co": "imm",
+        "incoe.com": "imm",
+        "hitcontrols.com": "imm",
+        "synventive.com": "imm",
+        "novatec.com": "imm",
+        "conairgroup.com": "imm",
+        "advantageengineering.com": "imm",
+
+        # Industrial / PLC
+        "control.com": "industrial",
+        "plctalk.net": "industrial",
+        "mrplc.com": "industrial",
+        "practicalmachinist.com": "industrial",
+        "eng-tips.com": "industrial",
+        "cnczone.com": "industrial",
+        "linuxcnc.org": "industrial",
+        "support.industry.siemens.com": "industrial",
+        "rockwellautomation.com": "industrial",
+        "literature.rockwellautomation.com": "industrial",
+        "realpars.com": "industrial",
+        "dosupply.com": "industrial",
+        "ladderlogicworld.com": "industrial",
+        "plcacademy.com": "industrial",
+        "solisplc.com": "industrial",
+        "library.automationdirect.com": "industrial",
+        "cdn.automationdirect.com": "industrial",
+        "automationdirect.com": "industrial",
+        "manualslib.com": "industrial",
+
+        # Sensors
+        "bannerengineering.com": "sensors",
+        "turck.us": "sensors",
+        "sick.com": "sensors",
+        "ifm.com": "sensors",
+        "omron.com": "sensors",
+        "balluff.com": "sensors",
+        "temprel.com": "sensors",
+        "peaksensors.com": "sensors",
+        "controlglobal.com": "sensors",
+        "en.jumo.pl": "sensors",
+        "automationforum.co": "sensors",
+        "fluke.com": "sensors",
+        "devarinc.com": "sensors",
+        "seametrics.com": "sensors",
+        "instrumentationtools.com": "sensors",
+
+        # Servo/Motor
+        "gesrepair.com": "servo",
+        "mitchell-electronics.com": "servo",
+        "ato.com": "servo",
+        "gtencoder.com": "servo",
+        "encoder.com": "servo",
+        "dynapar.com": "servo",
+        "cdn.logic-control.com": "servo",
+        "motioncontroltips.com": "servo",
+        "vfds.com": "servo",
+        "americanindustrialinc.com": "servo",
+
+        # Standards
+        "nist.gov": "standards",
+        "ietf.org": "standards",
+        "w3.org": "standards",
+        "rfc-editor.org": "standards",
+        "osha.gov": "standards",
+
+        # General reference
+        "wikipedia.org": "general",
+    }
+
+    # ===== QUERY-DOMAIN ALIGNMENT MATRIX =====
+    # Maps (query_type, domain_category) -> boost value
+    # Higher boost when query type aligns with domain specialty
+    QUERY_DOMAIN_ALIGNMENT = {
+        # FANUC queries get highest boost from FANUC-specific domains
+        ("fanuc", "fanuc"): 0.35,
+        ("fanuc", "industrial"): 0.25,
+        ("fanuc", "servo"): 0.25,
+        ("fanuc", "qa"): 0.20,
+        ("fanuc", "technical_docs"): 0.15,
+
+        # IMM queries get highest boost from plastics/molding domains
+        ("imm", "imm"): 0.35,
+        ("imm", "industrial"): 0.25,
+        ("imm", "sensors"): 0.20,
+        ("imm", "servo"): 0.20,
+        ("imm", "qa"): 0.15,
+
+        # Robotics queries
+        ("robotics", "fanuc"): 0.30,
+        ("robotics", "industrial"): 0.25,
+        ("robotics", "servo"): 0.25,
+        ("robotics", "hardware"): 0.20,
+        ("robotics", "qa"): 0.15,
+
+        # Academic queries prefer academic sources
+        ("academic", "academic"): 0.35,
+        ("academic", "technical_docs"): 0.20,
+        ("academic", "standards"): 0.15,
+        ("academic", "qa"): 0.10,
+
+        # Technical/code queries prefer docs and code repos
+        ("technical", "technical_docs"): 0.30,
+        ("technical", "code"): 0.25,
+        ("technical", "qa"): 0.20,
+        ("technical", "academic"): 0.15,
+        ("technical", "cloud"): 0.15,
+
+        # Q&A queries prefer community sources
+        ("qa", "qa"): 0.30,
+        ("qa", "code"): 0.20,
+        ("qa", "technical_docs"): 0.15,
+        ("qa", "industrial"): 0.15,
+
+        # Linux/sysadmin queries
+        ("linux", "qa"): 0.30,
+        ("linux", "technical_docs"): 0.25,
+        ("linux", "code"): 0.20,
+
+        # General queries - balanced boosts
+        ("general", "qa"): 0.15,
+        ("general", "technical_docs"): 0.15,
+        ("general", "academic"): 0.15,
+        ("general", "general"): 0.10,
+
+        # Hardware queries
+        ("hardware", "hardware"): 0.30,
+        ("hardware", "qa"): 0.20,
+        ("hardware", "technical_docs"): 0.15,
+
+        # Industrial queries
+        ("industrial", "industrial"): 0.30,
+        ("industrial", "imm"): 0.25,
+        ("industrial", "sensors"): 0.25,
+        ("industrial", "servo"): 0.25,
+        ("industrial", "fanuc"): 0.20,
+        ("industrial", "qa"): 0.15,
+
+        # News queries
+        ("news", "general"): 0.15,
+        ("news", "academic"): 0.10,
+    }
+
+    # Default boosts when no specific alignment is found
+    DEFAULT_PREMIUM_BOOST = 0.25
+    DEFAULT_TRUSTED_BOOST = 0.15
+
     def __init__(self, brave_api_key: Optional[str] = None, searxng_url: Optional[str] = None):
         self.searxng = SearXNGSearchProvider(searxng_url)  # Uses settings if None
         self.brave = BraveSearchProvider(brave_api_key)
@@ -1404,6 +1714,167 @@ class SearcherAgent:
         is_relevant = relevance >= self.MIN_KEYWORD_RELEVANCE
 
         return is_relevant, relevance
+
+    def _get_domain_category(self, domain: str) -> Optional[str]:
+        """
+        Get the category for a domain.
+        Handles partial matches (e.g., "www.github.com" matches "github.com").
+        """
+        # Direct lookup
+        if domain in self.DOMAIN_CATEGORIES:
+            return self.DOMAIN_CATEGORIES[domain]
+
+        # Partial match - check if domain contains any categorized domain
+        for categorized_domain, category in self.DOMAIN_CATEGORIES.items():
+            if categorized_domain in domain or domain.endswith(f".{categorized_domain}"):
+                return category
+
+        return None
+
+    def get_dynamic_domain_boost(
+        self,
+        query_type: Optional[str],
+        domain: str,
+        is_premium: bool
+    ) -> float:
+        """
+        Calculate dynamic boost based on query-domain alignment.
+
+        Args:
+            query_type: The detected query type (fanuc, imm, academic, technical, etc.)
+            domain: The source domain
+            is_premium: Whether the domain is in PREMIUM_DOMAINS
+
+        Returns:
+            Boost value (0.0 to 0.35)
+        """
+        # Get domain category
+        domain_category = self._get_domain_category(domain)
+
+        if not domain_category:
+            # Unknown domain - use default boosts
+            return self.DEFAULT_PREMIUM_BOOST if is_premium else self.DEFAULT_TRUSTED_BOOST
+
+        if not query_type:
+            # No query type detected - use default boosts based on category
+            return self.DEFAULT_PREMIUM_BOOST if is_premium else self.DEFAULT_TRUSTED_BOOST
+
+        # Normalize query type
+        query_type_normalized = query_type.lower().replace("-", "_")
+
+        # Map some query types to their alignment keys
+        type_mapping = {
+            "problem_solving": "technical",
+            "how_to": "technical",
+            "factual": "general",
+            "creative": "general",
+            "comparative": "general",
+            "research": "academic",
+            "euromap": "imm",
+            "plastics": "imm",
+            "packages": "technical",
+        }
+        alignment_key = type_mapping.get(query_type_normalized, query_type_normalized)
+
+        # Look up specific alignment
+        boost = self.QUERY_DOMAIN_ALIGNMENT.get((alignment_key, domain_category))
+
+        if boost is not None:
+            logger.debug(
+                f"Dynamic boost: query_type={alignment_key}, domain_category={domain_category}, boost={boost}"
+            )
+            return boost
+
+        # No specific alignment - fall back to defaults with premium adjustment
+        if is_premium:
+            return self.DEFAULT_PREMIUM_BOOST
+        else:
+            return self.DEFAULT_TRUSTED_BOOST
+
+    def _apply_diversity_reranking(
+        self,
+        results: List[WebSearchResult],
+        target_categories: int = 3,
+        min_per_category: int = 1
+    ) -> List[WebSearchResult]:
+        """
+        Apply diversity-aware reranking to ensure results from different domain categories.
+
+        This promotes results from underrepresented categories to improve information diversity.
+        Results are reordered to ensure at least `target_categories` different categories
+        are represented in the top results.
+
+        Args:
+            results: List of search results, already sorted by relevance
+            target_categories: Target number of different categories in top results
+            min_per_category: Minimum results per category before moving to next
+
+        Returns:
+            Reordered list with improved category diversity
+        """
+        if len(results) <= 5:
+            # Too few results to diversify meaningfully
+            return results
+
+        # Categorize results
+        from collections import defaultdict
+        category_buckets: dict = defaultdict(list)
+        uncategorized: List[WebSearchResult] = []
+
+        for result in results:
+            category = self._get_domain_category(result.source_domain)
+            if category:
+                category_buckets[category].append(result)
+            else:
+                uncategorized.append(result)
+
+        # If all from one category or no categories, return original
+        if len(category_buckets) <= 1:
+            return results
+
+        # Build diverse result list using round-robin from top categories
+        diverse_results: List[WebSearchResult] = []
+        used_results: set = set()
+
+        # Sort categories by their best result score (prioritize high-quality categories)
+        sorted_categories = sorted(
+            category_buckets.keys(),
+            key=lambda c: category_buckets[c][0].relevance_score if category_buckets[c] else 0,
+            reverse=True
+        )
+
+        # First pass: take min_per_category from each category up to target
+        categories_used = 0
+        for category in sorted_categories:
+            if categories_used >= target_categories:
+                break
+
+            bucket = category_buckets[category]
+            for result in bucket[:min_per_category]:
+                if id(result) not in used_results:
+                    diverse_results.append(result)
+                    used_results.add(id(result))
+
+            categories_used += 1
+
+        # Second pass: fill remaining slots by score
+        remaining = [r for r in results if id(r) not in used_results]
+        remaining.sort(key=lambda r: r.relevance_score, reverse=True)
+        diverse_results.extend(remaining)
+
+        # Log diversity stats
+        final_categories = set()
+        for r in diverse_results[:10]:
+            cat = self._get_domain_category(r.source_domain)
+            if cat:
+                final_categories.add(cat)
+
+        logger.info(
+            f"Diversity reranking: {len(final_categories)} categories in top 10 "
+            f"(categories: {', '.join(sorted(final_categories)[:5])})"
+        )
+
+        return diverse_results
 
     async def search(
         self,
@@ -1506,13 +1977,19 @@ class SearcherAgent:
 
                     if is_trusted_domain:
                         if is_relevant:
-                            # Premium domains get higher boost (0.25) vs trusted (0.15)
-                            boost = 0.25 if is_premium_domain else 0.15
+                            # Dynamic boost based on query-domain alignment
+                            boost = self.get_dynamic_domain_boost(
+                                query_type=query_type,
+                                domain=result.source_domain,
+                                is_premium=is_premium_domain
+                            )
                             result.relevance_score = min(1.0, result.relevance_score + boost)
                             tier = "premium" if is_premium_domain else "trusted"
+                            domain_cat = self._get_domain_category(result.source_domain) or "unknown"
                             logger.debug(
                                 f"Boosted {tier} result: {result.title[:40]}... "
-                                f"(keyword_relevance={keyword_relevance:.2f}, boost={boost})"
+                                f"(query_type={query_type}, domain_cat={domain_cat}, "
+                                f"keyword_relevance={keyword_relevance:.2f}, boost={boost:.2f})"
                             )
                         else:
                             # Penalize irrelevant results from trusted domains
@@ -1563,7 +2040,12 @@ class SearcherAgent:
         for i, r in enumerate(filtered_results[:5], 1):
             logger.info(f"  {i}. [{r.source_domain}] {r.title[:50]}... (score={r.relevance_score:.2f})")
 
-        return filtered_results
+        # Apply diversity-aware reranking to ensure results from different categories
+        diverse_results = self._apply_diversity_reranking(
+            filtered_results, target_categories=3, min_per_category=1
+        )
+
+        return diverse_results
 
     async def _search_single(
         self,
@@ -1605,3 +2087,165 @@ class SearcherAgent:
             )
 
         return "\n---\n".join(formatted)
+
+
+# =============================================================================
+# Domain Performance Tracking
+# =============================================================================
+
+class DomainPerformanceTracker:
+    """
+    Tracks domain performance metrics for search result optimization.
+
+    Records:
+    - Domain appearance frequency in search results
+    - Domain selection rate in final synthesis
+    - Average confidence scores by domain
+    - Domain category performance
+    """
+
+    def __init__(self):
+        from collections import defaultdict
+        self.stats: dict = defaultdict(lambda: {
+            "appearances": 0,
+            "in_final_answer": 0,
+            "boost_applied": 0,
+            "total_confidence": 0.0,
+            "query_types": defaultdict(int),
+            "category": None
+        })
+        self._lock = asyncio.Lock()
+
+    async def record_search_result(
+        self,
+        domain: str,
+        category: Optional[str] = None,
+        was_boosted: bool = False,
+        query_type: Optional[str] = None
+    ):
+        """Record a domain appearing in search results."""
+        async with self._lock:
+            self.stats[domain]["appearances"] += 1
+            if was_boosted:
+                self.stats[domain]["boost_applied"] += 1
+            if query_type:
+                self.stats[domain]["query_types"][query_type] += 1
+            if category:
+                self.stats[domain]["category"] = category
+
+    async def record_synthesis_usage(
+        self,
+        domain: str,
+        confidence: float
+    ):
+        """Record a domain being used in final synthesis."""
+        async with self._lock:
+            self.stats[domain]["in_final_answer"] += 1
+            self.stats[domain]["total_confidence"] += confidence
+
+    def get_domain_stats(self, domain: str) -> dict:
+        """Get stats for a specific domain."""
+        stats = self.stats[domain]
+        appearances = stats["appearances"]
+        in_final = stats["in_final_answer"]
+
+        return {
+            "domain": domain,
+            "appearances": appearances,
+            "in_final_answer": in_final,
+            "selection_rate": in_final / appearances if appearances > 0 else 0.0,
+            "boost_applied": stats["boost_applied"],
+            "avg_confidence": (
+                stats["total_confidence"] / in_final
+                if in_final > 0 else 0.0
+            ),
+            "category": stats["category"],
+            "query_types": dict(stats["query_types"])
+        }
+
+    def get_top_domains(self, n: int = 20, by: str = "selection_rate") -> list:
+        """Get top N domains by specified metric."""
+        all_stats = [self.get_domain_stats(d) for d in self.stats.keys()]
+
+        if by == "selection_rate":
+            # Only consider domains with at least 5 appearances
+            all_stats = [s for s in all_stats if s["appearances"] >= 5]
+            all_stats.sort(key=lambda x: x["selection_rate"], reverse=True)
+        elif by == "appearances":
+            all_stats.sort(key=lambda x: x["appearances"], reverse=True)
+        elif by == "confidence":
+            all_stats = [s for s in all_stats if s["in_final_answer"] > 0]
+            all_stats.sort(key=lambda x: x["avg_confidence"], reverse=True)
+        elif by == "final_usage":
+            all_stats.sort(key=lambda x: x["in_final_answer"], reverse=True)
+
+        return all_stats[:n]
+
+    def get_category_performance(self) -> dict:
+        """Get aggregated performance by domain category."""
+        from collections import defaultdict
+        category_stats: dict = defaultdict(lambda: {
+            "domains": 0,
+            "total_appearances": 0,
+            "total_final_usage": 0,
+            "total_confidence": 0.0
+        })
+
+        for domain in self.stats.keys():
+            stats = self.stats[domain]
+            category = stats["category"] or "uncategorized"
+
+            category_stats[category]["domains"] += 1
+            category_stats[category]["total_appearances"] += stats["appearances"]
+            category_stats[category]["total_final_usage"] += stats["in_final_answer"]
+            category_stats[category]["total_confidence"] += stats["total_confidence"]
+
+        # Calculate averages
+        result = {}
+        for cat, data in category_stats.items():
+            final = data["total_final_usage"]
+            result[cat] = {
+                "domains": data["domains"],
+                "appearances": data["total_appearances"],
+                "final_usage": final,
+                "selection_rate": (
+                    final / data["total_appearances"]
+                    if data["total_appearances"] > 0 else 0.0
+                ),
+                "avg_confidence": (
+                    data["total_confidence"] / final if final > 0 else 0.0
+                )
+            }
+
+        return result
+
+    def get_summary(self) -> dict:
+        """Get overall performance summary."""
+        total_domains = len(self.stats)
+        total_appearances = sum(s["appearances"] for s in self.stats.values())
+        total_final = sum(s["in_final_answer"] for s in self.stats.values())
+
+        return {
+            "total_domains_seen": total_domains,
+            "total_appearances": total_appearances,
+            "total_final_usage": total_final,
+            "overall_selection_rate": (
+                total_final / total_appearances
+                if total_appearances > 0 else 0.0
+            ),
+            "top_domains_by_selection": self.get_top_domains(5, by="selection_rate"),
+            "top_domains_by_usage": self.get_top_domains(5, by="final_usage"),
+            "category_performance": self.get_category_performance()
+        }
+
+
+# Global singleton for domain performance tracking
+_domain_tracker: Optional[DomainPerformanceTracker] = None
+
+
+def get_domain_tracker() -> DomainPerformanceTracker:
+    """Get or create the global domain performance tracker."""
+    global _domain_tracker
+    if _domain_tracker is None:
+        _domain_tracker = DomainPerformanceTracker()
+    return _domain_tracker
