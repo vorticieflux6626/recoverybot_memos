@@ -932,28 +932,50 @@ class SearcherAgent:
         "aim.institute",               # American Injection Molding Institute
         "4spe.org",                    # Society of Plastics Engineers
         "injectionmoldingonline.com",  # IM Forums
+        "vitalplastics.com",           # RJG implementation case studies
+        "nexeoplastics.com",           # Fill-Pack-Recover optimization
+        "elastron.com",                # Defect troubleshooting guides
+        "waykenrm.com",                # Molding problems/solutions
+        "guanxin-machinery.com",       # Error codes/troubleshooting
 
         # ===== Machine Manufacturers (Premium for IMM) =====
         "kraussmaffei.com",
+        "trainingacademy.kraussmaffei.com",  # MC6 control training
+        "press.kraussmaffei.com",      # Brochures and datasheets
         "milacron.com",
-        "sumitomo-shi-demag.us",
+        "sumitomo-shi-demag.us",       # Van Dorn/Demag legacy specs
         "sumitomo-shi-demag.eu",
-        "euromap.org",                 # Euromap Standards (Critical)
-        "robot-forum.com",             # FANUC Integration
+        "euromap.org",                 # Euromap 67/73/77 Standards (Critical)
+        "fanuc.eu",                    # FANUC ROBOSHOT specs
+        "robot-forum.com",             # FANUC Integration discussions
         "plctalk.net",                 # PLC Programming
         "practicalmachinist.com",
         "eng-tips.com",
+        "support.industry.siemens.com", # Siemens PLC troubleshooting
+
+        # ===== Euromap Protocol Resources =====
+        "plastech.pl",                 # Euromap 67 mirror
+        "astor.com.pl",                # Euromap technical overview
+        "zacobria.com",                # Universal Robots Euromap guides
+        "machinebuilding.net",         # Robot-IMM safety integration
 
         # ===== Material Suppliers (Technical Data) =====
-        "plastics-rubber.basf.com",
+        "plastics-rubber.basf.com",    # BASF troubleshooter with photos
         "dupont.com",
         "sabic.com",
         "covestro.com",
+        "entecpolymers.com",           # Troubleshooting guide PDFs
 
-        # ===== Parts & Service =====
-        "mcspt.com",
-        "industrialmanuals.com",
-        "controlrepair.com",
+        # ===== Mold Components & Standards =====
+        "dme.net",                     # Mold component standards
+        "hasco.com",                   # 100,000+ standard components
+
+        # ===== Parts, Manuals & Service =====
+        "mcspt.com",                   # Cincinnati Milacron manuals
+        "industrialmanuals.com",       # Van Dorn, Cincinnati manuals
+        "controlrepair.com",           # Control system repair info
+        "cincinnatirpt.com",           # 30,000+ Cincinnati parts
+        "telarcorp.com",               # Van Dorn parts catalog
 
         # ===== Reference (Trusted) =====
         "wikipedia.org",
@@ -994,6 +1016,11 @@ class SearcherAgent:
         # Injection Molding / Euromap (Premium for IMM queries)
         "euromap.org", "ptonline.com", "rjginc.com",
         "kraussmaffei.com", "milacron.com", "sumitomo-shi-demag.us",
+        # FANUC Robot Integration
+        "fanuc.eu", "robot-forum.com",
+        # Plastics Industry Technical
+        "plastics-rubber.basf.com", "4spe.org", "aim.institute",
+        "injectionmoldingonline.com", "dme.net",
     }
 
     # Common stopwords to exclude from keyword matching
