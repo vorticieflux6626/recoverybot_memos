@@ -96,7 +96,16 @@ async def lifespan(app: FastAPI):
         
         # Initialize core services
         logger.info("Core services initialized")
-        
+
+        # Warm KV cache with common system prompts for faster first queries
+        if ollama_available:
+            try:
+                from agentic.kv_cache_service import warm_system_prompts
+                await warm_system_prompts()
+                logger.info("KV cache warmed with system prompts")
+            except Exception as e:
+                logger.warning(f"KV cache warming failed (non-fatal): {e}")
+
         yield
         
     except Exception as e:

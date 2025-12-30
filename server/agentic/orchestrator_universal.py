@@ -887,6 +887,47 @@ class UniversalOrchestrator(BaseSearchPipeline):
             self._scratchpad_cache = get_scratchpad_cache()
         return self._graph_cache
 
+    async def _graph_before_agent(
+        self,
+        request_id: str,
+        agent_type: AgentType,
+        scratchpad_state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Call graph cache before_agent_call hook if enabled.
+
+        Returns cached data if available (for cache hits).
+        """
+        if not self.config.enable_graph_cache:
+            return {}
+
+        try:
+            graph_cache = self._get_graph_cache()
+            return await graph_cache.before_agent_call(request_id, agent_type, scratchpad_state)
+        except Exception as e:
+            logger.warning(f"[{request_id}] Graph cache before_agent_call failed: {e}")
+            return {}
+
+    async def _graph_after_agent(
+        self,
+        request_id: str,
+        agent_type: AgentType,
+        result: Dict[str, Any],
+        duration_ms: float,
+        token_count: int = 0
+    ):
+        """Call graph cache after_agent_call hook if enabled."""
+        if not self.config.enable_graph_cache:
+            return
+
+        try:
+            graph_cache = self._get_graph_cache()
+            await graph_cache.after_agent_call(
+                request_id, agent_type, result, duration_ms, token_count
+            )
+        except Exception as e:
+            logger.warning(f"[{request_id}] Graph cache after_agent_call failed: {e}")
+
     def _get_mixed_precision_service(self) -> MixedPrecisionEmbeddingService:
         """Lazy initialize mixed precision embedding service."""
         if self._mixed_precision_service is None:
@@ -3266,6 +3307,16 @@ class UniversalOrchestrator(BaseSearchPipeline):
         """Phase 4: Search execution."""
         start = time.time()
 
+        # Notify graph cache before search phase (for caching/prefetching)
+        scratchpad_state = {
+            "mission": request.query,
+            "sub_questions": [q.text if hasattr(q, 'text') else str(q)
+                            for q in (scratchpad.mission.sub_questions if scratchpad.mission else [])],
+        }
+        cached_data = await self._graph_before_agent(request_id, AgentType.SEARCHER, scratchpad_state)
+        if cached_data.get("cached_subqueries"):
+            logger.info(f"[{request_id}] Graph cache hit: {len(cached_data['cached_subqueries'])} cached subqueries")
+
         # Update graph: complete Analyze, enter Plan
         self._graph_state.complete("A")
         self._graph_state.enter("P")
@@ -3363,10 +3414,17 @@ class UniversalOrchestrator(BaseSearchPipeline):
             graph_line=self._graph_state.to_line()
         )
 
+        # Get TTL cache manager for pinning cache during searches
+        ttl_manager = get_ttl_cache_manager()
+
         # Execute searches with context-aware result limits
         if self.config.enable_parallel_execution and len(queries) > 1:
-            # Parallel execution - searcher.search() expects a list of queries
-            tasks = [self.searcher.search([q], max_results_per_query=max_results_per_query) for q in queries]
+            # Parallel execution with TTL cache pinning
+            async def search_with_pin(q: str):
+                async with ToolCallContext(request_id, ToolType.WEB_SEARCH, manager=ttl_manager):
+                    return await self.searcher.search([q], max_results_per_query=max_results_per_query)
+
+            tasks = [search_with_pin(q) for q in queries]
             results_list = await asyncio.gather(*tasks, return_exceptions=True)
             for i, results in enumerate(results_list):
                 if isinstance(results, Exception):
@@ -3375,9 +3433,10 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 state.add_results(results)
                 state.mark_query_executed(queries[i])
         else:
-            # Sequential execution - searcher.search() expects a list of queries
+            # Sequential execution with TTL cache pinning
             for query in queries:
-                results = await self.searcher.search([query], max_results_per_query=max_results_per_query)
+                async with ToolCallContext(request_id, ToolType.WEB_SEARCH, manager=ttl_manager):
+                    results = await self.searcher.search([query], max_results_per_query=max_results_per_query)
                 state.add_results(results)
                 state.mark_query_executed(query)
 
@@ -3393,13 +3452,22 @@ class UniversalOrchestrator(BaseSearchPipeline):
             graph_line=self._graph_state.to_line()
         )
 
+        search_duration_ms = int((time.time() - start) * 1000)
         search_trace.append({
             "step": "search",
             "queries_executed": len(state.executed_queries),
             "results_found": len(state.raw_results),
-            "duration_ms": int((time.time() - start) * 1000)
+            "duration_ms": search_duration_ms
         })
         self._record_timing("search", time.time() - start)
+
+        # Notify graph cache after search phase (for caching results)
+        await self._graph_after_agent(
+            request_id,
+            AgentType.SEARCHER,
+            {"results_count": len(state.raw_results), "queries": list(state.executed_queries)},
+            float(search_duration_ms)
+        )
 
     async def _phase_domain_corpus(
         self,
@@ -3528,6 +3596,12 @@ class UniversalOrchestrator(BaseSearchPipeline):
         start = time.time()
         scraped_content = []
 
+        # Notify graph cache before scrape phase
+        scratchpad_state = {
+            "findings": [{"content": f.content[:200]} for f in (scratchpad.findings[:10] if scratchpad else [])]
+        }
+        cached_data = await self._graph_before_agent(request_id, AgentType.SCRAPER, scratchpad_state)
+
         # Deduplicate URLs before scraping (preserve order, take first occurrence)
         seen_urls = set()
         unique_urls = []
@@ -3557,6 +3631,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
         self._graph_state.complete("E")
         self._graph_state.enter("W")
 
+        # Get TTL cache manager for pinning cache during scrapes
+        ttl_manager = get_ttl_cache_manager()
+
         for i, url in enumerate(urls_to_scrape):
             # Emit scraping URL event
             await self.emit_event(
@@ -3567,7 +3644,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 graph_line=self._graph_state.to_line()
             )
             try:
-                result = await self.scraper.scrape_url(url)
+                # Pin KV cache during scrape operation to prevent eviction
+                async with ToolCallContext(request_id, ToolType.WEB_SCRAPE, manager=ttl_manager) as ctx:
+                    result = await self.scraper.scrape_url(url)
                 if result.get("success") and result.get("content"):
                     content = result["content"]
                     scraped_content.append(content[:request.max_content_per_source])
@@ -3585,13 +3664,23 @@ class UniversalOrchestrator(BaseSearchPipeline):
             except Exception as e:
                 logger.warning(f"[{request_id}] Failed to scrape {url[:60]}: {e}")
 
+        scrape_duration_ms = int((time.time() - start) * 1000)
         search_trace.append({
             "step": "scrape",
             "urls_attempted": len(urls_to_scrape),
             "content_scraped": len(scraped_content),
-            "duration_ms": int((time.time() - start) * 1000)
+            "duration_ms": scrape_duration_ms
         })
         self._record_timing("scraping", time.time() - start)
+
+        # Notify graph cache after scrape phase (for caching findings)
+        await self._graph_after_agent(
+            request_id,
+            AgentType.SCRAPER,
+            {"extracted_content": [c[:500] for c in scraped_content[:5]], "url_count": len(urls_to_scrape)},
+            float(scrape_duration_ms)
+        )
+
         return scraped_content
 
     async def _phase_verification(
@@ -3603,6 +3692,15 @@ class UniversalOrchestrator(BaseSearchPipeline):
     ):
         """Phase 8: Verification."""
         start = time.time()
+
+        # Notify graph cache before verification phase
+        scratchpad_state = {
+            "findings": [{"content": c[:200]} for c in scraped_content[:10]]
+        }
+        cached_data = await self._graph_before_agent(request_id, AgentType.VERIFIER, scratchpad_state)
+        pre_verified_hashes = cached_data.get("pre_verified_hashes", [])
+        if pre_verified_hashes:
+            logger.info(f"[{request_id}] Graph cache: {len(pre_verified_hashes)} pre-verified findings")
 
         # Update graph: complete Scrape, enter Verify
         self._graph_state.complete("W")
@@ -3651,6 +3749,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         results=verification_results
                     )
 
+                    verify_duration_ms = int((time.time() - start) * 1000)
                     search_trace.append({
                         "step": "verify",
                         "claims_checked": len(claims),
@@ -3658,6 +3757,15 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         "confidence": avg_confidence
                     })
                     self._record_timing("verification", time.time() - start)
+
+                    # Notify graph cache after verification phase
+                    await self._graph_after_agent(
+                        request_id,
+                        AgentType.VERIFIER,
+                        {"verified_claims": [{"claim": str(v.claim)[:100], "verified": v.verified, "confidence": v.confidence}
+                                            for v in verification_results[:10]]},
+                        float(verify_duration_ms)
+                    )
                     return aggregate
         except Exception as e:
             logger.warning(f"[{request_id}] Verification failed: {e}")
