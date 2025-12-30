@@ -378,7 +378,7 @@ async def get_graph_enhanced_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -459,7 +459,7 @@ async def get_enhanced_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "features_enabled": {
                     "pre_act": orchestrator.enable_pre_act,
                     "reflection": orchestrator.enable_reflection,
@@ -691,7 +691,7 @@ async def get_unified_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "version": "0.22.0"
             }
         }
@@ -867,7 +867,7 @@ async def get_universal_presets():
             }
         },
         "meta": {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "version": "0.24.0"
         }
     }
@@ -896,7 +896,7 @@ async def get_universal_stats(preset: str = "balanced"):
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "version": "0.24.0",
                 "preset": preset
             }
@@ -1579,7 +1579,7 @@ async def get_cache_stats():
                 }
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "version": "2.0.0"
             }
         }
@@ -1611,7 +1611,7 @@ async def get_ttl_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "version": "1.0.0",
                 "description": "TTL-based KV cache pinning statistics"
             }
@@ -1648,7 +1648,7 @@ async def get_performance_metrics_endpoint():
             "success": True,
             "data": summary,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "version": "1.0.0",
                 "description": "Agentic search performance metrics"
             }
@@ -1681,7 +1681,7 @@ async def get_artifacts_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "version": "1.0.0",
                 "description": "Artifact store statistics"
             }
@@ -1711,7 +1711,7 @@ async def cleanup_session_artifacts(session_id: str):
             "success": True,
             "data": {"session_id": session_id, "status": "cleaned"},
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -1867,7 +1867,7 @@ async def get_memory_tier_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "version": "1.0.0",
                 "description": "Three-tier memory statistics"
             }
@@ -1900,7 +1900,7 @@ async def get_kv_cache_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "version": "1.0.0",
                 "description": "KV cache service statistics"
             }
@@ -1933,7 +1933,7 @@ async def get_warm_entries():
                 "count": len(entries)
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -1979,7 +1979,7 @@ async def warm_prefix(
                 "status": "warm"
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2036,7 +2036,7 @@ async def store_in_memory_tier(
             "success": True,
             "data": entry.to_dict(),
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2072,7 +2072,7 @@ async def get_from_memory_tier(content_id: str):
             "success": True,
             "data": result,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2112,7 +2112,7 @@ async def promote_to_warm(content_id: str):
                 "status": "promoted to warm"
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2152,7 +2152,7 @@ async def demote_to_cold(content_id: str):
                 "status": "demoted to cold"
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2187,7 +2187,7 @@ async def initialize_memory_system():
                 "stats": stats
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2223,7 +2223,7 @@ async def get_graph_cache_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2258,7 +2258,7 @@ async def get_agent_step_graph_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2290,7 +2290,7 @@ async def get_scratchpad_cache_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2327,7 +2327,7 @@ async def get_eviction_candidates(memory_pressure: float = Query(0.8, ge=0.0, le
                 "candidate_count": len(candidates)
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2357,7 +2357,7 @@ async def clear_scratchpad_cache():
                 "message": "All scratchpad caches cleared"
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2395,7 +2395,7 @@ async def initialize_graph_cache():
                 "stats": stats
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2433,7 +2433,7 @@ async def estimate_prefix_reuse(
             "success": True,
             "data": estimate_data,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2469,7 +2469,7 @@ async def get_distillation_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2504,7 +2504,7 @@ async def get_experiences(
                 "count": len(experiences)
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "query_type_filter": query_type
             }
         }
@@ -2537,7 +2537,7 @@ async def trigger_distillation(
             "success": True,
             "data": result.to_dict(),
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "query_type": query_type
             }
         }
@@ -2574,7 +2574,7 @@ async def clear_experiences(
                 "query_type": query_type or "all"
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2608,7 +2608,7 @@ async def get_meta_buffer_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "phase": "21",
                 "feature": "meta_buffer"
             }
@@ -2658,7 +2658,7 @@ async def get_meta_buffer_templates(
                 "count": len(template_dicts)
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "limit": limit
             }
         }
@@ -2689,7 +2689,7 @@ async def get_reasoning_composer_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "phase": "21",
                 "feature": "reasoning_composer"
             }
@@ -2732,7 +2732,7 @@ async def get_reasoning_modules():
                 "count": len(modules)
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2775,7 +2775,7 @@ async def get_phase21_summary():
                 }
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "phase": "21",
                 "feature": "template_reuse_optimization"
             }
@@ -2811,7 +2811,7 @@ async def get_classifier_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2846,7 +2846,7 @@ async def get_classifier_outcomes(
                 "count": len(outcomes)
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "category_filter": category,
                 "limit": limit
             }
@@ -2882,7 +2882,7 @@ async def get_classifier_hints():
                 "last_generation": stats.get("last_hint_generation")
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -2918,7 +2918,7 @@ async def clear_classifier_outcomes(
                 "category": category or "all"
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3006,7 +3006,7 @@ async def list_corpus_domains():
                 "count": len(domains)
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3043,7 +3043,7 @@ async def get_corpus_stats(domain_id: str):
             "success": True,
             "data": corpus.get_stats(),
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3097,7 +3097,7 @@ async def add_corpus_document(domain_id: str, request: CorpusDocumentRequest):
             "success": True,
             "data": result,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "domain_id": domain_id
             }
         }
@@ -3149,7 +3149,7 @@ async def query_corpus(domain_id: str, request: CorpusQueryRequest):
             "success": True,
             "data": result,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "domain_id": domain_id
             }
         }
@@ -3201,7 +3201,7 @@ async def get_troubleshooting_path(domain_id: str, error_code: str):
             "success": True,
             "data": result,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "domain_id": domain_id,
                 "error_code": error_code
             }
@@ -3260,7 +3260,7 @@ async def list_corpus_entities(
                 "total": len(corpus.entities)
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "domain_id": domain_id,
                 "filter": entity_type
             }
@@ -3304,7 +3304,7 @@ async def export_knowledge_graph(domain_id: str):
             "success": True,
             "data": corpus.export_knowledge_graph(),
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "domain_id": domain_id
             }
         }
@@ -3340,7 +3340,7 @@ async def cross_domain_query(request: CorpusQueryRequest):
             "success": True,
             "data": result,
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3431,7 +3431,7 @@ async def register_custom_corpus(request: CorpusSchemaRequest):
                 "relationships": len(relationships)
             },
             "meta": {
-                "timestamp": __import__("datetime").datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3518,7 +3518,7 @@ async def entity_enhanced_query(request: EntityEnhancedQueryRequest):
             },
             "meta": {
                 "total_time_ms": result.total_time_ms,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3544,7 +3544,7 @@ async def get_entity_enhanced_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3593,7 +3593,7 @@ async def classify_query_endpoint(request: ClassifyQueryRequest):
                 "reasoning": result.reasoning
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3618,7 +3618,7 @@ async def get_classifier_stats():
             "success": True,
             "data": classifier.get_stats() if hasattr(classifier, 'get_stats') else {},
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3644,7 +3644,7 @@ async def get_embedding_aggregator_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3692,7 +3692,7 @@ async def index_entity_in_aggregator(request: IndexEntityRequest):
                 "indexed": success
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3750,7 +3750,7 @@ async def query_sub_manifold(request: SubManifoldQueryRequest):
                 "count": len(results)
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3824,7 +3824,7 @@ async def get_mixed_precision_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3873,7 +3873,7 @@ async def index_mixed_precision(request: MixedPrecisionIndexRequest):
                 }
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3933,7 +3933,7 @@ async def mixed_precision_search(request: MixedPrecisionSearchRequest):
                     "fp16_time_ms": round(stats.fp16_time_ms, 1),
                     "total_time_ms": round(stats.total_time_ms, 1)
                 },
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -3984,7 +3984,7 @@ async def mrl_hierarchical_search(request: MRLSearchRequest):
             "meta": {
                 "stages": request.stages,
                 "total_time_ms": round(stats.total_time_ms, 1),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -4026,7 +4026,7 @@ async def create_anchor(request: CreateAnchorRequest):
                 "anchor_norm": float(sum(x**2 for x in anchor)**0.5)
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -4084,7 +4084,7 @@ async def semantic_arithmetic(request: SemanticArithmeticRequest):
                 "dimension": len(result_emb)
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -4168,7 +4168,7 @@ async def get_hybrid_stats():
                 "use_rrf": retriever.use_rrf
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
     except Exception as e:
@@ -4202,7 +4202,7 @@ async def index_hybrid_documents(request: HybridIndexRequest):
                 "documents": indexed_docs
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -4250,7 +4250,7 @@ async def hybrid_search(request: HybridSearchRequest):
                 "total_results": len(results)
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -4284,7 +4284,7 @@ async def update_hybrid_weights(request: HybridWeightsRequest):
                 "use_rrf": retriever.use_rrf
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -4304,7 +4304,7 @@ async def get_bm25_stats():
             "success": True,
             "data": bm25_stats,
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -4333,7 +4333,7 @@ async def clear_hybrid_index():
             "success": True,
             "data": {"message": "Hybrid index cleared"},
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -4397,7 +4397,7 @@ async def get_hyde_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
     except Exception as e:
@@ -4455,7 +4455,7 @@ async def expand_with_hyde(request: HyDEExpandRequest):
                 "metadata": result.metadata
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -4542,7 +4542,7 @@ async def search_with_hyde(request: HyDESearchRequest):
                         "hyde_embedding_time_ms": hyde_result.embedding_time_ms
                     },
                     "meta": {
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat()
                     }
                 }
 
@@ -4559,7 +4559,7 @@ async def search_with_hyde(request: HyDESearchRequest):
                 "hyde_embedding_time_ms": hyde_result.embedding_time_ms
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -4583,7 +4583,7 @@ async def clear_hyde_cache():
                 "message": "HyDE cache cleared"
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -4641,7 +4641,7 @@ async def get_ragas_stats():
             "success": True,
             "data": stats,
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
     except Exception as e:
@@ -4685,7 +4685,7 @@ async def evaluate_with_ragas(request: RAGASEvaluateRequest):
             "success": True,
             "data": result.to_dict(),
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -4726,7 +4726,7 @@ async def batch_evaluate_with_ragas(request: RAGASBatchEvaluateRequest):
                 "aggregate": stats
             },
             "meta": {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "samples_evaluated": len(results)
             }
         }
@@ -4751,7 +4751,7 @@ async def clear_ragas_history():
                 "message": "RAGAS history cleared"
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -4789,7 +4789,7 @@ async def evaluate_search_with_ragas(request: Dict[str, Any]):
             return {
                 "success": False,
                 "error": "No contexts found in search response",
-                "meta": {"timestamp": datetime.now().isoformat()}
+                "meta": {"timestamp": datetime.now(timezone.utc).isoformat()}
             }
 
         result = await evaluator.evaluate(
@@ -4809,7 +4809,7 @@ async def evaluate_search_with_ragas(request: Dict[str, Any]):
                 }
             },
             "meta": {
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         }
 

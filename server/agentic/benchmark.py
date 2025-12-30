@@ -33,7 +33,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Set
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -720,7 +720,7 @@ class BenchmarkRunner:
         """Run a single benchmark query."""
         from .models import SearchRequest
 
-        start_time = datetime.now()
+        start_time = datetime.now(timezone.utc)
 
         try:
             request = SearchRequest(
@@ -730,7 +730,7 @@ class BenchmarkRunner:
             )
             response = await orchestrator.search(request)
 
-            execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
+            execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
             # Extract sources
             sources = []
@@ -757,7 +757,7 @@ class BenchmarkRunner:
 
         except Exception as e:
             logger.error(f"Benchmark query failed: {query.query[:50]}... - {e}")
-            execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
+            execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
             return BenchmarkResult(
                 query=query,
                 answer=f"Error: {str(e)}",
@@ -854,7 +854,7 @@ class BenchmarkRunner:
             avg_execution_time_ms=sum(r.execution_time_ms for r in results) / total if total > 0 else 0.0,
             by_category=by_category,
             by_difficulty=by_difficulty,
-            timestamp=datetime.now().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             preset=preset,
             results=results
         )

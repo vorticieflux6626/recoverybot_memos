@@ -343,7 +343,7 @@ async def base_tts(
 
     # Check cache for PCM file
     if cache_file.exists():
-        file_age_hours = (datetime.now().timestamp() - cache_file.stat().st_mtime) / 3600
+        file_age_hours = (datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime) / 3600
         if file_age_hours < CACHE_TTL_HOURS:
             logger.debug(f"Cache hit for TTS PCM: {cache_key}")
             audio_data = cache_file.read_bytes()
@@ -578,7 +578,7 @@ async def clear_cache() -> dict:
 def _cleanup_old_cache():
     """Remove cache files older than TTL"""
     try:
-        now = datetime.now().timestamp()
+        now = datetime.now(timezone.utc).timestamp()
         for cache_file in CACHE_DIR.glob("*.mp3"):
             file_age_hours = (now - cache_file.stat().st_mtime) / 3600
             if file_age_hours > CACHE_TTL_HOURS:

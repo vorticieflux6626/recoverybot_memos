@@ -21,7 +21,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import threading
 
 logger = logging.getLogger(__name__)
@@ -62,7 +62,7 @@ class ProviderStats:
         """Check if provider is in rate limit backoff period"""
         if self.rate_limit_backoff_until is None:
             return False
-        return datetime.now() < self.rate_limit_backoff_until
+        return datetime.now(timezone.utc) < self.rate_limit_backoff_until
 
     def get_backoff_seconds(self) -> int:
         """Calculate exponential backoff duration based on recent rate limits"""
@@ -123,7 +123,7 @@ class EngineStats:
     def is_in_backoff(self) -> bool:
         if self.backoff_until is None:
             return False
-        return datetime.now() < self.backoff_until
+        return datetime.now(timezone.utc) < self.backoff_until
 
     def get_backoff_duration(self) -> int:
         """Calculate backoff based on recent failures"""
@@ -155,7 +155,7 @@ class SearchMetrics:
         self._engines: Dict[str, EngineStats] = {}  # SearXNG internal engines
         self._recent_queries: List[Dict] = []  # Rolling log of recent queries
         self._max_recent_queries = 100
-        self._start_time = datetime.now()
+        self._start_time = datetime.now(timezone.utc)
 
         # Initialize known providers
         for name in ["searxng", "duckduckgo", "brave"]:
@@ -193,7 +193,7 @@ class SearchMetrics:
 
             # Log to recent queries
             self._recent_queries.append({
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "provider": provider,
                 "query": query[:100],
                 "results": results_count,
@@ -226,10 +226,10 @@ class SearchMetrics:
 
             stats = self._providers[provider]
             stats.rate_limit_hits += 1
-            stats.last_rate_limit = datetime.now()
+            stats.last_rate_limit = datetime.now(timezone.utc)
 
             backoff_seconds = stats.get_backoff_seconds()
-            stats.rate_limit_backoff_until = datetime.now() + timedelta(seconds=backoff_seconds)
+            stats.rate_limit_backoff_until = datetime.now(timezone.utc) + timedelta(seconds=backoff_seconds)
 
         logger.warning(
             f"[RATE_LIMIT] {provider} rate limited (hit #{stats.rate_limit_hits}), "
@@ -268,10 +268,10 @@ class SearchMetrics:
             if success:
                 stats.successful_scrapes += 1
                 stats.total_content_chars += content_length
-                stats.last_success = datetime.now()
+                stats.last_success = datetime.now(timezone.utc)
             else:
                 stats.failed_scrapes += 1
-                stats.last_failure = datetime.now()
+                stats.last_failure = datetime.now(timezone.utc)
                 if failure_reason:
                     stats.failure_reasons[failure_reason] += 1
 
@@ -295,7 +295,7 @@ class SearchMetrics:
 
             # Check rate limit backoff
             if stats.is_rate_limited():
-                remaining = (stats.rate_limit_backoff_until - datetime.now()).seconds
+                remaining = (stats.rate_limit_backoff_until - datetime.now(timezone.utc)).seconds
                 return False, f"rate limited, {remaining}s remaining"
 
             # Check if provider has very low success rate
@@ -330,10 +330,10 @@ class SearchMetrics:
             else:
                 stats.failed_queries += 1
                 stats.last_error = error
-                stats.last_error_time = datetime.now()
+                stats.last_error_time = datetime.now(timezone.utc)
                 # Set backoff
                 backoff = stats.get_backoff_duration()
-                stats.backoff_until = datetime.now() + timedelta(seconds=backoff)
+                stats.backoff_until = datetime.now(timezone.utc) + timedelta(seconds=backoff)
 
                 logger.warning(
                     f"[ENGINE] {engine} failed: {error}, backing off {backoff}s"
@@ -381,7 +381,7 @@ class SearchMetrics:
 
                 stats = self._engines[engine]
                 if stats.is_in_backoff():
-                    remaining = (stats.backoff_until - datetime.now()).seconds
+                    remaining = (stats.backoff_until - datetime.now(timezone.utc)).seconds
                     skipped[engine] = f"in backoff ({remaining}s remaining, last error: {stats.last_error})"
                 elif stats.success_rate < 0.3 and stats.total_queries >= 5:
                     skipped[engine] = f"low success rate ({stats.success_rate:.0%})"
@@ -406,7 +406,7 @@ class SearchMetrics:
                 "total_results": stats.total_results,
                 "last_error": stats.last_error,
                 "is_in_backoff": stats.is_in_backoff(),
-                "backoff_seconds": (stats.backoff_until - datetime.now()).seconds if stats.is_in_backoff() else 0
+                "backoff_seconds": (stats.backoff_until - datetime.now(timezone.utc)).seconds if stats.is_in_backoff() else 0
             }
 
     def get_best_provider(
@@ -439,7 +439,7 @@ class SearchMetrics:
                 if provider in self._providers:
                     stats = self._providers[provider]
                     if stats.rate_limit_backoff_until:
-                        wait = (stats.rate_limit_backoff_until - datetime.now()).total_seconds()
+                        wait = (stats.rate_limit_backoff_until - datetime.now(timezone.utc)).total_seconds()
                         if wait < shortest_wait:
                             shortest_wait = wait
                             best_provider = provider
@@ -465,7 +465,7 @@ class SearchMetrics:
 
             # Skip domains with recent repeated failures
             if stats.failed_scrapes >= 3 and stats.last_failure:
-                time_since_failure = datetime.now() - stats.last_failure
+                time_since_failure = datetime.now(timezone.utc) - stats.last_failure
                 if time_since_failure < timedelta(hours=1):
                     return True, "recent repeated failures"
 
@@ -474,7 +474,7 @@ class SearchMetrics:
     def get_summary(self) -> Dict:
         """Get a summary of all metrics"""
         with self._lock:
-            uptime = (datetime.now() - self._start_time).total_seconds()
+            uptime = (datetime.now(timezone.utc) - self._start_time).total_seconds()
 
             provider_stats = {}
             for name, stats in self._providers.items():

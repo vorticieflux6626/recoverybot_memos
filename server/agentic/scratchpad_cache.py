@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple
 import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import sqlite3
 from pathlib import Path
 import logging
@@ -178,7 +178,7 @@ class ScratchpadCache:
                 source_url=row[2],
                 confidence=row[3],
                 embedding=embedding,
-                cached_at=datetime.fromisoformat(row[5]) if row[5] else datetime.now(),
+                cached_at=datetime.fromisoformat(row[5]) if row[5] else datetime.now(timezone.utc),
                 access_count=row[6],
                 content_hash=row[0]
             )
@@ -195,7 +195,7 @@ class ScratchpadCache:
                 answer=row[2],
                 sources=json.loads(row[3]) if row[3] else [],
                 confidence=row[4],
-                cached_at=datetime.fromisoformat(row[5]) if row[5] else datetime.now(),
+                cached_at=datetime.fromisoformat(row[5]) if row[5] else datetime.now(timezone.utc),
                 access_count=row[6],
                 query_hash=row[0]
             )

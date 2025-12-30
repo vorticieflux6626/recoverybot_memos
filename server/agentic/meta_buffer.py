@@ -491,7 +491,7 @@ class MetaBuffer:
 
         # Generate template ID
         query_hash = hashlib.md5(query.encode()).hexdigest()[:8]
-        template_id = f"distilled_{query_hash}_{int(datetime.now().timestamp())}"
+        template_id = f"distilled_{query_hash}_{int(datetime.now(timezone.utc).timestamp())}"
 
         # Extract query pattern
         query_pattern = self._extract_pattern(query)

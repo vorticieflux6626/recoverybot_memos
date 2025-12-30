@@ -16,7 +16,7 @@ import logging
 import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 
@@ -117,7 +117,7 @@ class ArtifactStore:
         """Generate unique artifact ID with content hash for dedup"""
         content_str = json.dumps(content, default=str, sort_keys=True)
         content_hash = hashlib.sha256(content_str.encode()).hexdigest()[:8]
-        timestamp = datetime.now().strftime("%H%M%S%f")[:10]
+        timestamp = datetime.now(timezone.utc).strftime("%H%M%S%f")[:10]
         return f"{artifact_type.value[:4]}_{timestamp}_{content_hash}"
 
     def _get_session_path(self, session_id: str) -> Path:
@@ -175,7 +175,7 @@ class ArtifactStore:
             artifact_id=artifact_id,
             artifact_type=artifact_type,
             session_id=session_id,
-            created_at=datetime.now().isoformat(),
+            created_at=datetime.now(timezone.utc).isoformat(),
             created_by=created_by,
             size_bytes=len(content_bytes),
             content_hash=content_hash,
@@ -243,7 +243,7 @@ class ArtifactStore:
             ttl_minutes = meta.get("ttl_minutes", self.default_ttl_minutes)
             expires_at = created_at + timedelta(minutes=ttl_minutes)
 
-            if datetime.now() > expires_at:
+            if datetime.now(timezone.utc) > expires_at:
                 logger.debug(f"Artifact expired: {artifact_id}")
                 self._delete_artifact(session_id, artifact_id)
                 self.stats["artifacts_expired"] += 1
@@ -344,7 +344,7 @@ class ArtifactStore:
         Returns number of artifacts cleaned.
         """
         cleaned = 0
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         for session_path in self.base_path.iterdir():
             if not session_path.is_dir():
