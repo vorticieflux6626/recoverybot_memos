@@ -5069,6 +5069,8 @@ async def _execute_direct_answer(
         request_id=request_id,
         message="Response generated",
         progress_percent=100,
+        confidence=0.9,  # Top-level for Android client
+        sources_count=0,
         data={
             "gateway_complete": True,
             "pipeline_used": "direct_answer",
@@ -5137,17 +5139,22 @@ async def _execute_simple_search(
     graph_state.complete_node(search_idx, success=True)
     complete_idx = graph_state.add_node("complete", "completed")
 
+    sources_list = (response.data.sources or []) if response.data else []
+    sources_count = len(sources_list)
+
     await emitter.emit(SearchEvent(
         event_type=EventType.SEARCH_COMPLETED,
         request_id=request_id,
         message=f"Universal search complete (preset={preset})",
         progress_percent=100,
+        confidence=confidence,  # Top-level for Android client
+        sources_count=sources_count,  # Top-level for Android client
         data={
             "gateway_complete": True,
             "pipeline_used": "universal_search",
             "preset": preset,
             "response": {"synthesized_context": response.data.synthesized_context if response.data else ""},
-            "sources": [s.model_dump() if hasattr(s, 'model_dump') else s for s in (response.data.sources or [])] if response.data else [],
+            "sources": [s.model_dump() if hasattr(s, 'model_dump') else s for s in sources_list],
             "confidence_score": confidence,
             "search_queries": response.data.search_queries if response.data else [],
             "execution_time_ms": execution_time_ms,
@@ -5255,6 +5262,8 @@ async def _execute_agentic_pipeline(
         request_id=request_id,
         message=f"Universal search complete (preset={preset})",
         progress_percent=100,
+        confidence=confidence,  # Top-level for Android client
+        sources_count=sources_count,  # Top-level for Android client
         data={
             "gateway_complete": True,
             "pipeline_used": "universal_search",

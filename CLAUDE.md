@@ -6,11 +6,12 @@
 
 | Action | Command | Notes |
 |--------|---------|-------|
-| Start Server | `cd server && uvicorn main:app --host 0.0.0.0 --port 8001` | Development mode |
-| Run Tests | `cd server && pytest tests/` | Run test suite |
-| DB Migration | `cd server && alembic upgrade head` | Apply migrations |
-| Format Code | `cd server && ruff format .` | Python formatting |
-| Lint Code | `cd server && ruff check .` | Python linting |
+| **Activate venv** | `cd server && source venv/bin/activate` | **REQUIRED first!** |
+| Start Server | `uvicorn main:app --host 0.0.0.0 --port 8001` | After venv activation |
+| Run Tests | `pytest tests/ -v` | After venv activation |
+| DB Migration | `alembic upgrade head` | After venv activation |
+| Format Code | `ruff format .` | After venv activation |
+| Lint Code | `ruff check .` | After venv activation |
 | Ollama Config | `source setup_ollama_optimization.sh && systemctl restart ollama` | Apply optimizations |
 
 ## Critical Rules
@@ -21,6 +22,11 @@
 4. **ALWAYS** use `StateFlow.update{}` pattern when updating shared state (no Mutex)
 5. **ALWAYS** include `request_id` in error responses for debugging
 6. **ALWAYS** return unified response format: `{success, data, meta, errors}`
+7. **ALWAYS** activate the project's local venv before running Python commands:
+   ```bash
+   cd /home/sparkone/sdd/Recovery_Bot/memOS/server
+   source venv/bin/activate  # REQUIRED before pytest, python, pip
+   ```
 
 ## Overview
 
@@ -2012,14 +2018,18 @@ GET  /api/tts/models/status              - Check which models are loaded
 
 ```bash
 # ============================================
+# CRITICAL: Always activate venv first!
+# ============================================
+cd /home/sparkone/sdd/Recovery_Bot/memOS/server
+source venv/bin/activate  # REQUIRED - uses local Python environment
+
+# ============================================
 # IMPORTANT: Apply Ollama optimizations first!
 # ============================================
 source /home/sparkone/sdd/Recovery_Bot/memOS/server/setup_ollama_optimization.sh
 # Then restart Ollama if running: systemctl restart ollama
 
-# Start the server
-cd /home/sparkone/sdd/Recovery_Bot/memOS/server
-source venv/bin/activate
+# Start the server (venv must be active)
 python -m uvicorn main:app --reload --port 8001
 
 # Or use convenience scripts

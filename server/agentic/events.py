@@ -225,6 +225,7 @@ class SearchEvent:
     queries: Optional[list] = None
     results_count: Optional[int] = None
     sources_count: Optional[int] = None
+    confidence: Optional[float] = None  # Confidence score (0.0-1.0) for search_completed
 
     # Model-specific data
     model_name: Optional[str] = None
@@ -270,6 +271,8 @@ class SearchEvent:
             event_data["results_count"] = self.results_count
         if self.sources_count is not None:
             event_data["sources_count"] = self.sources_count
+        if self.confidence is not None:
+            event_data["confidence"] = self.confidence
         if self.model_name:
             event_data["model"] = self.model_name
         if self.url:
@@ -625,12 +628,16 @@ def search_completed(
     execution_time_ms: int = 0,
     response = None,
     enhanced: bool = False,
+    confidence: float = None,
     **kwargs
 ) -> SearchEvent:
     # Extract from response if provided
     if response:
         sources_count = len(response.data.sources) if response.data and response.data.sources else sources_count
         execution_time_ms = response.meta.execution_time_ms if response.meta else execution_time_ms
+        # Extract confidence from response if not explicitly provided
+        if confidence is None and response.data and hasattr(response.data, 'confidence'):
+            confidence = response.data.confidence
 
     mode = "ENHANCED search" if enhanced else "Search"
 
@@ -639,6 +646,10 @@ def search_completed(
         "execution_time_ms": execution_time_ms,
         "enhanced": enhanced
     }
+
+    # Include confidence in data for backwards compatibility
+    if confidence is not None:
+        event_data["confidence_score"] = confidence
 
     # Include full response object if provided (Android client expects data.response)
     if response:
@@ -649,6 +660,7 @@ def search_completed(
         request_id=request_id,
         message=f"{mode} complete: {sources_count} sources in {execution_time_ms}ms",
         sources_count=sources_count,
+        confidence=confidence,  # Now a top-level field!
         progress_percent=100,
         data=event_data,
         enhanced=enhanced
