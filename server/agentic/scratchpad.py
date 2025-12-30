@@ -801,6 +801,108 @@ class AgenticScratchpad(BaseModel):
             if q.status in [QuestionStatus.UNANSWERED, QuestionStatus.SEARCHING]
         ]
 
+    def get_answered_questions(self) -> Dict[str, QuestionProgress]:
+        """Get questions that have been answered with their findings."""
+        return {
+            q_id: q for q_id, q in self.questions.items()
+            if q.status in [QuestionStatus.ANSWERED, QuestionStatus.PARTIAL]
+            and q.findings  # Has at least one finding
+        }
+
+    def get_findings_for_question(self, question_id: str) -> List[ScratchpadFinding]:
+        """Get all findings associated with a question."""
+        if question_id not in self.questions:
+            return []
+        finding_ids = self.questions[question_id].findings
+        return [self.findings[fid] for fid in finding_ids if fid in self.findings]
+
+    def find_similar_question(self, query: str, threshold: float = 0.7) -> Optional[str]:
+        """
+        Find a question that semantically matches the query.
+        Uses simple word overlap for efficiency.
+        Returns question_id if found, None otherwise.
+        """
+        query_words = set(query.lower().split())
+        if not query_words:
+            return None
+
+        best_match = None
+        best_score = 0.0
+
+        for q_id, q in self.questions.items():
+            q_words = set(q.question_text.lower().split())
+            if not q_words:
+                continue
+
+            # Jaccard similarity
+            intersection = len(query_words & q_words)
+            union = len(query_words | q_words)
+            similarity = intersection / union if union > 0 else 0.0
+
+            if similarity >= threshold and similarity > best_score:
+                best_score = similarity
+                best_match = q_id
+
+        return best_match
+
+    def get_cached_answer_for_query(self, query: str) -> Optional[Dict[str, Any]]:
+        """
+        Check if a query can be answered from existing findings.
+        Returns cached findings if available, None otherwise.
+
+        This is the key method for -25% token savings - it allows
+        skipping search for already-answered questions.
+        """
+        # Check if we've already searched this exact query
+        if query in self.queries_executed:
+            # Find which question this query answered
+            similar_q = self.find_similar_question(query, threshold=0.6)
+            if similar_q:
+                q = self.questions.get(similar_q)
+                if q and q.status in [QuestionStatus.ANSWERED, QuestionStatus.PARTIAL]:
+                    findings = self.get_findings_for_question(similar_q)
+                    if findings:
+                        return {
+                            "question_id": similar_q,
+                            "question_text": q.question_text,
+                            "status": q.status.value,
+                            "confidence": q.confidence,
+                            "findings": [
+                                {
+                                    "content": f.content,
+                                    "source_url": f.source_url,
+                                    "source_title": f.source_title,
+                                    "confidence": f.confidence
+                                }
+                                for f in findings
+                            ]
+                        }
+        return None
+
+    def filter_new_queries(self, queries: List[str]) -> tuple[List[str], List[Dict[str, Any]]]:
+        """
+        Filter out queries that have already been answered.
+        Returns (queries_to_search, cached_results).
+
+        This is the main entry point for the scratchpad finding cache.
+        """
+        queries_to_search = []
+        cached_results = []
+
+        for query in queries:
+            cached = self.get_cached_answer_for_query(query)
+            if cached:
+                cached_results.append({
+                    "query": query,
+                    "cached": True,
+                    **cached
+                })
+                logger.debug(f"Scratchpad cache hit for query: {query[:50]}...")
+            else:
+                queries_to_search.append(query)
+
+        return queries_to_search, cached_results
+
     def get_gaps(self) -> List[Dict[str, Any]]:
         """Get all information gaps across all questions"""
         gaps = []
