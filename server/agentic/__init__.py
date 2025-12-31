@@ -1604,4 +1604,4 @@ __all__ = [
     "IB_FILTER_AVAILABLE",
 ]
 
-__version__ = "0.67.0"  # G.6.4: Information Bottleneck filtering for CRAG noise reduction
+__version__ = "0.68.0"  # G.6.1 A-MEM cross-session persistence complete (+ G.6.2 DyLAN, G.6.4 IB)

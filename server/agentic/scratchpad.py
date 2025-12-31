@@ -1278,6 +1278,228 @@ class AgenticScratchpad(BaseModel):
     # ========================================
     # INTERNAL HELPERS
     # ========================================
+    # G.6.3 SHAREDCONTEXT AGENT SELECTION (LbMAS)
+    # ========================================
+
+    def select_next_agent(self, available_agents: List[str] = None) -> str:
+        """
+        LLM-controlled agent selection based on blackboard content.
+
+        Based on LbMAS (2025) research achieving 13-57% improvement over RAG baselines.
+        The control unit selects which agent acts next based on:
+        1. Current completion state of questions
+        2. Pending actions in queue
+        3. Recent agent notes and recommendations
+        4. Content gaps and contradictions
+
+        Args:
+            available_agents: List of available agent names. If None, uses default set.
+
+        Returns:
+            Name of agent that should act next
+        """
+        if available_agents is None:
+            available_agents = [
+                "analyzer", "planner", "searcher", "scraper",
+                "verifier", "synthesizer", "evaluator"
+            ]
+
+        # Priority 1: Handle pending contradictions
+        if self.contradictions and "verifier" in available_agents:
+            return "verifier"
+
+        # Priority 2: Execute queued actions
+        if self.next_actions:
+            action = self.next_actions[0]
+            action_type = action.get("type", "")
+            if action_type in ["search", "web_search"] and "searcher" in available_agents:
+                return "searcher"
+            elif action_type in ["scrape", "fetch"] and "scraper" in available_agents:
+                return "scraper"
+            elif action_type in ["verify", "check"] and "verifier" in available_agents:
+                return "verifier"
+            elif action_type in ["synthesize", "summarize"] and "synthesizer" in available_agents:
+                return "synthesizer"
+
+        # Priority 3: Check question completion status
+        statuses = self.get_completion_status()
+        # statuses is {"overall": 0.5, "questions": {"q1": {"status": "unanswered", ...}}, ...}
+        # Extract questions from the nested structure
+        questions_statuses = statuses.get("questions", {})
+        unanswered = sum(
+            1 for q_id, q in questions_statuses.items()
+            if isinstance(q, dict) and q.get("status") == "unanswered"
+        )
+        partial = sum(
+            1 for q_id, q in questions_statuses.items()
+            if isinstance(q, dict) and q.get("status") == "partial"
+        )
+
+        if unanswered > 0 and "searcher" in available_agents:
+            return "searcher"  # Need more information
+        elif partial > 0 and "scraper" in available_agents:
+            return "scraper"  # Need to deepen existing results
+
+        # Priority 4: Check recent agent notes for recommendations
+        for note in reversed(self.agent_notes[-5:]):
+            if note.recommendation and note.for_agent in available_agents:
+                return note.for_agent
+
+        # Priority 5: Low confidence - need verification
+        if self.overall_confidence < 0.6 and self.findings and "verifier" in available_agents:
+            return "verifier"
+
+        # Priority 6: Ready to synthesize
+        if self.findings and self.overall_confidence >= 0.6 and "synthesizer" in available_agents:
+            return "synthesizer"
+
+        # Default: Need more analysis (or first available if analyzer not available)
+        if "analyzer" in available_agents:
+            return "analyzer"
+
+        # Fallback: return first available agent
+        return available_agents[0] if available_agents else "analyzer"
+
+    def get_agent_state_summary(self) -> Dict[str, Any]:
+        """
+        Generate a summary of blackboard state for agent selection prompts.
+
+        Returns a dict suitable for LLM context in agent selection decisions.
+        """
+        statuses = self.get_completion_status()
+        # statuses is {"overall": 0.5, "questions": {"q1": {"status": "answered", ...}}, ...}
+        # Extract questions from the nested structure
+        questions_statuses = statuses.get("questions", {})
+        questions_answered = sum(
+            1 for q_id, q in questions_statuses.items()
+            if isinstance(q, dict) and q.get("status") == "answered"
+        )
+        questions_partial = sum(
+            1 for q_id, q in questions_statuses.items()
+            if isinstance(q, dict) and q.get("status") == "partial"
+        )
+        questions_unanswered = sum(
+            1 for q_id, q in questions_statuses.items()
+            if isinstance(q, dict) and q.get("status") == "unanswered"
+        )
+
+        return {
+            "questions_total": len(self.questions),
+            "questions_answered": questions_answered,
+            "questions_partial": questions_partial,
+            "questions_unanswered": questions_unanswered,
+            "findings_count": len(self.findings),
+            "contradictions_count": len(self.contradictions),
+            "pending_actions": len(self.next_actions),
+            "sources_consulted": self.sources_consulted,
+            "overall_confidence": self.overall_confidence,
+            "is_complete": self.is_complete,
+            "recent_agents": [n.agent for n in self.agent_notes[-3:]]
+        }
+
+    async def select_next_agent_llm(
+        self,
+        llm_client,
+        available_agents: List[str] = None,
+        model: str = "gemma3:4b"
+    ) -> str:
+        """
+        LLM-powered agent selection using blackboard state.
+
+        Uses a fast model to decide which agent should act next based on
+        the current state of the blackboard. More sophisticated than
+        the rule-based select_next_agent().
+
+        Args:
+            llm_client: HTTP client for Ollama
+            available_agents: List of available agents
+            model: LLM model for selection
+
+        Returns:
+            Name of selected agent
+        """
+        if available_agents is None:
+            available_agents = [
+                "analyzer", "planner", "searcher", "scraper",
+                "verifier", "synthesizer", "evaluator"
+            ]
+
+        state_summary = self.get_agent_state_summary()
+
+        prompt = f"""Based on the current search state, select which agent should act next.
+
+Current State:
+- Questions: {state_summary['questions_answered']}/{state_summary['questions_total']} answered
+- Partial answers: {state_summary['questions_partial']}
+- Findings collected: {state_summary['findings_count']}
+- Contradictions to resolve: {state_summary['contradictions_count']}
+- Pending actions: {state_summary['pending_actions']}
+- Sources consulted: {state_summary['sources_consulted']}
+- Overall confidence: {state_summary['overall_confidence']:.2f}
+- Recent agents: {', '.join(state_summary['recent_agents']) or 'none'}
+
+Available agents: {', '.join(available_agents)}
+
+Agent roles:
+- analyzer: Decompose query, understand requirements
+- planner: Create search strategy
+- searcher: Execute web searches
+- scraper: Fetch and extract page content
+- verifier: Check facts, resolve contradictions
+- synthesizer: Combine findings into answer
+- evaluator: Assess quality of synthesis
+
+Select ONE agent. Reply with just the agent name, nothing else."""
+
+        try:
+            response = await llm_client.post(
+                "/api/generate",
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.1, "num_predict": 20}
+                },
+                timeout=10.0
+            )
+            response.raise_for_status()
+            result = response.json().get("response", "").strip().lower()
+
+            # Extract agent name from response
+            for agent in available_agents:
+                if agent in result:
+                    return agent
+
+            # Fallback to rule-based
+            return self.select_next_agent(available_agents)
+
+        except Exception as e:
+            logger.warning(f"LLM agent selection failed: {e}, using rule-based")
+            return self.select_next_agent(available_agents)
+
+    def notify_agent_update(self, agent_id: str, update_type: str, data: Any = None) -> None:
+        """
+        Notify the blackboard that an agent has made an update.
+
+        This can be used for coordination signals between agents.
+
+        Args:
+            agent_id: The agent making the update
+            update_type: Type of update (e.g., "finding_added", "search_complete")
+            data: Optional additional data
+        """
+        self.write_public(
+            agent_id=agent_id,
+            key=f"last_update_{agent_id}",
+            value={
+                "type": update_type,
+                "data": data,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            ttl_minutes=5
+        )
+
+    # ========================================
 
     def _touch(self) -> None:
         """Update the modified timestamp"""

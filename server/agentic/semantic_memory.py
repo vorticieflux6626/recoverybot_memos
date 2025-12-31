@@ -23,6 +23,9 @@ import asyncio
 import logging
 import hashlib
 import time
+import json
+import sqlite3
+import os
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Set, Tuple
 from enum import Enum
@@ -30,6 +33,11 @@ import httpx
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Default database path for cross-session persistence
+DEFAULT_MEMORY_DB = os.path.join(
+    os.path.dirname(__file__), "..", "data", "semantic_memory.db"
+)
 
 
 class MemoryType(str, Enum):
@@ -156,13 +164,17 @@ class SemanticMemoryNetwork:
         embedding_model: str = "mxbai-embed-large",
         similarity_threshold: float = 0.7,
         max_connections: int = 10,
-        auto_connect: bool = True
+        auto_connect: bool = True,
+        db_path: Optional[str] = None,
+        persist: bool = True
     ):
         self.ollama_url = ollama_url
         self.embedding_model = embedding_model
         self.similarity_threshold = similarity_threshold
         self.max_connections = max_connections
         self.auto_connect = auto_connect
+        self.persist = persist
+        self.db_path = db_path or DEFAULT_MEMORY_DB
 
         # Memory storage
         self.memories: Dict[str, Memory] = {}
@@ -173,10 +185,207 @@ class SemanticMemoryNetwork:
         # Embedding cache
         self._embedding_cache: Dict[str, List[float]] = {}
 
+        # Initialize persistence
+        if self.persist:
+            self._init_db()
+            self._load_from_db()
+
     def _generate_id(self, content: str, memory_type: str) -> str:
         """Generate unique memory ID."""
         hash_input = f"{content}:{memory_type}:{time.time()}"
         return hashlib.sha256(hash_input.encode()).hexdigest()[:12]
+
+    # =========================================================================
+    # Cross-Session Persistence (G.6.1 A-MEM)
+    # =========================================================================
+
+    def _init_db(self) -> None:
+        """Initialize SQLite database for cross-session persistence."""
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # Create memories table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS memories (
+                id TEXT PRIMARY KEY,
+                memory_type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                attributes TEXT,
+                embedding TEXT,
+                created_at REAL NOT NULL,
+                access_count INTEGER DEFAULT 0,
+                last_accessed REAL NOT NULL
+            )
+        """)
+
+        # Create connections table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS connections (
+                source_id TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                connection_type TEXT NOT NULL,
+                strength REAL DEFAULT 0.5,
+                bidirectional INTEGER DEFAULT 1,
+                metadata TEXT,
+                PRIMARY KEY (source_id, target_id),
+                FOREIGN KEY (source_id) REFERENCES memories(id),
+                FOREIGN KEY (target_id) REFERENCES memories(id)
+            )
+        """)
+
+        # Create indexes for fast lookup
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_connections_source ON connections(source_id)
+        """)
+
+        conn.commit()
+        conn.close()
+        logger.info(f"A-MEM database initialized at {self.db_path}")
+
+    def _load_from_db(self) -> None:
+        """Load memories from database into memory."""
+        if not os.path.exists(self.db_path):
+            return
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            # Load memories
+            cursor.execute("SELECT * FROM memories")
+            for row in cursor.fetchall():
+                memory_id, memory_type, content, attributes_json, embedding_json, \
+                    created_at, access_count, last_accessed = row
+
+                attributes = json.loads(attributes_json) if attributes_json else {}
+                embedding = json.loads(embedding_json) if embedding_json else None
+
+                memory = Memory(
+                    id=memory_id,
+                    memory_type=MemoryType(memory_type),
+                    content=content,
+                    attributes=attributes,
+                    embedding=embedding,
+                    created_at=created_at,
+                    access_count=access_count,
+                    last_accessed=last_accessed
+                )
+
+                self.memories[memory_id] = memory
+                self._type_index[memory.memory_type].add(memory_id)
+
+            # Load connections
+            cursor.execute("SELECT * FROM connections")
+            for row in cursor.fetchall():
+                source_id, target_id, conn_type, strength, bidirectional, metadata_json = row
+
+                if source_id in self.memories:
+                    metadata = json.loads(metadata_json) if metadata_json else {}
+                    connection = MemoryConnection(
+                        target_id=target_id,
+                        connection_type=ConnectionType(conn_type),
+                        strength=strength,
+                        bidirectional=bool(bidirectional),
+                        metadata=metadata
+                    )
+                    self.memories[source_id].connections.append(connection)
+
+            logger.info(f"A-MEM loaded {len(self.memories)} memories from {self.db_path}")
+
+        except Exception as e:
+            logger.error(f"Failed to load A-MEM from database: {e}")
+        finally:
+            conn.close()
+
+    def _save_memory_to_db(self, memory: Memory) -> None:
+        """Save a single memory to database."""
+        if not self.persist:
+            return
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                INSERT OR REPLACE INTO memories
+                (id, memory_type, content, attributes, embedding, created_at, access_count, last_accessed)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                memory.id,
+                memory.memory_type.value,
+                memory.content,
+                json.dumps(memory.attributes),
+                json.dumps(memory.embedding) if memory.embedding else None,
+                memory.created_at,
+                memory.access_count,
+                memory.last_accessed
+            ))
+
+            # Save connections
+            for conn_item in memory.connections:
+                cursor.execute("""
+                    INSERT OR REPLACE INTO connections
+                    (source_id, target_id, connection_type, strength, bidirectional, metadata)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    memory.id,
+                    conn_item.target_id,
+                    conn_item.connection_type.value,
+                    conn_item.strength,
+                    1 if conn_item.bidirectional else 0,
+                    json.dumps(conn_item.metadata)
+                ))
+
+            conn.commit()
+
+        except Exception as e:
+            logger.error(f"Failed to save memory {memory.id}: {e}")
+        finally:
+            conn.close()
+
+    def _delete_memory_from_db(self, memory_id: str) -> None:
+        """Delete a memory from database."""
+        if not self.persist:
+            return
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("DELETE FROM connections WHERE source_id = ? OR target_id = ?",
+                           (memory_id, memory_id))
+            cursor.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to delete memory {memory_id}: {e}")
+        finally:
+            conn.close()
+
+    def _update_memory_access_in_db(self, memory: Memory) -> None:
+        """Update memory access statistics in database."""
+        if not self.persist:
+            return
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                UPDATE memories
+                SET access_count = ?, last_accessed = ?
+                WHERE id = ?
+            """, (memory.access_count, memory.last_accessed, memory.id))
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to update memory access {memory.id}: {e}")
+        finally:
+            conn.close()
 
     async def _get_embedding(self, text: str) -> List[float]:
         """Get embedding for text with caching."""
@@ -300,6 +509,9 @@ class SemanticMemoryNetwork:
             f"with {len(memory.connections)} connections"
         )
 
+        # Persist to database for cross-session learning
+        self._save_memory_to_db(memory)
+
         return memory
 
     async def _establish_connections(self, new_memory: Memory) -> None:
@@ -362,6 +574,8 @@ class SemanticMemoryNetwork:
         if memory:
             memory.access_count += 1
             memory.last_accessed = time.time()
+            # Persist access statistics for cross-session learning
+            self._update_memory_access_in_db(memory)
         return memory
 
     def get_connected(
@@ -759,8 +973,10 @@ class SemanticMemoryNetwork:
                             c for c in other.connections
                             if c.target_id != memory_id
                         ]
-                    # Remove the memory
+                    # Remove the memory from in-memory store
                     del self.memories[memory_id]
+                    # Remove from persistent database
+                    self._delete_memory_from_db(memory_id)
                     removed_count += 1
 
         return {
@@ -786,6 +1002,9 @@ class SemanticMemoryNetwork:
         # Simulate access
         memory.access_count += int(boost_amount * 10)
         memory.last_accessed = time.time()
+
+        # Persist boost for cross-session learning
+        self._update_memory_access_in_db(memory)
 
         logger.debug(f"Boosted memory {memory_id}, new access_count: {memory.access_count}")
         return True
