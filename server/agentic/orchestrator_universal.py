@@ -1826,6 +1826,29 @@ class UniversalOrchestrator(BaseSearchPipeline):
             analyze_ms = int((time.time() - analyze_start) * 1000)
             await emitter.emit(graph_node_completed(request_id, "analyze", True, graph, analyze_ms))
 
+            # PHASE 1.4: DyLAN Query Complexity Classification (G.6.2)
+            dylan_complexity = None
+            if self.config.enable_dylan_agent_skipping:
+                try:
+                    dylan_start = time.time()
+                    dylan_complexity = await self._classify_query_complexity(request.query)
+                    dylan_ms = int((time.time() - dylan_start) * 1000)
+
+                    # Emit SSE event for DyLAN classification
+                    await emitter.emit(events.dylan_complexity_classified(
+                        request_id,
+                        complexity=dylan_complexity.complexity.value,
+                        skippable_agents=[a.value for a in dylan_complexity.skippable_agents],
+                        reasoning=dylan_complexity.reasoning[:200] if dylan_complexity.reasoning else ""
+                    ))
+
+                    logger.info(
+                        f"[{request_id}] DyLAN: complexity={dylan_complexity.complexity.value}, "
+                        f"skippable={[a.value for a in dylan_complexity.skippable_agents]} ({dylan_ms}ms)"
+                    )
+                except Exception as e:
+                    logger.warning(f"[{request_id}] DyLAN classification failed: {e}")
+
             # PHASE 1.5: Entity Extraction (if enabled)
             if self.config.enable_entity_tracking and scratchpad:
                 try:
@@ -2187,7 +2210,23 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     # Continue with original scraped_content
 
             # PHASE 5: Verification
-            if self.config.enable_verification and scraped_content:
+            # Check DyLAN skip decision for VERIFIER
+            skip_verification = False
+            if self.config.enable_dylan_agent_skipping and dylan_complexity:
+                current_confidence = getattr(state, 'confidence', 0.5)
+                skip_decision = self._should_skip_agent(
+                    DyLANAgentRole.VERIFIER, dylan_complexity, current_confidence
+                )
+                skip_verification = skip_decision.should_skip
+                if skip_verification:
+                    logger.info(f"[{request_id}] DyLAN: Skipping Verification ({skip_decision.reason})")
+                    await emitter.emit(events.dylan_agent_skipped(
+                        request_id,
+                        agent="verifier",
+                        reason=skip_decision.reason
+                    ))
+
+            if self.config.enable_verification and scraped_content and not skip_verification:
                 await emitter.emit(graph_node_entered(request_id, "verify", graph))
                 await emitter.emit(events.verifying_claims(request_id, len(scraped_content)))
 
@@ -2230,6 +2269,66 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     await emitter.emit(events.claims_verified(request_id, verified_count, total_claims))
 
                 await emitter.emit(graph_node_completed(request_id, "verify", True, graph, verify_ms))
+
+            # PHASE 5.9: Information Bottleneck Filtering (G.6.4)
+            # Applies IB theory to reduce noise while preserving task-relevant info
+            ib_result = None
+            if self.config.enable_information_bottleneck and scraped_content:
+                ib_start = time.time()
+                try:
+                    # Emit IB start event
+                    await emitter.emit(events.ib_filtering_start(
+                        request_id,
+                        passage_count=len(scraped_content[:10]),
+                        level=self.config.ib_filtering_level if hasattr(self.config, 'ib_filtering_level') else "moderate"
+                    ))
+
+                    # Convert scraped content to passage format for IB filter
+                    passages = []
+                    for idx, content in enumerate(scraped_content[:10]):
+                        # Get source info if available
+                        source = state.raw_results[idx] if idx < len(state.raw_results) else {}
+                        source_dict = source if isinstance(source, dict) else (source.__dict__ if hasattr(source, '__dict__') else {})
+                        passages.append({
+                            "content": content,
+                            "title": source_dict.get("title", f"Source {idx+1}"),
+                            "url": source_dict.get("url", "")
+                        })
+
+                    # Get decomposed questions if available
+                    decomposed_questions = None
+                    if hasattr(state, 'search_plan') and state.search_plan:
+                        decomposed_questions = getattr(state.search_plan, 'decomposed_questions', None)
+
+                    ib_result = await self._apply_ib_filtering(
+                        query=request.query,
+                        passages=passages,
+                        decomposed_questions=decomposed_questions
+                    )
+
+                    # Replace scraped_content with filtered content
+                    if ib_result and ib_result.compressed_content:
+                        scraped_content = [ib_result.compressed_content]
+
+                        ib_ms = int((time.time() - ib_start) * 1000)
+
+                        # Emit IB complete event
+                        await emitter.emit(events.ib_filtering_complete(
+                            request_id,
+                            original_count=ib_result.original_count,
+                            filtered_count=ib_result.filtered_count,
+                            compression_rate=ib_result.total_compression_rate,
+                            avg_ib_score=ib_result.average_ib_score,
+                            duration_ms=ib_ms
+                        ))
+
+                        logger.info(
+                            f"[{request_id}] IB Filtering: {ib_result.original_count}→{ib_result.filtered_count} "
+                            f"passages ({ib_result.total_compression_rate:.1%} compression) in {ib_ms}ms"
+                        )
+                except Exception as e:
+                    logger.warning(f"[{request_id}] Information Bottleneck filtering failed: {e}")
+                    # Continue with original scraped_content
 
             # PHASE 6: Synthesis
             await emitter.emit(graph_node_entered(request_id, "synthesize", graph))
@@ -2316,8 +2415,24 @@ class UniversalOrchestrator(BaseSearchPipeline):
             await emitter.emit(graph_node_completed(request_id, "synthesize", True, graph, synthesis_ms))
 
             # PHASE 7: Self-RAG Reflection (if enabled)
+            # Check DyLAN skip decision for REFLECTOR
             reflection_result = None
-            if self.config.enable_self_reflection and synthesis:
+            skip_reflection = False
+            if self.config.enable_dylan_agent_skipping and dylan_complexity:
+                current_confidence = confidence  # Use synthesis confidence
+                skip_decision = self._should_skip_agent(
+                    DyLANAgentRole.REFLECTOR, dylan_complexity, current_confidence
+                )
+                skip_reflection = skip_decision.should_skip
+                if skip_reflection:
+                    logger.info(f"[{request_id}] DyLAN: Skipping Self-RAG ({skip_decision.reason})")
+                    await emitter.emit(events.dylan_agent_skipped(
+                        request_id,
+                        agent="reflector",
+                        reason=skip_decision.reason
+                    ))
+
+            if self.config.enable_self_reflection and synthesis and not skip_reflection:
                 await emitter.emit(graph_node_entered(request_id, "reflect", graph))
                 await emitter.emit(events.self_rag_reflecting(request_id, len(synthesis)))
 
@@ -2810,6 +2925,58 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         await emitter.emit(events.template_created(request_id, template.id))
                 except Exception as e:
                     logger.debug(f"[{request_id}] Meta-Buffer template distillation failed: {e}")
+
+            # PHASE 9.5: Contrastive Retriever Recording (G.6.5)
+            # Record retrieval session for trial-and-feedback learning
+            if self.config.enable_contrastive_learning and synthesis:
+                try:
+                    import re
+                    # Extract cited URLs from synthesis (look for [Source X] patterns)
+                    cited_indices = set(int(m.group(1)) for m in re.finditer(r'\[Source (\d+)\]', synthesis))
+                    sources = self._get_sources(state)
+                    cited_urls = set()
+                    for idx in cited_indices:
+                        if 0 < idx <= len(sources):
+                            url = sources[idx - 1].get("url", "")
+                            if url:
+                                cited_urls.add(url)
+
+                    # Build documents list with scores
+                    documents = []
+                    for source in sources:
+                        documents.append({
+                            "url": source.get("url", ""),
+                            "score": source.get("score", source.get("relevance_score", 0.5)),
+                            "title": source.get("title", ""),
+                        })
+
+                    # Determine strategy used
+                    strategy = "hybrid"
+                    if self.config.enable_cross_encoder:
+                        strategy = "reranked"
+                    elif self.config.enable_hybrid_reranking:
+                        strategy = "hybrid"
+
+                    await self._record_retrieval_session(
+                        query=request.query,
+                        strategy=strategy,
+                        documents=documents,
+                        synthesis_confidence=confidence,
+                        cited_urls=cited_urls
+                    )
+
+                    # Emit SSE event for contrastive session recording
+                    await emitter.emit(events.contrastive_session_recorded(
+                        request_id,
+                        document_count=len(documents),
+                        cited_count=len(cited_urls),
+                        strategy=strategy,
+                        confidence=confidence
+                    ))
+
+                    logger.info(f"[{request_id}] Contrastive: Recorded session with {len(cited_urls)} cited URLs")
+                except Exception as e:
+                    logger.warning(f"[{request_id}] Contrastive retriever recording failed: {e}")
 
             # Final graph complete
             await emitter.emit(graph_node_completed(request_id, "complete", True, graph, execution_time_ms))
