@@ -120,6 +120,11 @@ class Draft:
     token_count: int = 0
     confidence: float = 0.0
     verifier_score: float = 0.0
+    # P0 Fix: Explicit rationale extraction (Google Research paper)
+    rationale: str = ""  # Evidence-based reasoning
+    self_assessment: str = ""  # Confidence and completeness assessment
+    self_containment_score: float = 0.0  # ρ_SC: Can answer be derived from rationale?
+    self_reflection_score: float = 0.0  # ρ_SR: LLM's confidence in correctness
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -272,7 +277,11 @@ class SpeculativeRAG:
         documents: List[Document],
         draft_index: int
     ) -> str:
-        """Build prompt for draft generation."""
+        """Build prompt for draft generation with explicit rationale extraction.
+
+        P0 Fix: Based on Google Research Speculative RAG paper (July 2024).
+        Requires three outputs: Answer, Rationale (with citations), Self-Assessment.
+        """
         context_parts = []
         for i, doc in enumerate(documents, 1):
             title = doc.title or f"Document {i}"
@@ -294,7 +303,19 @@ Instructions:
 3. If sources don't contain the answer, say so
 4. Include source references where appropriate
 
-Draft Answer:"""
+Provide your response in this EXACT format:
+
+ANSWER:
+[Your direct answer to the question, with [Source N] citations]
+
+RATIONALE:
+[Explicit reasoning explaining HOW you derived this answer from the sources. Cite specific evidence from [Source N] that supports each claim. This should be detailed enough that someone could verify your answer using only the rationale.]
+
+SELF-ASSESSMENT:
+[Rate your confidence and completeness:
+- Confidence: HIGH/MEDIUM/LOW - how certain are you this answer is correct?
+- Completeness: FULL/PARTIAL/INSUFFICIENT - does this fully answer the question?
+- Limitations: What information is missing or uncertain?]"""
 
     def _build_verification_prompt(
         self,
@@ -302,17 +323,25 @@ Draft Answer:"""
         drafts: List[Draft],
         documents: List[Document]
     ) -> str:
-        """Build prompt for draft verification and selection."""
+        """Build prompt for draft verification and selection.
+
+        P0 Fix: Updated to evaluate both answer and rationale quality.
+        """
         # Compile all source content
         all_sources = "\n\n".join([
             f"[{doc.title or doc.id}]: {doc.content[:500]}..."
             for doc in documents[:6]  # Limit for context
         ])
 
-        # Format drafts
+        # Format drafts with rationale (P0 Fix)
         draft_texts = []
         for i, draft in enumerate(drafts, 1):
-            draft_texts.append(f"DRAFT {i}:\n{draft.content}\n")
+            draft_text = f"DRAFT {i}:\nAnswer: {draft.content}\n"
+            if draft.rationale:
+                draft_text += f"Rationale: {draft.rationale[:500]}...\n"
+            if draft.self_assessment:
+                draft_text += f"Self-Assessment: {draft.self_assessment}\n"
+            draft_texts.append(draft_text)
 
         drafts_section = "\n---\n".join(draft_texts)
 
@@ -323,7 +352,7 @@ Question: {query}
 Available Sources (for fact-checking):
 {all_sources}
 
-Draft Answers:
+Draft Answers with Rationales:
 {drafts_section}
 
 Evaluate each draft on:
@@ -331,12 +360,13 @@ Evaluate each draft on:
 2. Completeness: Does it fully answer the question?
 3. Clarity: Is it well-organized and clear?
 4. Relevance: Does it stay focused on the question?
+5. Rationale Quality: Is the reasoning sound and well-supported?
 
 Respond with ONLY a JSON object:
 {{
     "best_draft": <1-{len(drafts)}>,
     "scores": {{
-        "1": {{"accuracy": 0.0-1.0, "completeness": 0.0-1.0, "clarity": 0.0-1.0, "relevance": 0.0-1.0, "overall": 0.0-1.0}},
+        "1": {{"accuracy": 0.0-1.0, "completeness": 0.0-1.0, "clarity": 0.0-1.0, "relevance": 0.0-1.0, "rationale_quality": 0.0-1.0, "overall": 0.0-1.0}},
         "2": {{...}},
         ...
     }},
@@ -387,16 +417,30 @@ Respond with ONLY a JSON object:
 
             generation_time = (time.perf_counter() - start_time) * 1000
 
+            # P0 Fix: Parse structured response with rationale extraction
+            raw_response = result.get("response", "").strip()
+            answer, rationale, self_assessment = self._parse_draft_response(raw_response)
+
+            # Calculate paper's scoring components
+            self_containment = self._calculate_self_containment_score(answer, rationale)
+            self_reflection = self._calculate_self_reflection_score(self_assessment)
+
             draft = Draft(
                 id=f"draft_{draft_index}_{int(time.time() * 1000)}",
-                content=result.get("response", "").strip(),
+                content=answer,  # Store just the answer as content
                 subset_ids=[doc.id for doc in documents],
                 generation_time_ms=generation_time,
                 token_count=result.get("eval_count", 0),
                 confidence=0.5,  # Default, updated by verifier
+                # P0 Fix: Store rationale and scores
+                rationale=rationale,
+                self_assessment=self_assessment,
+                self_containment_score=self_containment,
+                self_reflection_score=self_reflection,
                 metadata={
                     "model": self.config.drafter_model,
                     "doc_count": len(documents),
+                    "raw_response_length": len(raw_response),
                 }
             )
 
@@ -464,18 +508,39 @@ Respond with ONLY a JSON object:
                 response_text = result.get("response", "")
                 verification = self._parse_verification_response(response_text, len(drafts))
 
-                # Update draft scores
+                # P0 Fix: Update draft scores using three-factor formula
+                # ρ_j = ρ_Draft_j × ρ_SC_j × ρ_SR_j (from Speculative RAG paper)
                 for i, draft in enumerate(drafts):
                     score_key = str(i + 1)
                     if score_key in verification.get("scores", {}):
-                        draft.verifier_score = verification["scores"][score_key].get("overall", 0.5)
-                        draft.confidence = draft.verifier_score
+                        draft_score = verification["scores"][score_key].get("overall", 0.5)
+                        draft.verifier_score = draft_score
 
-                # Select best
-                best_idx = verification.get("best_draft", 1) - 1
-                best_idx = max(0, min(best_idx, len(drafts) - 1))
+                        # Three-factor combined score (paper formula)
+                        combined_score = (
+                            draft_score *
+                            draft.self_containment_score *
+                            draft.self_reflection_score
+                        )
+                        draft.confidence = combined_score
+                    else:
+                        # Fallback if verifier didn't score this draft
+                        draft.confidence = (
+                            0.5 *
+                            draft.self_containment_score *
+                            draft.self_reflection_score
+                        )
 
-                return drafts[best_idx], verification
+                # Select best based on combined confidence (three-factor score)
+                best_draft = max(drafts, key=lambda d: d.confidence)
+                best_idx = drafts.index(best_draft)
+
+                logger.info(f"Selected draft {best_idx + 1} with confidence {best_draft.confidence:.3f} "
+                           f"(verifier={best_draft.verifier_score:.3f}, "
+                           f"SC={best_draft.self_containment_score:.3f}, "
+                           f"SR={best_draft.self_reflection_score:.3f})")
+
+                return best_draft, verification
 
             except Exception as e:
                 logger.warning(f"Verification failed, using confidence fallback: {e}")
@@ -529,6 +594,135 @@ Respond with ONLY a JSON object:
         doc_ids = sorted([d.id for d in documents])
         content = f"{query}:{','.join(doc_ids)}"
         return hashlib.md5(content.encode()).hexdigest()
+
+    def _parse_draft_response(self, response_text: str) -> Tuple[str, str, str]:
+        """Parse structured draft response into answer, rationale, self-assessment.
+
+        P0 Fix: Extract the three components from the formatted response.
+        """
+        answer = ""
+        rationale = ""
+        self_assessment = ""
+
+        # Try to parse structured format
+        sections = {
+            "ANSWER:": "answer",
+            "RATIONALE:": "rationale",
+            "SELF-ASSESSMENT:": "self_assessment"
+        }
+
+        current_section = None
+        current_content = []
+
+        for line in response_text.split('\n'):
+            line_stripped = line.strip()
+
+            # Check if this line starts a new section
+            section_found = None
+            for marker, section_name in sections.items():
+                if line_stripped.upper().startswith(marker.upper()):
+                    section_found = section_name
+                    # Get any content after the marker on the same line
+                    after_marker = line_stripped[len(marker):].strip()
+                    break
+
+            if section_found:
+                # Save previous section
+                if current_section == "answer":
+                    answer = '\n'.join(current_content).strip()
+                elif current_section == "rationale":
+                    rationale = '\n'.join(current_content).strip()
+                elif current_section == "self_assessment":
+                    self_assessment = '\n'.join(current_content).strip()
+
+                # Start new section
+                current_section = section_found
+                current_content = [after_marker] if after_marker else []
+            elif current_section:
+                current_content.append(line)
+
+        # Save last section
+        if current_section == "answer":
+            answer = '\n'.join(current_content).strip()
+        elif current_section == "rationale":
+            rationale = '\n'.join(current_content).strip()
+        elif current_section == "self_assessment":
+            self_assessment = '\n'.join(current_content).strip()
+
+        # Fallback: if no structure found, treat entire response as answer
+        if not answer and not rationale:
+            answer = response_text.strip()
+
+        return answer, rationale, self_assessment
+
+    def _calculate_self_containment_score(self, answer: str, rationale: str) -> float:
+        """Calculate ρ_SC: Can the answer be derived from the rationale alone?
+
+        P0 Fix: Self-containment score from Speculative RAG paper.
+        Higher score = rationale contains sufficient evidence for the answer.
+        """
+        if not rationale:
+            return 0.3  # No rationale = low self-containment
+
+        # Heuristic scoring based on rationale quality
+        score = 0.5  # Base score
+
+        # Check for source citations in rationale
+        citation_count = len(re.findall(r'\[Source\s*\d+\]', rationale, re.IGNORECASE))
+        if citation_count >= 3:
+            score += 0.2
+        elif citation_count >= 1:
+            score += 0.1
+
+        # Check for reasoning keywords
+        reasoning_indicators = ['because', 'therefore', 'thus', 'since', 'according to',
+                                'based on', 'evidence', 'shows', 'indicates', 'demonstrates']
+        reasoning_count = sum(1 for indicator in reasoning_indicators
+                              if indicator.lower() in rationale.lower())
+        if reasoning_count >= 3:
+            score += 0.2
+        elif reasoning_count >= 1:
+            score += 0.1
+
+        # Check rationale length relative to answer
+        if len(rationale) >= len(answer) * 1.5:
+            score += 0.1  # Detailed rationale
+
+        return min(1.0, score)
+
+    def _calculate_self_reflection_score(self, self_assessment: str) -> float:
+        """Calculate ρ_SR: LLM's confidence in answer correctness.
+
+        P0 Fix: Self-reflection score from Speculative RAG paper.
+        Parses the self-assessment to extract confidence level.
+        """
+        if not self_assessment:
+            return 0.5  # Default if no self-assessment
+
+        assessment_lower = self_assessment.lower()
+
+        # Parse confidence level
+        if 'high' in assessment_lower and 'confidence' in assessment_lower:
+            confidence_score = 0.9
+        elif 'medium' in assessment_lower and 'confidence' in assessment_lower:
+            confidence_score = 0.6
+        elif 'low' in assessment_lower and 'confidence' in assessment_lower:
+            confidence_score = 0.3
+        else:
+            confidence_score = 0.5
+
+        # Parse completeness level
+        if 'full' in assessment_lower and 'complete' in assessment_lower:
+            completeness_score = 0.9
+        elif 'partial' in assessment_lower:
+            completeness_score = 0.6
+        elif 'insufficient' in assessment_lower:
+            completeness_score = 0.3
+        else:
+            completeness_score = 0.5
+
+        # Combine scores (weighted average)
+        return 0.6 * confidence_score + 0.4 * completeness_score
 
     async def generate(
         self,

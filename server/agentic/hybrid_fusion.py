@@ -26,6 +26,9 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import httpx
 import numpy as np
 
+# Import JinaColBERT for real late interaction scoring (G.5.3/P1 fix)
+from .jina_colbert import JinaColBERT, ColBERTConfig, get_jina_colbert, ColBERTEmbedding
+
 logger = logging.getLogger(__name__)
 
 
@@ -242,6 +245,10 @@ class HybridFusionRetriever:
         self.bm25_index = BM25Index()
         self.documents: Dict[str, Document] = {}
 
+        # ColBERT integration (P1 fix - replaces placeholder)
+        self._colbert: Optional[JinaColBERT] = None
+        self._colbert_embeddings: Dict[str, ColBERTEmbedding] = {}  # doc_id -> ColBERT embedding
+
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
@@ -249,6 +256,13 @@ class HybridFusionRetriever:
                 timeout=60.0,
             )
         return self._client
+
+    async def _get_colbert(self) -> JinaColBERT:
+        """Get or create ColBERT instance (lazy-loaded)."""
+        if self._colbert is None:
+            self._colbert = get_jina_colbert()
+            await self._colbert.initialize()
+        return self._colbert
 
     async def close(self):
         if self._client:
@@ -299,6 +313,16 @@ class HybridFusionRetriever:
         # Get dense embedding
         doc.embedding = await self._embed_text(content)
 
+        # Get ColBERT token-level embedding (P1 fix)
+        try:
+            colbert = await self._get_colbert()
+            colbert_emb = await colbert.encode_document(content, doc_id)
+            self._colbert_embeddings[doc_id] = colbert_emb
+            doc.colbert_embedding = colbert_emb.embeddings
+            logger.debug(f"ColBERT indexed {doc_id}: {colbert_emb.token_count} tokens")
+        except Exception as e:
+            logger.warning(f"ColBERT encoding failed for {doc_id}: {e}")
+
         # Store document
         self.documents[doc_id] = doc
 
@@ -346,31 +370,58 @@ class HybridFusionRetriever:
         query: str,
         top_k: int,
     ) -> List[RetrievalScore]:
-        """ColBERT-style late interaction retrieval (simplified)."""
-        # Use dense retrieval as approximation for ColBERT
-        # In production, would use actual ColBERT token-level matching
-        query_emb = await self._embed_text(query)
+        """
+        ColBERT-style late interaction retrieval using real MaxSim scoring.
 
-        scores = []
-        for doc_id, doc in self.documents.items():
-            if doc.embedding is None:
-                continue
-            # Simulate late interaction with slightly different scoring
-            base_score = self._compute_similarity(query_emb, doc.embedding)
-            # Add small perturbation to simulate token-level differences
-            score = base_score * (0.95 + 0.1 * np.random.random())
-            scores.append((doc_id, score))
+        P1 fix: Replaced placeholder with real JinaColBERT integration.
+        Uses token-level MaxSim: for each query token, find max similarity
+        to any document token, then average across query tokens.
 
-        scores.sort(key=lambda x: x[1], reverse=True)
-        results = []
-        for rank, (doc_id, score) in enumerate(scores[:top_k]):
-            results.append(RetrievalScore(
-                doc_id=doc_id,
-                score=score,
-                rank=rank + 1,
-                retriever=RetrieverType.COLBERT,
-            ))
-        return results
+        Research basis: ColBERTv2 (NAACL 2022), Jina-ColBERT-v2 (2024)
+        Expected improvement: +25% reranking quality
+        """
+        # Check if we have ColBERT embeddings
+        if not self._colbert_embeddings:
+            logger.warning("No ColBERT embeddings available, falling back to dense")
+            return await self._retrieve_dense(query, top_k)
+
+        try:
+            # Get ColBERT instance and encode query
+            colbert = await self._get_colbert()
+            query_emb = await colbert.encode_query(query)
+
+            # Score all documents using MaxSim
+            scores = []
+            for doc_id, doc_colbert in self._colbert_embeddings.items():
+                score, token_scores = colbert.compute_max_sim(
+                    query_emb.embeddings,
+                    doc_colbert.embeddings
+                )
+                scores.append((doc_id, score, token_scores))
+
+            # Sort by score descending
+            scores.sort(key=lambda x: x[1], reverse=True)
+
+            # Build results
+            results = []
+            for rank, (doc_id, score, token_scores) in enumerate(scores[:top_k]):
+                results.append(RetrievalScore(
+                    doc_id=doc_id,
+                    score=score,
+                    rank=rank + 1,
+                    retriever=RetrieverType.COLBERT,
+                    metadata={
+                        "token_scores": token_scores.tolist()[:10] if token_scores is not None else None,
+                        "method": "maxsim"
+                    }
+                ))
+
+            logger.debug(f"ColBERT retrieved {len(results)} docs, top score: {results[0].score if results else 0:.3f}")
+            return results
+
+        except Exception as e:
+            logger.error(f"ColBERT retrieval failed: {e}, falling back to dense")
+            return await self._retrieve_dense(query, top_k)
 
     def _fuse_rrf(
         self,
@@ -628,9 +679,16 @@ def get_fusion_stats() -> Dict[str, Any]:
     if _retriever_instance is None:
         return {"status": "not_initialized"}
 
+    # ColBERT stats (P1 fix)
+    colbert_stats = {}
+    if _retriever_instance._colbert:
+        colbert_stats = _retriever_instance._colbert.get_statistics()
+
     return {
         "num_documents": len(_retriever_instance.documents),
         "bm25_docs": _retriever_instance.bm25_index.total_docs,
         "bm25_terms": len(_retriever_instance.bm25_index.term_doc_freqs),
         "cache_size": len(_retriever_instance._embedding_cache),
+        "colbert_embeddings": len(_retriever_instance._colbert_embeddings),
+        "colbert_stats": colbert_stats,
     }

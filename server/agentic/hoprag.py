@@ -20,7 +20,9 @@ Date: December 2025
 import asyncio
 import hashlib
 import heapq
+import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
@@ -40,6 +42,8 @@ class EdgeType(str, Enum):
     CAUSAL = "causal"  # Cause-effect relationship
     TEMPORAL = "temporal"  # Time sequence
     STRUCTURAL = "structural"  # Same document/section
+    # P0 Fix: Pseudo-query edges (core HopRAG innovation)
+    PSEUDO_QUERY = "pseudo_query"  # LLM-generated question connections
 
 
 class HopStrategy(str, Enum):
@@ -55,6 +59,7 @@ class HopRAGConfig:
     """Configuration for HopRAG."""
     # Model settings
     embedding_model: str = "mxbai-embed-large"
+    llm_model: str = "qwen2.5:7b"  # P0 Fix: LLM for pseudo-query generation
     ollama_url: str = "http://localhost:11434"
 
     # Graph construction
@@ -64,13 +69,19 @@ class HopRAGConfig:
         EdgeType.SEMANTIC,
         EdgeType.ENTITY,
         EdgeType.LEXICAL,
+        EdgeType.PSEUDO_QUERY,  # P0 Fix: Enable pseudo-query edges
     ])
 
     # Multi-hop settings
-    max_hops: int = 3  # Maximum reasoning hops
+    max_hops: int = 4  # P0 Fix: Increased from 3 to 4 per paper recommendation
     hop_strategy: HopStrategy = HopStrategy.BEAM_SEARCH
     beam_width: int = 5  # For beam search
     min_path_score: float = 0.4  # Minimum score to keep path
+
+    # P0 Fix: Pseudo-query settings
+    pseudo_queries_per_passage: int = 3  # Number of pseudo-queries to generate
+    pseudo_query_similarity_threshold: float = 0.6  # Lower than semantic threshold
+    enable_llm_reasoning: bool = True  # Enable LLM-based neighbor selection
 
     # Scoring
     hop_decay: float = 0.85  # Score decay per hop (prevents infinite expansion)
@@ -81,7 +92,11 @@ class HopRAGConfig:
         EdgeType.LEXICAL: 0.7,
         EdgeType.TEMPORAL: 0.8,
         EdgeType.STRUCTURAL: 0.6,
+        EdgeType.PSEUDO_QUERY: 0.95,  # P0 Fix: High weight for pseudo-query edges
     })
+
+    # P0 Fix: Helpfulness metric parameters (H(v,q) = α×SIM + (1-α)×IMP)
+    helpfulness_alpha: float = 0.7  # Weight for similarity vs importance
 
     # Performance
     batch_size: int = 10
@@ -99,6 +114,14 @@ class Passage:
     section: str = ""
     entities: List[str] = field(default_factory=list)
     keywords: List[str] = field(default_factory=list)
+    # P0 Fix: Pseudo-query storage (core HopRAG innovation)
+    outgoing_queries: List[str] = field(default_factory=list)  # "What questions does this lead to?"
+    incoming_queries: List[str] = field(default_factory=list)  # "What questions does this answer?"
+    outgoing_embeddings: List[np.ndarray] = field(default_factory=list)
+    incoming_embeddings: List[np.ndarray] = field(default_factory=list)
+    # P0 Fix: Importance score for Helpfulness metric
+    importance_score: float = 0.0  # IMP(v) based on arrival counts
+    arrival_count: int = 0  # Number of times reached during traversal
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __hash__(self):
@@ -336,6 +359,170 @@ class HopRAGBuilder:
         min_size = min(len(set1), len(set2))
         return intersection / min_size if min_size > 0 else 0.0
 
+    async def _generate_pseudo_queries(self, passage: Passage) -> Tuple[List[str], List[str]]:
+        """Generate outgoing and incoming pseudo-queries for a passage.
+
+        P0 Fix: Core HopRAG innovation - LLM-generated edges based on questions.
+
+        Outgoing queries: "What questions would a reader naturally ask after reading this?"
+        Incoming queries: "What questions does this passage directly answer?"
+
+        Returns:
+            Tuple of (outgoing_queries, incoming_queries)
+        """
+        try:
+            client = await self._get_client()
+
+            # Truncate content for LLM
+            content_preview = passage.content[:1500]
+
+            # Generate outgoing queries (what this passage leads to)
+            outgoing_prompt = f"""Given this passage, generate exactly {self.config.pseudo_queries_per_passage} follow-up questions that a reader would naturally ask after reading it. These questions should be answerable by OTHER related passages (not this one).
+
+Passage:
+{content_preview}
+
+Output ONLY the questions, one per line, without numbering:"""
+
+            outgoing_response = await client.post(
+                "/api/generate",
+                json={
+                    "model": self.config.llm_model,
+                    "prompt": outgoing_prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.7, "num_predict": 1024}  # Increased for thinking models
+                },
+                timeout=60.0,
+            )
+            outgoing_response.raise_for_status()
+            resp_data = outgoing_response.json()
+            # Handle thinking models - check response first, then thinking
+            outgoing_text = resp_data.get("response", "") or ""
+            if not outgoing_text.strip() and "thinking" in resp_data:
+                # Extract questions from thinking if response is empty
+                thinking_text = resp_data.get("thinking", "")
+                # Look for quoted questions or question patterns
+                questions = re.findall(r'"([^"]+\?)"', thinking_text)
+                if questions:
+                    outgoing_text = "\n".join(questions[:self.config.pseudo_queries_per_passage])
+
+            # Generate incoming queries (what questions this passage answers)
+            incoming_prompt = f"""Given this passage, generate exactly {self.config.pseudo_queries_per_passage} questions that this passage directly answers. These are questions someone might search for that would lead them to this information.
+
+Passage:
+{content_preview}
+
+Output ONLY the questions, one per line, without numbering:"""
+
+            incoming_response = await client.post(
+                "/api/generate",
+                json={
+                    "model": self.config.llm_model,
+                    "prompt": incoming_prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.7, "num_predict": 1024}  # Increased for thinking models
+                },
+                timeout=60.0,
+            )
+            incoming_response.raise_for_status()
+            resp_data = incoming_response.json()
+            # Handle thinking models - check response first, then thinking
+            incoming_text = resp_data.get("response", "") or ""
+            if not incoming_text.strip() and "thinking" in resp_data:
+                # Extract questions from thinking if response is empty
+                thinking_text = resp_data.get("thinking", "")
+                # Look for quoted questions or question patterns
+                questions = re.findall(r'"([^"]+\?)"', thinking_text)
+                if questions:
+                    incoming_text = "\n".join(questions[:self.config.pseudo_queries_per_passage])
+
+            # Parse responses into list of queries
+            outgoing_queries = [q.strip() for q in outgoing_text.strip().split('\n')
+                               if q.strip() and len(q.strip()) > 10][:self.config.pseudo_queries_per_passage]
+            incoming_queries = [q.strip() for q in incoming_text.strip().split('\n')
+                               if q.strip() and len(q.strip()) > 10][:self.config.pseudo_queries_per_passage]
+
+            logger.debug(f"Generated {len(outgoing_queries)} outgoing, {len(incoming_queries)} incoming queries for {passage.id}")
+            return outgoing_queries, incoming_queries
+
+        except Exception as e:
+            logger.warning(f"Pseudo-query generation failed for {passage.id}: {e}")
+            return [], []
+
+    async def _build_pseudo_query_edges(
+        self,
+        passages: List[Passage],
+        graph: 'PassageGraph',
+    ) -> int:
+        """Build edges based on pseudo-query similarity.
+
+        P0 Fix: Connect passages via their pseudo-queries.
+        Edge created when passage A's outgoing query matches passage B's incoming query.
+
+        Returns:
+            Number of edges created
+        """
+        edges_created = 0
+
+        # First, generate and embed pseudo-queries for all passages
+        logger.info(f"Generating pseudo-queries for {len(passages)} passages...")
+        for passage in passages:
+            if not passage.outgoing_queries:
+                outgoing, incoming = await self._generate_pseudo_queries(passage)
+                passage.outgoing_queries = outgoing
+                passage.incoming_queries = incoming
+
+                # Embed the queries
+                if outgoing:
+                    passage.outgoing_embeddings = await self._embed_batch(outgoing)
+                if incoming:
+                    passage.incoming_embeddings = await self._embed_batch(incoming)
+
+        # Now build edges based on query similarity
+        logger.info("Building pseudo-query edges...")
+        for p1 in passages:
+            if not p1.outgoing_queries or not p1.outgoing_embeddings:
+                continue
+
+            for p2 in passages:
+                if p1.id == p2.id:
+                    continue
+                if not p2.incoming_queries or not p2.incoming_embeddings:
+                    continue
+
+                # Check similarity between p1's outgoing and p2's incoming queries
+                best_similarity = 0.0
+                best_query_pair = ("", "")
+
+                for out_idx, out_emb in enumerate(p1.outgoing_embeddings):
+                    for in_idx, in_emb in enumerate(p2.incoming_embeddings):
+                        sim = self._compute_similarity(out_emb, in_emb)
+                        if sim > best_similarity:
+                            best_similarity = sim
+                            best_query_pair = (
+                                p1.outgoing_queries[out_idx] if out_idx < len(p1.outgoing_queries) else "",
+                                p2.incoming_queries[in_idx] if in_idx < len(p2.incoming_queries) else ""
+                            )
+
+                # Create edge if similarity exceeds threshold
+                if best_similarity >= self.config.pseudo_query_similarity_threshold:
+                    edge = Edge(
+                        source_id=p1.id,
+                        target_id=p2.id,
+                        edge_type=EdgeType.PSEUDO_QUERY,
+                        weight=best_similarity * self.config.edge_type_weights.get(EdgeType.PSEUDO_QUERY, 0.95),
+                        metadata={
+                            "outgoing_query": best_query_pair[0],
+                            "incoming_query": best_query_pair[1],
+                            "raw_similarity": best_similarity,
+                        }
+                    )
+                    graph.add_edge(edge)
+                    edges_created += 1
+
+        logger.info(f"Created {edges_created} pseudo-query edges")
+        return edges_created
+
     async def build_graph(
         self,
         passages: List[Tuple[str, str]],  # (passage_id, content)
@@ -411,12 +598,20 @@ class HopRAGBuilder:
             for edge in edges_for_p1[:self.config.max_edges_per_node]:
                 graph.add_edge(edge)
 
+        # P0 Fix: Build pseudo-query edges (core HopRAG innovation)
+        if EdgeType.PSEUDO_QUERY in self.config.edge_types:
+            pseudo_edges = await self._build_pseudo_query_edges(passage_objects, graph)
+            logger.info(f"Added {pseudo_edges} pseudo-query edges")
+
         logger.info(f"Built graph: {graph.to_dict()}")
         return graph
 
 
 class HopRAGRetriever:
-    """Retrieves multi-hop reasoning paths from passage graphs."""
+    """Retrieves multi-hop reasoning paths from passage graphs.
+
+    P0 Fix: Implements Retrieve-Reason-Prune pipeline with LLM-based neighbor selection.
+    """
 
     def __init__(
         self,
@@ -426,6 +621,8 @@ class HopRAGRetriever:
         self.graph = graph
         self.config = config or HopRAGConfig()
         self._client: Optional[httpx.AsyncClient] = None
+        # P0 Fix: Track arrival counts for importance scoring
+        self._arrival_counts: Dict[str, int] = {}
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -439,6 +636,141 @@ class HopRAGRetriever:
         if self._client:
             await self._client.aclose()
             self._client = None
+
+    def _calculate_helpfulness(
+        self,
+        passage: Passage,
+        query_emb: np.ndarray,
+    ) -> float:
+        """Calculate Helpfulness metric H(v,q) = α×SIM + (1-α)×IMP.
+
+        P0 Fix: Paper's dual-signal ranking combining similarity and importance.
+
+        Args:
+            passage: Passage to score
+            query_emb: Query embedding
+
+        Returns:
+            Helpfulness score (0-1)
+        """
+        # SIM: Similarity to query
+        sim = self._compute_similarity(query_emb, passage.embedding)
+
+        # IMP: Importance based on arrival counts (normalized)
+        arrival = self._arrival_counts.get(passage.id, 0)
+        max_arrivals = max(self._arrival_counts.values()) if self._arrival_counts else 1
+        imp = arrival / max(max_arrivals, 1)
+
+        # Combine with alpha weighting
+        alpha = self.config.helpfulness_alpha
+        helpfulness = alpha * sim + (1 - alpha) * imp
+
+        return helpfulness
+
+    async def _llm_select_neighbors(
+        self,
+        query: str,
+        current_passages: List[Passage],
+        available_neighbors: List[Tuple[Passage, Edge]],
+    ) -> List[Tuple[Passage, Edge, float]]:
+        """Use LLM to select which neighbors to explore.
+
+        P0 Fix: Core Retrieve-Reason-Prune innovation - LLM decides path direction.
+
+        Args:
+            query: Original user query
+            current_passages: Passages we're expanding from
+            available_neighbors: Candidate neighbors with edges
+
+        Returns:
+            Selected neighbors with reasoning scores (passage, edge, score)
+        """
+        if not available_neighbors:
+            return []
+
+        if not self.config.enable_llm_reasoning:
+            # Fallback to embedding-based selection
+            return [(p, e, e.weight) for p, e in available_neighbors]
+
+        try:
+            client = await self._get_client()
+
+            # Format current context
+            current_context = "\n".join([
+                f"- {p.content[:200]}..." for p in current_passages[:3]
+            ])
+
+            # Format neighbors
+            neighbor_descriptions = []
+            for i, (passage, edge) in enumerate(available_neighbors[:10], 1):
+                edge_info = f"[{edge.edge_type.value}]" if edge.edge_type else ""
+                neighbor_descriptions.append(
+                    f"{i}. {edge_info} {passage.content[:150]}..."
+                )
+            neighbors_text = "\n".join(neighbor_descriptions)
+
+            prompt = f"""You are helping navigate a knowledge graph to answer a question.
+
+Question: {query}
+
+Current passages you've collected:
+{current_context}
+
+Available neighbor passages to explore:
+{neighbors_text}
+
+Which of these neighbor passages (1-{len(available_neighbors)}) should we explore to better answer the question?
+
+Consider:
+- Which passages add NEW information not already covered?
+- Which passages are directly relevant to the question?
+- Which passages might lead to the answer?
+
+Respond with ONLY a JSON array of selected passage numbers with relevance scores (0-1):
+{{"selections": [{{"id": 1, "score": 0.9, "reason": "..."}}]}}"""
+
+            response = await client.post(
+                "/api/generate",
+                json={
+                    "model": self.config.llm_model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.3, "num_predict": 256}
+                },
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            response_text = response.json().get("response", "")
+
+            # Parse LLM response
+            try:
+                # Extract JSON from response
+                json_match = re.search(r'\{[\s\S]*\}', response_text)
+                if json_match:
+                    parsed = json.loads(json_match.group())
+                    selections = parsed.get("selections", [])
+
+                    selected = []
+                    for sel in selections:
+                        idx = sel.get("id", 1) - 1
+                        score = sel.get("score", 0.5)
+                        if 0 <= idx < len(available_neighbors):
+                            passage, edge = available_neighbors[idx]
+                            selected.append((passage, edge, score))
+
+                    if selected:
+                        logger.debug(f"LLM selected {len(selected)} neighbors")
+                        return selected
+
+            except json.JSONDecodeError:
+                pass
+
+            # Fallback: return all with edge weights
+            return [(p, e, e.weight) for p, e in available_neighbors]
+
+        except Exception as e:
+            logger.warning(f"LLM neighbor selection failed: {e}")
+            return [(p, e, e.weight) for p, e in available_neighbors]
 
     async def _embed_query(self, query: str) -> np.ndarray:
         """Get embedding for query."""
@@ -483,12 +815,126 @@ class HopRAGRetriever:
         scores.sort(key=lambda x: x[1], reverse=True)
         return scores[:top_k]
 
+    async def _expand_beam_search_with_reasoning(
+        self,
+        query: str,
+        query_emb: np.ndarray,
+        seeds: List[Tuple[Passage, float]],
+    ) -> List[ReasoningPath]:
+        """Expand paths using beam search with LLM reasoning.
+
+        P0 Fix: Implements Retrieve-Reason-Prune pipeline from HopRAG paper.
+        Uses LLM to select which neighbors to explore and Helpfulness metric for scoring.
+        """
+        # Initialize beams with seed passages
+        current_beams: List[ReasoningPath] = []
+        for passage, score in seeds:
+            path = ReasoningPath(
+                passages=[passage.id],
+                edges=[],
+                score=score,
+                hop_scores=[score],
+            )
+            current_beams.append(path)
+            # P0 Fix: Track arrivals for importance scoring
+            self._arrival_counts[passage.id] = self._arrival_counts.get(passage.id, 0) + 1
+
+        all_paths = list(current_beams)
+        visited_states: Set[Tuple[str, ...]] = {(p.passages[-1],) for p in current_beams}
+
+        # Expand for each hop
+        for hop in range(self.config.max_hops):
+            next_beams = []
+
+            for path in current_beams:
+                current_id = path.passages[-1]
+                current_passage = self.graph.get_passage(current_id)
+
+                # RETRIEVE: Get all neighbors
+                raw_neighbors = self.graph.get_neighbors(current_id)
+
+                # Filter out already visited
+                available_neighbors = []
+                for neighbor_id, edge in raw_neighbors:
+                    if neighbor_id in path.passages:
+                        continue
+                    state = tuple(sorted(path.passages + [neighbor_id]))
+                    if state in visited_states:
+                        continue
+                    neighbor_passage = self.graph.get_passage(neighbor_id)
+                    if neighbor_passage:
+                        available_neighbors.append((neighbor_passage, edge))
+
+                if not available_neighbors:
+                    continue
+
+                # REASON: Use LLM to select which neighbors to explore
+                current_passages = [self.graph.get_passage(pid) for pid in path.passages
+                                   if self.graph.get_passage(pid)]
+                current_passages = [p for p in current_passages if p]
+
+                selected = await self._llm_select_neighbors(
+                    query, current_passages, available_neighbors
+                )
+
+                # PRUNE: Only keep high-scoring selections
+                for neighbor_passage, edge, llm_score in selected:
+                    state = tuple(sorted(path.passages + [neighbor_passage.id]))
+                    if state in visited_states:
+                        continue
+                    visited_states.add(state)
+
+                    # P0 Fix: Track arrivals for Helpfulness metric
+                    self._arrival_counts[neighbor_passage.id] = (
+                        self._arrival_counts.get(neighbor_passage.id, 0) + 1
+                    )
+
+                    # P0 Fix: Use Helpfulness metric instead of raw similarity
+                    helpfulness = self._calculate_helpfulness(neighbor_passage, query_emb)
+
+                    # Combine path score with hop decay and LLM reasoning score
+                    new_score = (
+                        path.score * self.config.hop_decay +
+                        helpfulness * edge.weight * llm_score
+                    ) / (1 + self.config.hop_decay)
+
+                    if new_score < self.config.min_path_score:
+                        continue
+
+                    # Create new path
+                    new_path = ReasoningPath(
+                        passages=path.passages + [neighbor_passage.id],
+                        edges=path.edges + [edge],
+                        score=new_score,
+                        hop_scores=path.hop_scores + [helpfulness],
+                    )
+                    next_beams.append(new_path)
+
+            if not next_beams:
+                break
+
+            # Keep top-k beams
+            next_beams.sort(key=lambda p: p.score, reverse=True)
+            current_beams = next_beams[:self.config.beam_width]
+            all_paths.extend(current_beams)
+
+        # Deduplicate and sort all paths
+        unique_paths = {}
+        for path in all_paths:
+            key = tuple(path.passages)
+            if key not in unique_paths or path.score > unique_paths[key].score:
+                unique_paths[key] = path
+
+        result_paths = list(unique_paths.values())
+        result_paths.sort(key=lambda p: p.score, reverse=True)
+        return result_paths
+
     def _expand_beam_search(
         self,
         query_emb: np.ndarray,
         seeds: List[Tuple[Passage, float]],
     ) -> List[ReasoningPath]:
-        """Expand paths using beam search."""
+        """Expand paths using beam search (sync version, fallback when LLM reasoning disabled)."""
         # Initialize beams with seed passages
         current_beams: List[ReasoningPath] = []
         for passage, score in seeds:
@@ -657,9 +1103,15 @@ class HopRAGRetriever:
                 num_hops_explored=0,
             )
 
+        # P0 Fix: Reset arrival counts for new query (for Helpfulness metric)
+        self._arrival_counts = {}
+
         # Expand paths based on strategy
         if self.config.hop_strategy == HopStrategy.PERSONALIZED_PAGERANK:
             paths = self._expand_ppr(query_emb, seeds)
+        elif self.config.enable_llm_reasoning:
+            # P0 Fix: Use LLM-based Retrieve-Reason-Prune pipeline
+            paths = await self._expand_beam_search_with_reasoning(query, query_emb, seeds)
         else:
             paths = self._expand_beam_search(query_emb, seeds)
 
