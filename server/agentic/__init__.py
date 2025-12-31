@@ -631,6 +631,52 @@ from .adaptive_topk import (
     RECALL_CONFIG
 )
 
+# G.3.1-G.3.4: NanoGraphRAG with PPR + Leiden Communities (December 2025)
+from .nano_graphrag import (
+    NanoGraphRAG,
+    GraphRAGConfig,
+    GraphRAGIntegration,
+    QueryMode as GraphQueryMode,
+    EntityType as GraphEntityType,
+    Entity as GraphEntity,
+    Relationship as GraphRelationship,
+    Community as GraphCommunity,
+    QueryResult as GraphQueryResult,
+    get_nano_graphrag,
+    get_graphrag_integration,
+    initialize_graphrag,
+    NETWORKX_AVAILABLE,
+    LEIDEN_AVAILABLE
+)
+
+# G.3.3: GLiNER + Regex Hybrid Entity Extraction (December 2025)
+from .gliner_extractor import (
+    GLiNERHybridExtractor,
+    TroubleshootingExtractor,
+    ExtractedEntity,
+    ExtractionResult,
+    EntitySource,
+    EntityCategory,
+    PatternRegistry,
+    get_gliner_extractor,
+    get_troubleshooting_extractor,
+    is_gliner_available,
+    GLINER_AVAILABLE as GLINER_MODEL_AVAILABLE
+)
+
+# G.3.5: Late Chunking for Context-Aware Embedding (December 2025)
+from .late_chunking import (
+    LateChunker,
+    ChunkingConfig,
+    ChunkingStrategy,
+    Chunk as LateChunk,
+    TokenSpan,
+    LateChunkingResult,
+    get_late_chunker,
+    create_late_chunker,
+    compare_chunking_methods
+)
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -1083,6 +1129,43 @@ __all__ = [
     "PRECISION_CONFIG",
     "BALANCED_ADAPTIVE_CONFIG",
     "RECALL_CONFIG",
+    # G.3.1-G.3.4: NanoGraphRAG with PPR + Leiden (December 2025)
+    "NanoGraphRAG",
+    "GraphRAGConfig",
+    "GraphRAGIntegration",
+    "GraphQueryMode",
+    "GraphEntityType",
+    "GraphEntity",
+    "GraphRelationship",
+    "GraphCommunity",
+    "GraphQueryResult",
+    "get_nano_graphrag",
+    "get_graphrag_integration",
+    "initialize_graphrag",
+    "NETWORKX_AVAILABLE",
+    "LEIDEN_AVAILABLE",
+    # G.3.3: GLiNER + Regex Hybrid Entity Extraction (December 2025)
+    "GLiNERHybridExtractor",
+    "TroubleshootingExtractor",
+    "ExtractedEntity",
+    "ExtractionResult",
+    "EntitySource",
+    "EntityCategory",
+    "PatternRegistry",
+    "get_gliner_extractor",
+    "get_troubleshooting_extractor",
+    "is_gliner_available",
+    "GLINER_MODEL_AVAILABLE",
+    # G.3.5: Late Chunking for Context-Aware Embedding (December 2025)
+    "LateChunker",
+    "ChunkingConfig",
+    "ChunkingStrategy",
+    "LateChunk",
+    "TokenSpan",
+    "LateChunkingResult",
+    "get_late_chunker",
+    "create_late_chunker",
+    "compare_chunking_methods",
 ]
 
-__version__ = "0.50.0"  # G.2.5: Adaptive top-k using CAR algorithm (Phase 2 Complete)
+__version__ = "0.53.0"  # G.3.5: Late Chunking for Context-Aware Embedding (Phase 3 Complete)
