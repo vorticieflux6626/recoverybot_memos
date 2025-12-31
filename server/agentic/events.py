@@ -205,6 +205,27 @@ class EventType(str, Enum):
     ENTITY_ENRICHMENT_COMPLETE = "entity_enrichment_complete"
     FANUC_PATTERN_DETECTED = "fanuc_pattern_detected"
 
+    # ========== G.6 Agent Coordination Events ==========
+
+    # G.6.1: A-MEM Semantic Memory
+    SEMANTIC_MEMORY_STORING = "semantic_memory_storing"
+    SEMANTIC_MEMORY_STORED = "semantic_memory_stored"
+    SEMANTIC_MEMORY_RETRIEVED = "semantic_memory_retrieved"
+    MEMORY_CONNECTION_CREATED = "memory_connection_created"
+
+    # G.6.2: DyLAN Agent Importance Scores
+    DYLAN_COMPLEXITY_CLASSIFIED = "dylan_complexity_classified"
+    DYLAN_AGENT_SKIPPED = "dylan_agent_skipped"
+    DYLAN_CONTRIBUTION_RECORDED = "dylan_contribution_recorded"
+
+    # G.6.4: Information Bottleneck Filtering
+    IB_FILTERING_START = "ib_filtering_start"
+    IB_FILTERING_COMPLETE = "ib_filtering_complete"
+
+    # G.6.5: Contrastive Retriever Training
+    CONTRASTIVE_SESSION_RECORDED = "contrastive_session_recorded"
+    CONTRASTIVE_INSIGHT_GENERATED = "contrastive_insight_generated"
+
 
 @dataclass
 class SearchEvent:
@@ -2328,5 +2349,240 @@ def fanuc_pattern_detected(
             "error_codes": error_codes,
             "components": components or [],
             "is_fanuc_query": True
+        }
+    )
+
+
+# ========== G.6 Agent Coordination Event Helpers ==========
+
+# G.6.1: A-MEM Semantic Memory
+def semantic_memory_storing(
+    request_id: str,
+    memory_type: str,
+    content_preview: str,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Semantic memory storage starting"""
+    return SearchEvent(
+        event_type=EventType.SEMANTIC_MEMORY_STORING,
+        request_id=request_id,
+        message=f"Storing {memory_type} memory...",
+        graph_line=graph_line,
+        data={
+            "memory_type": memory_type,
+            "content_preview": content_preview[:100] + "..." if len(content_preview) > 100 else content_preview
+        }
+    )
+
+
+def semantic_memory_stored(
+    request_id: str,
+    memory_id: str,
+    memory_type: str,
+    connections_count: int = 0,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Semantic memory stored successfully"""
+    return SearchEvent(
+        event_type=EventType.SEMANTIC_MEMORY_STORED,
+        request_id=request_id,
+        message=f"Stored {memory_type} with {connections_count} connections",
+        graph_line=graph_line,
+        data={
+            "memory_id": memory_id,
+            "memory_type": memory_type,
+            "connections_count": connections_count
+        }
+    )
+
+
+def semantic_memory_retrieved(
+    request_id: str,
+    query: str,
+    memories_count: int,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Semantic memories retrieved"""
+    return SearchEvent(
+        event_type=EventType.SEMANTIC_MEMORY_RETRIEVED,
+        request_id=request_id,
+        message=f"Retrieved {memories_count} relevant memories",
+        query=query,
+        graph_line=graph_line,
+        data={
+            "memories_count": memories_count
+        }
+    )
+
+
+def memory_connection_created(
+    request_id: str,
+    source_id: str,
+    target_id: str,
+    connection_type: str,
+    strength: float,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Memory connection created in graph"""
+    return SearchEvent(
+        event_type=EventType.MEMORY_CONNECTION_CREATED,
+        request_id=request_id,
+        message=f"Created {connection_type} connection (strength: {strength:.2f})",
+        graph_line=graph_line,
+        data={
+            "source_id": source_id,
+            "target_id": target_id,
+            "connection_type": connection_type,
+            "strength": strength
+        }
+    )
+
+
+# G.6.2: DyLAN Agent Importance Scores
+def dylan_complexity_classified(
+    request_id: str,
+    complexity: str,
+    confidence: float,
+    recommended_agents: List[str],
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """DyLAN query complexity classified"""
+    return SearchEvent(
+        event_type=EventType.DYLAN_COMPLEXITY_CLASSIFIED,
+        request_id=request_id,
+        message=f"Query complexity: {complexity} (confidence: {confidence:.2f})",
+        graph_line=graph_line,
+        data={
+            "complexity": complexity,
+            "confidence": confidence,
+            "recommended_agents": recommended_agents
+        }
+    )
+
+
+def dylan_agent_skipped(
+    request_id: str,
+    agent_name: str,
+    reason: str,
+    importance_score: float,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """DyLAN decision to skip an agent"""
+    return SearchEvent(
+        event_type=EventType.DYLAN_AGENT_SKIPPED,
+        request_id=request_id,
+        message=f"Skipping {agent_name}: {reason}",
+        graph_line=graph_line,
+        data={
+            "agent_name": agent_name,
+            "reason": reason,
+            "importance_score": importance_score
+        }
+    )
+
+
+def dylan_contribution_recorded(
+    request_id: str,
+    agent_name: str,
+    quality_delta: float,
+    execution_time_ms: int,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """DyLAN agent contribution recorded"""
+    return SearchEvent(
+        event_type=EventType.DYLAN_CONTRIBUTION_RECORDED,
+        request_id=request_id,
+        message=f"Recorded {agent_name} contribution (delta: {quality_delta:+.2f})",
+        graph_line=graph_line,
+        data={
+            "agent_name": agent_name,
+            "quality_delta": quality_delta,
+            "execution_time_ms": execution_time_ms
+        }
+    )
+
+
+# G.6.4: Information Bottleneck Filtering
+def ib_filtering_start(
+    request_id: str,
+    passages_count: int,
+    filtering_level: str,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Information bottleneck filtering starting"""
+    return SearchEvent(
+        event_type=EventType.IB_FILTERING_START,
+        request_id=request_id,
+        message=f"Filtering {passages_count} passages ({filtering_level} level)",
+        graph_line=graph_line,
+        data={
+            "passages_count": passages_count,
+            "filtering_level": filtering_level
+        }
+    )
+
+
+def ib_filtering_complete(
+    request_id: str,
+    original_count: int,
+    filtered_count: int,
+    compression_ratio: float,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Information bottleneck filtering complete"""
+    return SearchEvent(
+        event_type=EventType.IB_FILTERING_COMPLETE,
+        request_id=request_id,
+        message=f"Filtered {original_count} → {filtered_count} passages ({compression_ratio:.1%} compression)",
+        graph_line=graph_line,
+        data={
+            "original_count": original_count,
+            "filtered_count": filtered_count,
+            "compression_ratio": compression_ratio
+        }
+    )
+
+
+# G.6.5: Contrastive Retriever Training
+def contrastive_session_recorded(
+    request_id: str,
+    documents_count: int,
+    cited_count: int,
+    synthesis_confidence: float,
+    strategy: str,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Contrastive retrieval session recorded for learning"""
+    return SearchEvent(
+        event_type=EventType.CONTRASTIVE_SESSION_RECORDED,
+        request_id=request_id,
+        message=f"Recorded session: {cited_count}/{documents_count} docs cited (conf: {synthesis_confidence:.2f})",
+        graph_line=graph_line,
+        data={
+            "documents_count": documents_count,
+            "cited_count": cited_count,
+            "synthesis_confidence": synthesis_confidence,
+            "strategy": strategy
+        }
+    )
+
+
+def contrastive_insight_generated(
+    request_id: str,
+    insight_type: str,
+    description: str,
+    impact: str,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Contrastive retriever generated learning insight"""
+    return SearchEvent(
+        event_type=EventType.CONTRASTIVE_INSIGHT_GENERATED,
+        request_id=request_id,
+        message=f"Insight ({insight_type}): {description[:50]}...",
+        graph_line=graph_line,
+        data={
+            "insight_type": insight_type,
+            "description": description,
+            "impact": impact
         }
     )
