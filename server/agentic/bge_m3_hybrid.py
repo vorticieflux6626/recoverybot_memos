@@ -4,7 +4,7 @@ BGE-M3 Hybrid Retrieval for Agentic Search.
 Implements multi-mode retrieval combining:
 1. Dense embeddings (semantic similarity via BGE-M3)
 2. Sparse embeddings (lexical matching via BM25)
-3. Multi-vector (ColBERT-style late interaction - optional)
+3. Multi-vector (ColBERT-style late interaction)
 
 Based on research:
 - BGE-M3: Multilingual embedding with 1024 dimensions
@@ -15,9 +15,9 @@ Hybrid Scoring Formula:
     score = α * dense_score + β * sparse_score + γ * multivec_score
 
 Default weights (BGE-M3 paper recommendations):
-    α = 0.35 (dense)
-    β = 0.35 (sparse)
-    γ = 0.30 (multi-vector)
+    α = 0.40 (dense)
+    β = 0.30 (sparse/lexical)
+    γ = 0.30 (multi-vector/ColBERT)
 
 When multi-vector not available:
     α = 0.50 (dense)
@@ -27,6 +27,8 @@ References:
 - Chen et al., "BGE M3-Embedding" (arXiv 2024)
 - Robertson & Zaragoza, "The Probabilistic Relevance Framework: BM25" (2009)
 - Khattab & Zaharia, "ColBERT" (SIGIR 2020)
+
+Updated: December 2025 - Added FlagEmbedding support for ColBERT vectors (G.1.1)
 """
 
 import asyncio
@@ -45,6 +47,72 @@ import numpy as np
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# Try to import FlagEmbedding for native BGE-M3 with ColBERT support
+_FLAG_EMBEDDING_AVAILABLE = False
+_BGE_M3_MODEL = None
+
+try:
+    from FlagEmbedding import BGEM3FlagModel
+    _FLAG_EMBEDDING_AVAILABLE = True
+    logger.info("FlagEmbedding available - ColBERT mode enabled")
+except ImportError:
+    logger.warning("FlagEmbedding not available - ColBERT mode disabled, using Ollama fallback")
+
+
+def get_bge_m3_model(use_fp16: bool = True) -> Optional['BGEM3FlagModel']:
+    """
+    Get or create the global BGE-M3 model instance.
+
+    Uses FP16 for memory efficiency (~1.2GB VRAM vs 2.4GB for FP32).
+    Enables return_colbert_vecs by default.
+
+    Args:
+        use_fp16: Whether to use FP16 precision (default: True, saves 50% VRAM)
+
+    Returns:
+        BGEM3FlagModel instance or None if FlagEmbedding not available
+    """
+    global _BGE_M3_MODEL
+
+    if not _FLAG_EMBEDDING_AVAILABLE:
+        return None
+
+    if _BGE_M3_MODEL is None:
+        logger.info("Loading BGE-M3 model with ColBERT support (use_fp16=%s)...", use_fp16)
+        try:
+            _BGE_M3_MODEL = BGEM3FlagModel(
+                'BAAI/bge-m3',
+                use_fp16=use_fp16
+            )
+            logger.info("BGE-M3 model loaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to load BGE-M3 model: {e}")
+            return None
+
+    return _BGE_M3_MODEL
+
+
+@dataclass
+class BGEM3Embeddings:
+    """
+    Container for all BGE-M3 embedding types.
+
+    BGE-M3 produces three types of embeddings:
+    1. Dense: 1024-dimensional dense vector for semantic similarity
+    2. Lexical (Sparse): Term weights for BM25-style lexical matching
+    3. ColBERT: Token-level embeddings for MaxSim late interaction
+    """
+    dense: np.ndarray  # Shape: (1024,)
+    lexical: Optional[Dict[str, float]] = None  # Term -> weight
+    colbert: Optional[np.ndarray] = None  # Shape: (num_tokens, 1024)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "dense_dim": len(self.dense) if self.dense is not None else 0,
+            "lexical_terms": len(self.lexical) if self.lexical else 0,
+            "colbert_tokens": self.colbert.shape[0] if self.colbert is not None else 0
+        }
 
 
 # =============================================================================
@@ -107,13 +175,16 @@ class HybridSearchResult:
 
 @dataclass
 class HybridRetrievalStats:
-    """Statistics for hybrid retrieval."""
+    """Statistics for hybrid retrieval (G.1.1 update: includes ColBERT)."""
     documents_indexed: int = 0
     vocabulary_size: int = 0
     avg_doc_length: float = 0.0
     dense_index_size_mb: float = 0.0
     sparse_index_size_mb: float = 0.0
+    colbert_index_size_mb: float = 0.0  # G.1.1
     mode: str = "hybrid"
+    colbert_enabled: bool = False  # G.1.1
+    weights: Dict[str, float] = field(default_factory=dict)  # G.1.1
 
 
 # =============================================================================
@@ -375,13 +446,17 @@ class BGEM3HybridRetriever:
 
     Architecture:
     1. Dense Stage: Semantic similarity using BGE-M3 embeddings (1024d)
-    2. Sparse Stage: Lexical matching using BM25
-    3. Fusion: RRF (Reciprocal Rank Fusion) or weighted linear combination
+    2. Sparse Stage: Lexical matching using BM25 OR BGE-M3 lexical weights
+    3. ColBERT Stage: Token-level MaxSim for fine-grained matching (optional)
+    4. Fusion: RRF (Reciprocal Rank Fusion) or weighted linear combination
 
     Memory Efficiency:
     - SQLite-backed persistence for large corpora
     - Lazy loading of embeddings
+    - FP16 mode for 50% VRAM reduction
     - Configurable caching
+
+    Updated (G.1.1): FlagEmbedding support with ColBERT mode enabled.
     """
 
     def __init__(
@@ -389,30 +464,47 @@ class BGEM3HybridRetriever:
         ollama_url: str = "http://localhost:11434",
         model: str = "bge-m3",
         db_path: Optional[str] = None,
-        dense_weight: float = 0.5,
-        sparse_weight: float = 0.5,
-        multivec_weight: float = 0.0,  # Optional ColBERT component
-        use_rrf: bool = True  # Use Reciprocal Rank Fusion
+        dense_weight: float = 0.40,  # Updated per BGE-M3 paper
+        sparse_weight: float = 0.30,
+        multivec_weight: float = 0.30,  # ColBERT component enabled by default
+        use_rrf: bool = True,  # Use Reciprocal Rank Fusion
+        use_flag_embedding: bool = True,  # Use FlagEmbedding if available (G.1.1)
+        use_fp16: bool = True  # Use FP16 for efficiency (G.1.1)
     ):
         self.ollama_url = ollama_url
         self.model = model
+        self.use_flag_embedding = use_flag_embedding and _FLAG_EMBEDDING_AVAILABLE
+        self.use_fp16 = use_fp16
+        self.use_rrf = use_rrf
+
+        # Store original weights
         self.dense_weight = dense_weight
         self.sparse_weight = sparse_weight
         self.multivec_weight = multivec_weight
-        self.use_rrf = use_rrf
+
+        # Adjust weights if ColBERT not available
+        if not self.use_flag_embedding and multivec_weight > 0:
+            # Redistribute ColBERT weight to dense and sparse
+            logger.info("ColBERT not available, redistributing weight to dense+sparse")
+            self.dense_weight = 0.50
+            self.sparse_weight = 0.50
+            self.multivec_weight = 0.0
 
         # Normalize weights
-        total = dense_weight + sparse_weight + multivec_weight
+        total = self.dense_weight + self.sparse_weight + self.multivec_weight
         if total > 0:
             self.dense_weight /= total
             self.sparse_weight /= total
             self.multivec_weight /= total
 
-        # BM25 sparse index
+        # BM25 sparse index (used as fallback or complement)
         self.bm25_index = BM25Index()
 
         # Dense embedding storage
         self.dense_embeddings: Dict[str, np.ndarray] = {}
+
+        # ColBERT token embeddings storage (G.1.1)
+        self.colbert_embeddings: Dict[str, np.ndarray] = {}
 
         # Document content
         self.documents: Dict[str, HybridDocument] = {}
@@ -421,11 +513,22 @@ class BGEM3HybridRetriever:
         self.db_path = db_path or "/tmp/bge_m3_hybrid.db"
         self._init_db()
 
-        # HTTP client
+        # HTTP client (for Ollama fallback)
         self._client: Optional[httpx.AsyncClient] = None
 
         # Dimension detection
         self._embedding_dim: Optional[int] = None
+
+        # BGE-M3 model (lazy loaded)
+        self._bge_m3_model = None
+
+        # Stats
+        self._colbert_enabled = self.use_flag_embedding
+        logger.info(
+            f"BGEM3HybridRetriever initialized: dense={self.dense_weight:.2f}, "
+            f"sparse={self.sparse_weight:.2f}, colbert={self.multivec_weight:.2f}, "
+            f"flag_embedding={self.use_flag_embedding}, fp16={self.use_fp16}"
+        )
 
     def _init_db(self):
         """Initialize SQLite database for persistence."""
@@ -459,6 +562,121 @@ class BGEM3HybridRetriever:
             logger.info("No persisted BM25 index found, will rebuild on document load")
 
         conn.close()
+
+    def _get_bge_m3_model(self):
+        """Get or create the BGE-M3 model instance (lazy loading)."""
+        if self._bge_m3_model is None and self.use_flag_embedding:
+            self._bge_m3_model = get_bge_m3_model(use_fp16=self.use_fp16)
+        return self._bge_m3_model
+
+    def encode_with_colbert(
+        self,
+        texts: List[str],
+        batch_size: int = 12,
+        max_length: int = 8192
+    ) -> List[BGEM3Embeddings]:
+        """
+        Encode texts using FlagEmbedding BGE-M3 with ColBERT support.
+
+        This is the core method for G.1.1 - enables all three embedding types:
+        - Dense (1024d): Semantic similarity
+        - Lexical: Token weights for BM25-style matching
+        - ColBERT: Token-level embeddings for MaxSim
+
+        Args:
+            texts: List of texts to encode
+            batch_size: Batch size for encoding
+            max_length: Maximum sequence length
+
+        Returns:
+            List of BGEM3Embeddings containing all three embedding types
+        """
+        model = self._get_bge_m3_model()
+
+        if model is None:
+            logger.warning("FlagEmbedding not available, falling back to Ollama-only embeddings")
+            return []
+
+        try:
+            # Encode with all three modes (G.1.1 key change)
+            output = model.encode(
+                texts,
+                batch_size=batch_size,
+                max_length=max_length,
+                return_dense=True,
+                return_sparse=True,
+                return_colbert_vecs=True  # G.1.1: Enable ColBERT
+            )
+
+            results = []
+            for i in range(len(texts)):
+                # Dense embedding
+                dense = np.array(output['dense_vecs'][i], dtype=np.float32)
+
+                # Lexical weights (sparse)
+                lexical = None
+                if 'lexical_weights' in output and i < len(output['lexical_weights']):
+                    lexical = output['lexical_weights'][i]
+
+                # ColBERT token embeddings
+                colbert = None
+                if 'colbert_vecs' in output and i < len(output['colbert_vecs']):
+                    colbert = np.array(output['colbert_vecs'][i], dtype=np.float32)
+
+                results.append(BGEM3Embeddings(
+                    dense=dense,
+                    lexical=lexical,
+                    colbert=colbert
+                ))
+
+            logger.debug(f"Encoded {len(texts)} texts with ColBERT: dense={results[0].dense.shape if results else 0}, colbert={results[0].colbert.shape if results and results[0].colbert is not None else 0}")
+            return results
+
+        except Exception as e:
+            logger.error(f"FlagEmbedding encoding failed: {e}")
+            return []
+
+    def compute_colbert_score(
+        self,
+        query_colbert: np.ndarray,
+        doc_colbert: np.ndarray
+    ) -> float:
+        """
+        Compute ColBERT MaxSim score between query and document.
+
+        MaxSim: For each query token, find max similarity to any doc token.
+        Final score is the sum of these max similarities.
+
+        Args:
+            query_colbert: Query token embeddings, shape (num_query_tokens, 1024)
+            doc_colbert: Document token embeddings, shape (num_doc_tokens, 1024)
+
+        Returns:
+            MaxSim score (higher = more relevant)
+        """
+        if query_colbert is None or doc_colbert is None:
+            return 0.0
+
+        if len(query_colbert) == 0 or len(doc_colbert) == 0:
+            return 0.0
+
+        # Normalize embeddings
+        query_norm = query_colbert / (np.linalg.norm(query_colbert, axis=1, keepdims=True) + 1e-8)
+        doc_norm = doc_colbert / (np.linalg.norm(doc_colbert, axis=1, keepdims=True) + 1e-8)
+
+        # Compute similarity matrix: (num_query_tokens, num_doc_tokens)
+        sim_matrix = np.dot(query_norm, doc_norm.T)
+
+        # MaxSim: max similarity for each query token
+        max_sims = np.max(sim_matrix, axis=1)
+
+        # Sum of max similarities
+        score = float(np.sum(max_sims))
+
+        # Normalize by query length for comparability
+        score = score / len(query_colbert)
+
+        return score
 
     # ===== PATTERNS FOR RETRIEVAL MODE SELECTION =====
     # Patterns that indicate exact-match queries (prefer sparse/BM25)
@@ -634,16 +852,36 @@ class BGEM3HybridRetriever:
         """
         Add a document to the hybrid index.
 
-        Creates:
-        1. Dense embedding via BGE-M3
-        2. Sparse vector via BM25 tokenization
+        Creates (G.1.1 update):
+        1. Dense embedding via BGE-M3 (1024d)
+        2. Sparse vector via BM25 tokenization OR BGE-M3 lexical weights
+        3. ColBERT token embeddings for MaxSim (if FlagEmbedding available)
         """
-        # Get dense embedding
-        dense_emb = await self.get_embedding(content)
+        dense_emb = None
+        sparse_vec = None
+        colbert_emb = None
 
-        # Add to BM25 index and get sparse vector
+        # Try FlagEmbedding first (G.1.1)
+        if self.use_flag_embedding:
+            embeddings = self.encode_with_colbert([content])
+            if embeddings:
+                dense_emb = embeddings[0].dense
+                colbert_emb = embeddings[0].colbert
+                # Use BGE-M3 lexical weights if available
+                if embeddings[0].lexical:
+                    sparse_vec = embeddings[0].lexical
+                    logger.debug(f"Using BGE-M3 lexical weights: {len(sparse_vec)} terms")
+
+        # Fallback to Ollama for dense embedding
+        if dense_emb is None:
+            dense_emb = await self.get_embedding(content)
+
+        # Always maintain BM25 index for compatibility
         self.bm25_index.add_document(doc_id, content)
-        sparse_vec = self.bm25_index.get_sparse_vector(content)
+
+        # Use BM25 sparse vector if BGE-M3 lexical not available
+        if sparse_vec is None:
+            sparse_vec = self.bm25_index.get_sparse_vector(content)
 
         # Create document
         doc = HybridDocument(
@@ -651,6 +889,7 @@ class BGEM3HybridRetriever:
             content=content,
             dense_embedding=dense_emb,
             sparse_vector=sparse_vec,
+            token_embeddings=colbert_emb,  # Store ColBERT embeddings
             metadata=metadata or {}
         )
 
@@ -658,10 +897,15 @@ class BGEM3HybridRetriever:
         self.documents[doc_id] = doc
         self.dense_embeddings[doc_id] = dense_emb
 
+        # Store ColBERT embeddings (G.1.1)
+        if colbert_emb is not None:
+            self.colbert_embeddings[doc_id] = colbert_emb
+
         # Persist to SQLite
         self._persist_document(doc)
 
-        logger.info(f"Indexed document {doc_id}: dense={len(dense_emb)}d, sparse={len(sparse_vec)} terms")
+        colbert_info = f", colbert={colbert_emb.shape}" if colbert_emb is not None else ""
+        logger.info(f"Indexed document {doc_id}: dense={len(dense_emb)}d, sparse={len(sparse_vec)} terms{colbert_info}")
         return doc
 
     def _persist_document(self, doc: HybridDocument):
@@ -724,17 +968,18 @@ class BGEM3HybridRetriever:
         query_type: Optional[str] = None
     ) -> List[HybridSearchResult]:
         """
-        Hybrid search combining dense and sparse retrieval.
+        Hybrid search combining dense, sparse, and ColBERT retrieval.
 
-        Pipeline:
+        Pipeline (G.1.1 update):
         1. Dense retrieval: Top-N by cosine similarity
         2. Sparse retrieval: Top-N by BM25 score
-        3. Fusion: RRF or weighted combination
+        3. ColBERT retrieval: MaxSim scoring (if FlagEmbedding available)
+        4. Fusion: RRF or weighted combination
 
         Args:
             query: Search query
             top_k: Number of results to return
-            mode: Retrieval mode (dense_only, sparse_only, hybrid)
+            mode: Retrieval mode (dense_only, sparse_only, hybrid, full_hybrid)
             dense_candidates: Number of dense candidates
             sparse_candidates: Number of sparse candidates
             query_type: Optional query type for domain-specific RRF tuning
@@ -743,10 +988,22 @@ class BGEM3HybridRetriever:
             return []
 
         results: Dict[str, HybridSearchResult] = {}
+        query_colbert = None  # For ColBERT scoring
+
+        # Get query embeddings - use FlagEmbedding if available (G.1.1)
+        if self.use_flag_embedding and mode == RetrievalMode.FULL_HYBRID:
+            query_embeddings = self.encode_with_colbert([query])
+            if query_embeddings:
+                query_embedding = query_embeddings[0].dense
+                query_colbert = query_embeddings[0].colbert
+                logger.debug(f"Query ColBERT shape: {query_colbert.shape if query_colbert is not None else None}")
+            else:
+                query_embedding = await self.get_embedding(query)
+        else:
+            query_embedding = await self.get_embedding(query)
 
         # Dense retrieval
         if mode in [RetrievalMode.DENSE_ONLY, RetrievalMode.HYBRID, RetrievalMode.FULL_HYBRID]:
-            query_embedding = await self.get_embedding(query)
             dense_results = self._dense_search(query_embedding, dense_candidates)
 
             for doc_id, score in dense_results:
@@ -781,12 +1038,33 @@ class BGEM3HybridRetriever:
                 if doc_id in results:
                     results[doc_id].sparse_score = score
 
+        # ColBERT retrieval (G.1.1)
+        if mode == RetrievalMode.FULL_HYBRID and query_colbert is not None and self.colbert_embeddings:
+            logger.info(f"Computing ColBERT MaxSim scores for {len(results)} candidates")
+            colbert_scores = []
+
+            for doc_id in results:
+                doc_colbert = self.colbert_embeddings.get(doc_id)
+                if doc_colbert is not None:
+                    score = self.compute_colbert_score(query_colbert, doc_colbert)
+                    results[doc_id].multivec_score = score
+                    colbert_scores.append(score)
+
+            # Normalize ColBERT scores to 0-1 range
+            if colbert_scores:
+                max_colbert = max(colbert_scores) if colbert_scores else 1.0
+                if max_colbert > 0:
+                    for doc_id in results:
+                        if results[doc_id].multivec_score > 0:
+                            results[doc_id].multivec_score /= max_colbert
+
         # Fusion
         if self.use_rrf:
             # Reciprocal Rank Fusion with domain-specific k
             rrf_k = self.get_rrf_k(query_type)
-            logger.info(f"Using RRF with k={rrf_k} for query_type={query_type or 'default'}")
-            self._apply_rrf(results, k=rrf_k)
+            colbert_info = f", colbert={len(self.colbert_embeddings)}" if mode == RetrievalMode.FULL_HYBRID else ""
+            logger.info(f"Using RRF with k={rrf_k} for query_type={query_type or 'default'}{colbert_info}")
+            self._apply_rrf(results, k=rrf_k, include_colbert=(mode == RetrievalMode.FULL_HYBRID))
         else:
             # Weighted linear combination
             for result in results.values():
@@ -870,14 +1148,20 @@ class BGEM3HybridRetriever:
         scores.sort(key=lambda x: x[1], reverse=True)
         return scores[:top_k]
 
-    def _apply_rrf(self, results: Dict[str, HybridSearchResult], k: int = 60):
+    def _apply_rrf(
+        self,
+        results: Dict[str, HybridSearchResult],
+        k: int = 60,
+        include_colbert: bool = False
+    ):
         """
-        Apply Reciprocal Rank Fusion.
+        Apply Reciprocal Rank Fusion (G.1.1 update: includes ColBERT).
 
         RRF Formula:
-            RRF(d) = Σ 1 / (k + rank_i(d))
+            RRF(d) = Σ weight_i / (k + rank_i(d))
 
         Where k is a constant (typically 60) and rank_i is the rank in list i.
+        Weights: dense=0.40, sparse=0.30, colbert=0.30 (when enabled)
         """
         # Get rankings
         dense_ranked = sorted(
@@ -893,6 +1177,15 @@ class BGEM3HybridRetriever:
         dense_ranks = {doc_id: rank + 1 for rank, (doc_id, _) in enumerate(dense_ranked)}
         sparse_ranks = {doc_id: rank + 1 for rank, (doc_id, _) in enumerate(sparse_ranked)}
 
+        # ColBERT ranking (G.1.1)
+        colbert_ranks = {}
+        if include_colbert:
+            colbert_ranked = sorted(
+                [(r.doc_id, r.multivec_score) for r in results.values()],
+                key=lambda x: x[1], reverse=True
+            )
+            colbert_ranks = {doc_id: rank + 1 for rank, (doc_id, _) in enumerate(colbert_ranked)}
+
         # Compute RRF scores
         for doc_id, result in results.items():
             dense_rank = dense_ranks.get(doc_id, len(results) + 1)
@@ -903,6 +1196,11 @@ class BGEM3HybridRetriever:
                 rrf_score += self.dense_weight / (k + dense_rank)
             if result.sparse_score > 0:
                 rrf_score += self.sparse_weight / (k + sparse_rank)
+
+            # Add ColBERT contribution (G.1.1)
+            if include_colbert and result.multivec_score > 0:
+                colbert_rank = colbert_ranks.get(doc_id, len(results) + 1)
+                rrf_score += self.multivec_weight / (k + colbert_rank)
 
             result.combined_score = rrf_score
 
@@ -951,7 +1249,7 @@ class BGEM3HybridRetriever:
         logger.info(f"Loaded {len(self.documents)} documents from database")
 
     def get_stats(self) -> HybridRetrievalStats:
-        """Get retrieval statistics."""
+        """Get retrieval statistics (G.1.1 update: includes ColBERT)."""
         dense_size = sum(
             emb.nbytes for emb in self.dense_embeddings.values()
         ) / (1024 * 1024)  # MB
@@ -962,13 +1260,33 @@ class BGEM3HybridRetriever:
             if doc.sparse_vector
         ) / (1024 * 1024)  # MB
 
+        # ColBERT index size (G.1.1)
+        colbert_size = sum(
+            emb.nbytes for emb in self.colbert_embeddings.values()
+        ) / (1024 * 1024) if self.colbert_embeddings else 0.0
+
+        # Determine mode
+        if self.multivec_weight > 0 and self.colbert_embeddings:
+            mode = "full_hybrid"  # Dense + Sparse + ColBERT
+        elif self.sparse_weight > 0:
+            mode = "hybrid"  # Dense + Sparse
+        else:
+            mode = "dense_only"
+
         return HybridRetrievalStats(
             documents_indexed=len(self.documents),
             vocabulary_size=len(self.bm25_index.vocabulary),
             avg_doc_length=self.bm25_index.avg_doc_length,
             dense_index_size_mb=round(dense_size, 2),
             sparse_index_size_mb=round(sparse_size, 4),
-            mode="hybrid" if self.sparse_weight > 0 else "dense_only"
+            colbert_index_size_mb=round(colbert_size, 2),
+            mode=mode,
+            colbert_enabled=self._colbert_enabled,
+            weights={
+                "dense": round(self.dense_weight, 2),
+                "sparse": round(self.sparse_weight, 2),
+                "colbert": round(self.multivec_weight, 2)
+            }
         )
 
     async def close(self):

@@ -5,7 +5,7 @@ Provides systematic quality measurement for industrial automation queries,
 with focus on FANUC robotics troubleshooting.
 
 Components:
-1. FANUC_BENCHMARK: 50+ test cases with expected entities and domains
+1. FANUC_BENCHMARK: 70 test cases with expected entities and domains (G.1.4)
 2. TechnicalAccuracyScorer: Multi-dimensional answer quality assessment
 3. BenchmarkRunner: Automated test execution and reporting
 
@@ -482,6 +482,402 @@ FANUC_BENCHMARK: List[BenchmarkQuery] = [
         safety_critical=True,
         ground_truth_summary="Replace batteries while powered to preserve encoder positions; backup data first",
         tags=["maintenance", "battery", "backup"]
+    ),
+
+    # ============================================
+    # EXPANDED BENCHMARK SET (G.1.4 Golden Queries)
+    # Total target: 70 queries
+    # ============================================
+
+    # === EASY: Additional Error Codes ===
+    BenchmarkQuery(
+        query="PRIO-001 priority error alarm",
+        category=QueryCategory.ERROR_CODE,
+        difficulty=QueryDifficulty.EASY,
+        expected_entities=["PRIO-001", "priority", "task"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["task priority", "system resources"],
+        ground_truth_summary="PRIO-001 indicates task priority scheduling conflict",
+        tags=["priority", "task", "system"]
+    ),
+    BenchmarkQuery(
+        query="TOOL-001 tool frame error",
+        category=QueryCategory.ERROR_CODE,
+        difficulty=QueryDifficulty.EASY,
+        expected_entities=["TOOL-001", "tool", "frame"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["tool frame", "TCP offset"],
+        ground_truth_summary="TOOL-001 indicates tool frame definition error",
+        tags=["tool", "frame", "tcp"]
+    ),
+    BenchmarkQuery(
+        query="FILE-032 file access error",
+        category=QueryCategory.ERROR_CODE,
+        difficulty=QueryDifficulty.EASY,
+        expected_entities=["FILE-032", "file", "access", "storage"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["file system", "memory card", "storage"],
+        ground_truth_summary="FILE-032 indicates file access or storage error",
+        tags=["file", "storage", "memory"]
+    ),
+    BenchmarkQuery(
+        query="SRVO-001 servo failure alarm",
+        category=QueryCategory.ERROR_CODE,
+        difficulty=QueryDifficulty.EASY,
+        expected_entities=["SRVO-001", "servo", "overcurrent"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["servo overcurrent", "motor protection"],
+        ground_truth_summary="SRVO-001 indicates servo overcurrent protection triggered",
+        tags=["servo", "overcurrent", "protection"]
+    ),
+    BenchmarkQuery(
+        query="MOTN-063 motion error alarm",
+        category=QueryCategory.ERROR_CODE,
+        difficulty=QueryDifficulty.EASY,
+        expected_entities=["MOTN-063", "motion", "trajectory"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["motion planning", "trajectory error"],
+        ground_truth_summary="MOTN-063 indicates trajectory planning or execution error",
+        tags=["motion", "trajectory"]
+    ),
+    BenchmarkQuery(
+        query="CVIS-010 vision communication error",
+        category=QueryCategory.ERROR_CODE,
+        difficulty=QueryDifficulty.EASY,
+        expected_entities=["CVIS-010", "vision", "communication"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["iRVision", "camera communication"],
+        ground_truth_summary="CVIS-010 indicates vision system communication failure",
+        tags=["vision", "communication"]
+    ),
+
+    # === MEDIUM: Additional Troubleshooting ===
+    BenchmarkQuery(
+        query="Robot vibration at specific positions",
+        category=QueryCategory.TROUBLESHOOTING,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["vibration", "resonance", "servo", "position"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["resonance", "servo tuning", "mechanical coupling"],
+        ground_truth_summary="Position-specific vibration often caused by resonance or servo tuning issues",
+        tags=["vibration", "resonance", "servo"]
+    ),
+    BenchmarkQuery(
+        query="Arc welding quality issues inconsistent bead",
+        category=QueryCategory.TROUBLESHOOTING,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["welding", "arc", "bead", "quality"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["weld parameters", "torch angle", "travel speed"],
+        ground_truth_summary="Inconsistent weld bead caused by speed, angle, or parameter variations",
+        tags=["welding", "arc", "quality"]
+    ),
+    BenchmarkQuery(
+        query="Robot slow response to teach pendant commands",
+        category=QueryCategory.TROUBLESHOOTING,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["teach pendant", "response", "communication", "lag"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["pendant communication", "system load", "cable"],
+        ground_truth_summary="Slow response may be due to communication issues or system overload",
+        tags=["teach pendant", "communication", "response"]
+    ),
+    BenchmarkQuery(
+        query="Gripper not opening or closing properly",
+        category=QueryCategory.TROUBLESHOOTING,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["gripper", "pneumatic", "IO", "signal"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["I/O signals", "pneumatic pressure", "solenoid"],
+        ground_truth_summary="Gripper issues caused by I/O, pneumatics, or mechanical problems",
+        tags=["gripper", "pneumatic", "io"]
+    ),
+    BenchmarkQuery(
+        query="Spot welding electrode wear compensation",
+        category=QueryCategory.TROUBLESHOOTING,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["spot welding", "electrode", "wear", "compensation"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["tip dress", "wear compensation", "electrode life"],
+        ground_truth_summary="Electrode wear requires tip dressing and automatic compensation setup",
+        tags=["welding", "spot", "electrode"]
+    ),
+
+    # === MEDIUM: Additional Procedures ===
+    BenchmarkQuery(
+        query="How to configure digital I/O signals",
+        category=QueryCategory.PROCEDURE,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["digital", "I/O", "signal", "configuration"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["I/O assignment", "rack/slot", "signal mapping"],
+        ground_truth_summary="Digital I/O configured via MENU > I/O > Digital with rack/slot assignment",
+        tags=["io", "digital", "configuration"]
+    ),
+    BenchmarkQuery(
+        query="Steps to create macro program",
+        category=QueryCategory.PROCEDURE,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["macro", "program", "MR", "routine"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["macro programming", "call instruction", "arguments"],
+        ground_truth_summary="Macros created as MR[ ] programs and called with CALL instruction",
+        tags=["macro", "programming"]
+    ),
+    BenchmarkQuery(
+        query="Palletizing setup and configuration",
+        category=QueryCategory.PROCEDURE,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["palletizing", "pallet", "pattern", "stack"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["pallet pattern", "stack configuration", "index calculation"],
+        ground_truth_summary="Palletizing uses PalletTool option with pattern and layer configuration",
+        tags=["palletizing", "application", "setup"]
+    ),
+    BenchmarkQuery(
+        query="How to set up robot interference zones",
+        category=QueryCategory.PROCEDURE,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["interference", "zone", "space", "check"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["space definition", "zone checking", "interference avoidance"],
+        safety_critical=True,
+        ground_truth_summary="Interference zones defined via MENU > SETUP > Space with box/plane regions",
+        tags=["interference", "safety", "zones"]
+    ),
+
+    # === MEDIUM: Additional Parameters ===
+    BenchmarkQuery(
+        query="$SPEED_CTRL system variables for motion",
+        category=QueryCategory.PARAMETER,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["$SPEED_CTRL", "system variable", "motion"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["speed control", "motion limits"],
+        ground_truth_summary="$SPEED_CTRL controls motion speed limits and acceleration profiles",
+        tags=["parameters", "speed", "motion"]
+    ),
+    BenchmarkQuery(
+        query="$SAFE_IO configuration for safety signals",
+        category=QueryCategory.PARAMETER,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["$SAFE_IO", "safety", "signal", "configuration"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["safety I/O", "dual-channel", "safety signals"],
+        safety_critical=True,
+        ground_truth_summary="$SAFE_IO configures safety-rated I/O for DCS and external safety",
+        tags=["safety", "io", "parameters"]
+    ),
+    BenchmarkQuery(
+        query="$COLL_DET collision detection parameters",
+        category=QueryCategory.PARAMETER,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["$COLL_DET", "collision", "detection", "sensitivity"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["collision sensitivity", "torque threshold", "detection level"],
+        safety_critical=True,
+        ground_truth_summary="$COLL_DET controls collision detection sensitivity and response",
+        tags=["collision", "safety", "parameters"]
+    ),
+
+    # === HARD: Complex Scenarios ===
+    BenchmarkQuery(
+        query="Multi-group coordinated motion synchronization issues",
+        category=QueryCategory.TROUBLESHOOTING,
+        difficulty=QueryDifficulty.HARD,
+        expected_entities=["multi-group", "coordinated", "motion", "synchronization"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["group coordination", "sync timing", "master-slave"],
+        ground_truth_summary="Multi-group sync requires proper group configuration and motion timing",
+        tags=["multi-group", "coordination", "motion"]
+    ),
+    BenchmarkQuery(
+        query="External axis setup and calibration with positioner",
+        category=QueryCategory.PROCEDURE,
+        difficulty=QueryDifficulty.HARD,
+        expected_entities=["external axis", "positioner", "calibration", "E1"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["extended axis", "positioner setup", "kinematics"],
+        ground_truth_summary="External axes require group configuration, calibration, and coordinated motion setup",
+        tags=["external axis", "positioner", "calibration"]
+    ),
+    BenchmarkQuery(
+        query="Robot path accuracy degradation over time",
+        category=QueryCategory.TROUBLESHOOTING,
+        difficulty=QueryDifficulty.HARD,
+        expected_entities=["path", "accuracy", "degradation", "calibration"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["mechanical wear", "calibration drift", "thermal effects"],
+        ground_truth_summary="Path accuracy degradation caused by wear, thermal effects, or calibration drift",
+        tags=["accuracy", "wear", "calibration"]
+    ),
+    BenchmarkQuery(
+        query="Force sensing integration for assembly tasks",
+        category=QueryCategory.TROUBLESHOOTING,
+        difficulty=QueryDifficulty.HARD,
+        expected_entities=["force", "sensing", "assembly", "compliance"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["force control", "compliance", "insertion"],
+        ground_truth_summary="Force sensing uses Force Sensor package with compliance and search patterns",
+        tags=["force", "sensing", "assembly"]
+    ),
+    BenchmarkQuery(
+        query="Arc welding seam tracking adaptive control",
+        category=QueryCategory.TROUBLESHOOTING,
+        difficulty=QueryDifficulty.HARD,
+        expected_entities=["seam tracking", "arc", "adaptive", "TAST"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["TAST", "seam tracking", "adaptive control"],
+        ground_truth_summary="Seam tracking uses TAST or vision for real-time path correction",
+        tags=["welding", "seam tracking", "adaptive"]
+    ),
+    BenchmarkQuery(
+        query="Robot cell network architecture design",
+        category=QueryCategory.CONCEPTUAL,
+        difficulty=QueryDifficulty.HARD,
+        expected_entities=["network", "EtherNet/IP", "architecture", "PLC"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["network topology", "protocol selection", "scan rate"],
+        ground_truth_summary="Cell network uses EtherNet/IP or DeviceNet with proper topology design",
+        tags=["network", "architecture", "integration"]
+    ),
+
+    # === EXPERT: Additional Deep Knowledge ===
+    BenchmarkQuery(
+        query="Custom inverse kinematics for non-standard robot configurations",
+        category=QueryCategory.CONCEPTUAL,
+        difficulty=QueryDifficulty.EXPERT,
+        expected_entities=["inverse kinematics", "configuration", "IK", "joint"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["kinematics", "joint solutions", "configuration space"],
+        ground_truth_summary="Custom IK requires understanding of robot geometry and configuration options",
+        tags=["kinematics", "advanced", "configuration"]
+    ),
+    BenchmarkQuery(
+        query="Robot simulation to production path matching",
+        category=QueryCategory.PROCEDURE,
+        difficulty=QueryDifficulty.EXPERT,
+        expected_entities=["simulation", "production", "offline", "calibration"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["OLP calibration", "cell calibration", "path verification"],
+        ground_truth_summary="Simulation matching requires calibration of virtual cell to physical cell",
+        tags=["simulation", "offline", "calibration"]
+    ),
+    BenchmarkQuery(
+        query="High-speed motion optimization for material handling",
+        category=QueryCategory.PROCEDURE,
+        difficulty=QueryDifficulty.EXPERT,
+        expected_entities=["high-speed", "motion", "optimization", "payload"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["motion profile", "CNT optimization", "acceleration limits"],
+        ground_truth_summary="High-speed optimization involves motion profiles, CNT values, and payload balancing",
+        tags=["high-speed", "optimization", "performance"]
+    ),
+    BenchmarkQuery(
+        query="Robot cell digital twin synchronization",
+        category=QueryCategory.CONCEPTUAL,
+        difficulty=QueryDifficulty.EXPERT,
+        expected_entities=["digital twin", "synchronization", "OPC-UA", "real-time"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["digital twin", "data synchronization", "real-time monitoring"],
+        ground_truth_summary="Digital twin uses OPC-UA or MQTT for real-time state synchronization",
+        tags=["digital twin", "industry 4.0", "monitoring"]
+    ),
+    BenchmarkQuery(
+        query="Servo drive tuning for high-inertia loads",
+        category=QueryCategory.PROCEDURE,
+        difficulty=QueryDifficulty.EXPERT,
+        expected_entities=["servo", "tuning", "inertia", "gain"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["inertia ratio", "gain tuning", "stability margins"],
+        safety_critical=True,
+        ground_truth_summary="High-inertia loads require adjusted servo gains and inertia compensation",
+        tags=["servo", "tuning", "inertia"]
+    ),
+
+    # === COMPARISON: Additional Comparisons ===
+    BenchmarkQuery(
+        query="Joint motion J vs linear motion L differences",
+        category=QueryCategory.COMPARISON,
+        difficulty=QueryDifficulty.EASY,
+        expected_entities=["joint", "linear", "motion", "J", "L"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["motion types", "interpolation", "path control"],
+        ground_truth_summary="J motion moves joints directly; L motion moves TCP linearly",
+        tags=["motion", "comparison", "basic"]
+    ),
+    BenchmarkQuery(
+        query="ROBOGUIDE vs NC Builder simulation tools",
+        category=QueryCategory.COMPARISON,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["ROBOGUIDE", "NC Builder", "simulation", "offline"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["simulation software", "offline programming", "features"],
+        ground_truth_summary="ROBOGUIDE for robots, NC Builder for CNC; different target machines",
+        tags=["simulation", "software", "comparison"]
+    ),
+    BenchmarkQuery(
+        query="DeviceNet vs EtherNet/IP for robot communication",
+        category=QueryCategory.COMPARISON,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["DeviceNet", "EtherNet/IP", "communication", "fieldbus"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["fieldbus", "protocol comparison", "bandwidth"],
+        ground_truth_summary="EtherNet/IP faster and more common; DeviceNet older but still used",
+        tags=["communication", "fieldbus", "comparison"]
+    ),
+    BenchmarkQuery(
+        query="Single vs dual check safety configurations",
+        category=QueryCategory.COMPARISON,
+        difficulty=QueryDifficulty.HARD,
+        expected_entities=["single check", "dual check", "safety", "DCS"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["safety categories", "redundancy", "SIL"],
+        safety_critical=True,
+        ground_truth_summary="Dual check provides redundancy for higher safety categories (PLd/Cat3+)",
+        tags=["safety", "DCS", "comparison"]
+    ),
+
+    # === CONCEPTUAL: Additional Theory ===
+    BenchmarkQuery(
+        query="Robot singularity and wrist flip explained",
+        category=QueryCategory.CONCEPTUAL,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["singularity", "wrist flip", "joint", "configuration"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["singularity", "configuration", "arm solution"],
+        ground_truth_summary="Singularity occurs when robot loses a degree of freedom; wrist flip at J5=0",
+        tags=["singularity", "kinematics", "concept"]
+    ),
+    BenchmarkQuery(
+        query="What is FINE vs CNT termination type",
+        category=QueryCategory.CONCEPTUAL,
+        difficulty=QueryDifficulty.EASY,
+        expected_entities=["FINE", "CNT", "termination", "motion"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["motion termination", "path blending", "position accuracy"],
+        ground_truth_summary="FINE stops at position; CNT blends through for faster cycle time",
+        tags=["motion", "termination", "concept"]
+    ),
+    BenchmarkQuery(
+        query="RPI and implicit messaging in EtherNet/IP",
+        category=QueryCategory.CONCEPTUAL,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["RPI", "implicit messaging", "EtherNet/IP", "I/O"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["Requested Packet Interval", "cyclic data", "I/O connections"],
+        ground_truth_summary="RPI sets cyclic data rate; implicit messaging for real-time I/O exchange",
+        tags=["communication", "EtherNet/IP", "concept"]
+    ),
+    BenchmarkQuery(
+        query="Robot arm reach and work envelope calculation",
+        category=QueryCategory.CONCEPTUAL,
+        difficulty=QueryDifficulty.MEDIUM,
+        expected_entities=["reach", "work envelope", "workspace", "kinematics"],
+        expected_domains=FANUC_TRUSTED_DOMAINS,
+        required_concepts=["robot workspace", "reach calculation", "interference zones"],
+        ground_truth_summary="Work envelope determined by robot kinematics and joint limits",
+        tags=["workspace", "reach", "concept"]
     ),
 ]
 

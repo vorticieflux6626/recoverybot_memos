@@ -316,7 +316,32 @@ from .bge_m3_hybrid import (
     RetrievalMode,
     BM25Index,
     get_hybrid_retriever,
-    create_hybrid_retriever
+    create_hybrid_retriever,
+    # G.1.1: ColBERT support
+    BGEM3Embeddings,
+    get_bge_m3_model,
+    _FLAG_EMBEDDING_AVAILABLE as COLBERT_AVAILABLE
+)
+# G.1.2: Redis EmbeddingsCache with 3-tier strategy
+from .redis_embeddings_cache import (
+    RedisEmbeddingsCache,
+    CacheTier,
+    TierConfig,
+    CachedEmbedding,
+    CacheStats,
+    DEFAULT_TIER_CONFIGS,
+    get_redis_embeddings_cache,
+    get_redis_embeddings_cache_async,
+    REDIS_AVAILABLE
+)
+# G.1.6: Cross-encoder reranker (bge-reranker-v2-m3)
+from .cross_encoder_reranker import (
+    CrossEncoderReranker,
+    RerankedResult,
+    RerankerStats,
+    get_cross_encoder_reranker,
+    get_cross_encoder_reranker_async,
+    _FLAG_RERANKER_AVAILABLE as RERANKER_AVAILABLE
 )
 from .hyde import (
     HyDEExpander,
@@ -516,6 +541,94 @@ from .benchmark import (
     run_benchmark,
     get_benchmark_stats,
     filter_benchmark
+)
+
+# G.1.3: OpenTelemetry Tracing (December 2025)
+from .tracing import (
+    configure_tracing,
+    get_tracer,
+    get_agentic_tracer,
+    trace_operation,
+    trace_span,
+    is_tracing_enabled,
+    get_tracing_status,
+    shutdown_tracing,
+    TracingConfig,
+    AgenticTracer,
+    OTEL_AVAILABLE,
+    OTLP_AVAILABLE
+)
+
+# G.1.5: DeepEval CI Pipeline Integration (December 2025)
+from .deepeval_integration import (
+    DeepEvalRAGEvaluator,
+    EvaluationMetric as DeepEvalMetric,
+    EvaluationResult as DeepEvalResult,
+    BenchmarkEvaluationResult,
+    get_evaluator as get_deepeval_evaluator,
+    evaluate_rag_response,
+    run_benchmark_evaluation,
+    get_evaluation_summary,
+    create_deepeval_test_cases,
+    is_deepeval_available,
+    DEEPEVAL_AVAILABLE
+)
+
+# G.2.1-G.2.2: Cascade Retriever (Binary Oversampling + MRL Cascade)
+from .cascade_retriever import (
+    CascadeRetriever,
+    CascadeConfig,
+    CascadeStage,
+    CascadeResult,
+    CascadeStats,
+    get_cascade_retriever,
+    get_cascade_retriever_async
+)
+
+# G.2.3: Query Intent Classifier for Fusion Weight Adaptation
+from .fusion_weight_adapter import (
+    FusionWeightAdapter,
+    FusionWeights,
+    QueryIntent,
+    IntentClassification,
+    get_fusion_weight_adapter,
+    get_adaptive_weights,
+    classify_for_fusion
+)
+
+# G.2.4: Qdrant On-Disk Storage for VRAM Management
+from .qdrant_storage import (
+    QdrantStorage,
+    StorageConfig,
+    QuantizationType,
+    DistanceMetric,
+    SearchResult as QdrantSearchResult,
+    CollectionInfo,
+    get_qdrant_storage,
+    get_qdrant_storage_async,
+    is_qdrant_available,
+    QDRANT_AVAILABLE,
+    VRAM_EFFICIENT_CONFIG,
+    MAXIMUM_COMPRESSION_CONFIG,
+    BALANCED_CONFIG
+)
+
+# G.2.5: Adaptive Top-K using CAR Algorithm
+from .adaptive_topk import (
+    AdaptiveTopK,
+    AdaptiveTopKConfig,
+    QueryComplexity as AdaptiveQueryComplexity,
+    StoppingReason,
+    ComplexityFeatures,
+    ScoreDistribution,
+    AdaptiveKResult,
+    EarlyStopResult,
+    get_adaptive_topk,
+    compute_adaptive_k,
+    apply_early_stopping,
+    PRECISION_CONFIG,
+    BALANCED_ADAPTIVE_CONFIG,
+    RECALL_CONFIG
 )
 
 __all__ = [
@@ -749,7 +862,7 @@ __all__ = [
     "get_model_spec",
     "get_model_dimension",
     "get_mixed_precision_service",
-    # BGE-M3 Hybrid Retrieval (December 2025)
+    # BGE-M3 Hybrid Retrieval (December 2025, G.1.1: ColBERT support)
     "BGEM3HybridRetriever",
     "HybridDocument",
     "HybridSearchResult",
@@ -758,6 +871,9 @@ __all__ = [
     "BM25Index",
     "get_hybrid_retriever",
     "create_hybrid_retriever",
+    "BGEM3Embeddings",  # G.1.1
+    "get_bge_m3_model",  # G.1.1
+    "COLBERT_AVAILABLE",  # G.1.1
     # HyDE Query Expansion (December 2025)
     "HyDEExpander",
     "HyDEConfig",
@@ -897,6 +1013,76 @@ __all__ = [
     "run_benchmark",
     "get_benchmark_stats",
     "filter_benchmark",
+    # G.1.3: OpenTelemetry Tracing (December 2025)
+    "configure_tracing",
+    "get_tracer",
+    "get_agentic_tracer",
+    "trace_operation",
+    "trace_span",
+    "is_tracing_enabled",
+    "get_tracing_status",
+    "shutdown_tracing",
+    "TracingConfig",
+    "AgenticTracer",
+    "OTEL_AVAILABLE",
+    "OTLP_AVAILABLE",
+    # G.1.5: DeepEval CI Pipeline Integration (December 2025)
+    "DeepEvalRAGEvaluator",
+    "DeepEvalMetric",
+    "DeepEvalResult",
+    "BenchmarkEvaluationResult",
+    "get_deepeval_evaluator",
+    "evaluate_rag_response",
+    "run_benchmark_evaluation",
+    "get_evaluation_summary",
+    "create_deepeval_test_cases",
+    "is_deepeval_available",
+    "DEEPEVAL_AVAILABLE",
+    # G.2.1-G.2.2: Cascade Retriever (December 2025)
+    "CascadeRetriever",
+    "CascadeConfig",
+    "CascadeStage",
+    "CascadeResult",
+    "CascadeStats",
+    "get_cascade_retriever",
+    "get_cascade_retriever_async",
+    # G.2.3: Fusion Weight Adapter (December 2025)
+    "FusionWeightAdapter",
+    "FusionWeights",
+    "QueryIntent",
+    "IntentClassification",
+    "get_fusion_weight_adapter",
+    "get_adaptive_weights",
+    "classify_for_fusion",
+    # G.2.4: Qdrant On-Disk Storage (December 2025)
+    "QdrantStorage",
+    "StorageConfig",
+    "QuantizationType",
+    "DistanceMetric",
+    "QdrantSearchResult",
+    "CollectionInfo",
+    "get_qdrant_storage",
+    "get_qdrant_storage_async",
+    "is_qdrant_available",
+    "QDRANT_AVAILABLE",
+    "VRAM_EFFICIENT_CONFIG",
+    "MAXIMUM_COMPRESSION_CONFIG",
+    "BALANCED_CONFIG",
+    # G.2.5: Adaptive Top-K CAR Algorithm (December 2025)
+    "AdaptiveTopK",
+    "AdaptiveTopKConfig",
+    "AdaptiveQueryComplexity",
+    "StoppingReason",
+    "ComplexityFeatures",
+    "ScoreDistribution",
+    "AdaptiveKResult",
+    "EarlyStopResult",
+    "get_adaptive_topk",
+    "compute_adaptive_k",
+    "apply_early_stopping",
+    "PRECISION_CONFIG",
+    "BALANCED_ADAPTIVE_CONFIG",
+    "RECALL_CONFIG",
 ]
 
-__version__ = "0.40.0"  # Part F: Benchmark Test Suite + Technical Accuracy Scorer
+__version__ = "0.50.0"  # G.2.5: Adaptive top-k using CAR algorithm (Phase 2 Complete)

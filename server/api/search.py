@@ -6072,3 +6072,502 @@ async def hsea_stats():
     except Exception as e:
         logger.error(f"HSEA stats failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# G.1.2: Redis Embeddings Cache Endpoints
+# =============================================================================
+
+@router.get("/embeddings-cache/stats")
+async def get_embeddings_cache_stats():
+    """
+    Get statistics for the Redis embeddings cache.
+
+    Returns tier-level statistics including hit rates, entry counts,
+    and compression ratios.
+    """
+    try:
+        from agentic.redis_embeddings_cache import get_redis_embeddings_cache_async
+
+        cache = await get_redis_embeddings_cache_async()
+        stats = await cache.get_stats()
+
+        return JSONResponse(content={
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        })
+
+    except Exception as e:
+        logger.error(f"Embeddings cache stats failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/embeddings-cache/store")
+async def store_embedding_in_cache(
+    key: str = Query(..., description="Unique key for the embedding"),
+    tier: str = Query("cold", description="Cache tier: hot, warm, or cold"),
+    text: Optional[str] = Body(None, description="Optional text to embed")
+):
+    """
+    Store an embedding in the cache at the specified tier.
+
+    If text is provided, generates embedding first. Otherwise expects
+    embedding data in request body.
+    """
+    try:
+        from agentic.redis_embeddings_cache import (
+            get_redis_embeddings_cache_async,
+            CacheTier
+        )
+        import numpy as np
+
+        cache = await get_redis_embeddings_cache_async()
+
+        # Map tier string to enum
+        tier_map = {
+            "hot": CacheTier.HOT,
+            "warm": CacheTier.WARM,
+            "cold": CacheTier.COLD
+        }
+        cache_tier = tier_map.get(tier.lower(), CacheTier.COLD)
+
+        if text:
+            # Generate embedding from text
+            from agentic.mixed_precision_embeddings import get_mixed_precision_service
+            service = get_mixed_precision_service()
+            embedding = await service.get_embedding(text)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="text parameter is required"
+            )
+
+        success = await cache.put(key, embedding, cache_tier)
+
+        return JSONResponse(content={
+            "success": success,
+            "data": {
+                "key": key,
+                "tier": tier,
+                "dimension": len(embedding)
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Store embedding failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/embeddings-cache/get/{key}")
+async def get_embedding_from_cache(
+    key: str,
+    min_tier: str = Query("hot", description="Minimum acceptable tier")
+):
+    """
+    Retrieve an embedding from the cache.
+
+    Searches from hot to cold tier, returning the first match.
+    """
+    try:
+        from agentic.redis_embeddings_cache import (
+            get_redis_embeddings_cache_async,
+            CacheTier
+        )
+
+        cache = await get_redis_embeddings_cache_async()
+
+        tier_map = {
+            "hot": CacheTier.HOT,
+            "warm": CacheTier.WARM,
+            "cold": CacheTier.COLD
+        }
+        cache_tier = tier_map.get(min_tier.lower(), CacheTier.HOT)
+
+        result = await cache.get(key, cache_tier)
+
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Embedding not found: {key}"
+            )
+
+        embedding, found_tier = result
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "key": key,
+                "tier": found_tier.value,
+                "dimension": len(embedding),
+                "embedding": embedding.tolist()[:10] + ["..."]  # Truncated for display
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get embedding failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/embeddings-cache/{key}")
+async def invalidate_embedding(
+    key: str,
+    tier: Optional[str] = Query(None, description="Specific tier to clear, or all if None")
+):
+    """
+    Invalidate a cached embedding.
+
+    Can target a specific tier or all tiers.
+    """
+    try:
+        from agentic.redis_embeddings_cache import (
+            get_redis_embeddings_cache_async,
+            CacheTier
+        )
+
+        cache = await get_redis_embeddings_cache_async()
+
+        cache_tier = None
+        if tier:
+            tier_map = {
+                "hot": CacheTier.HOT,
+                "warm": CacheTier.WARM,
+                "cold": CacheTier.COLD
+            }
+            cache_tier = tier_map.get(tier.lower())
+
+        count = await cache.invalidate(key, cache_tier)
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "key": key,
+                "tier": tier or "all",
+                "entries_invalidated": count
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        })
+
+    except Exception as e:
+        logger.error(f"Invalidate embedding failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/embeddings-cache/tier/{tier}")
+async def clear_cache_tier(tier: str):
+    """
+    Clear all entries from a specific cache tier.
+    """
+    try:
+        from agentic.redis_embeddings_cache import (
+            get_redis_embeddings_cache_async,
+            CacheTier
+        )
+
+        cache = await get_redis_embeddings_cache_async()
+
+        tier_map = {
+            "hot": CacheTier.HOT,
+            "warm": CacheTier.WARM,
+            "cold": CacheTier.COLD
+        }
+        cache_tier = tier_map.get(tier.lower())
+
+        if cache_tier is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid tier: {tier}. Use hot, warm, or cold."
+            )
+
+        count = await cache.clear_tier(cache_tier)
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "tier": tier,
+                "entries_cleared": count
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Clear cache tier failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/embeddings-cache/warm")
+async def warm_embeddings_cache(
+    texts: List[str] = Body(..., description="List of texts to warm"),
+    tier: str = Query("warm", description="Target tier for warming")
+):
+    """
+    Pre-warm the cache with embeddings for frequently accessed texts.
+
+    Generates embeddings for all provided texts and stores them
+    in the specified tier.
+    """
+    try:
+        from agentic.redis_embeddings_cache import (
+            get_redis_embeddings_cache_async,
+            CacheTier
+        )
+        from agentic.mixed_precision_embeddings import get_mixed_precision_service
+        import numpy as np
+
+        cache = await get_redis_embeddings_cache_async()
+        service = get_mixed_precision_service()
+
+        tier_map = {
+            "hot": CacheTier.HOT,
+            "warm": CacheTier.WARM,
+            "cold": CacheTier.COLD
+        }
+        cache_tier = tier_map.get(tier.lower(), CacheTier.WARM)
+
+        stored = 0
+        for text in texts:
+            embedding = await service.get_embedding(text)
+            key = cache._hash_text(text)
+            if await cache.put(key, embedding, cache_tier):
+                stored += 1
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "texts_provided": len(texts),
+                "embeddings_stored": stored,
+                "tier": tier
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        })
+
+    except Exception as e:
+        logger.error(f"Warm embeddings cache failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/embeddings-cache/demote-stale")
+async def demote_stale_embeddings(
+    max_age_seconds: int = Query(3600, description="Max age before demotion"),
+    tier: str = Query("hot", description="Tier to check for stale entries")
+):
+    """
+    Demote stale entries from a tier to a colder tier.
+
+    Entries not accessed within max_age_seconds are demoted.
+    """
+    try:
+        from agentic.redis_embeddings_cache import (
+            get_redis_embeddings_cache_async,
+            CacheTier
+        )
+
+        cache = await get_redis_embeddings_cache_async()
+
+        tier_map = {
+            "hot": CacheTier.HOT,
+            "warm": CacheTier.WARM
+        }
+        cache_tier = tier_map.get(tier.lower())
+
+        if cache_tier is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Only hot and warm tiers can be demoted"
+            )
+
+        count = await cache.demote_stale_entries(max_age_seconds, cache_tier)
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "tier": tier,
+                "max_age_seconds": max_age_seconds,
+                "entries_demoted": count
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Demote stale embeddings failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# G.1.6: Cross-Encoder Reranker Endpoints
+# =============================================================================
+
+@router.get("/reranker/stats")
+async def get_reranker_stats():
+    """
+    Get statistics for the cross-encoder reranker.
+
+    Returns model status, usage stats, and latency metrics.
+    """
+    try:
+        from agentic.cross_encoder_reranker import get_cross_encoder_reranker
+
+        reranker = get_cross_encoder_reranker()
+        stats = reranker.get_stats()
+
+        return JSONResponse(content={
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        })
+
+    except Exception as e:
+        logger.error(f"Reranker stats failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class RerankerRequest(BaseModel):
+    """Request model for reranking."""
+    query: str
+    documents: List[Dict[str, Any]]
+    top_k: int = 10
+    score_threshold: float = 0.0
+
+
+@router.post("/reranker/rerank")
+async def rerank_documents(request: RerankerRequest):
+    """
+    Rerank documents using cross-encoder.
+
+    Expects a query and list of documents with 'doc_id' and 'content' fields.
+    Returns reranked documents with original and reranked scores.
+    """
+    try:
+        from agentic.cross_encoder_reranker import get_cross_encoder_reranker
+
+        reranker = get_cross_encoder_reranker()
+        results, stats = await reranker.rerank(
+            query=request.query,
+            documents=request.documents,
+            top_k=request.top_k,
+            score_threshold=request.score_threshold
+        )
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "results": [
+                    {
+                        "doc_id": r.doc_id,
+                        "original_score": r.original_score,
+                        "rerank_score": r.rerank_score,
+                        "content": r.content[:200] + "..." if len(r.content) > 200 else r.content
+                    }
+                    for r in results
+                ],
+                "stats": {
+                    "input_count": stats.input_count,
+                    "output_count": stats.output_count,
+                    "rerank_time_ms": stats.rerank_time_ms,
+                    "max_score": stats.max_score,
+                    "min_score": stats.min_score,
+                    "avg_score": stats.avg_score
+                }
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        })
+
+    except Exception as e:
+        logger.error(f"Rerank failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reranker/load")
+async def load_reranker_model():
+    """
+    Pre-load the reranker model.
+
+    Loads the model into VRAM for faster subsequent reranking.
+    Model size: ~1GB VRAM.
+    """
+    try:
+        from agentic.cross_encoder_reranker import get_cross_encoder_reranker_async
+
+        reranker = await get_cross_encoder_reranker_async()
+        stats = reranker.get_stats()
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "status": "loaded" if stats["model_loaded"] else "failed",
+                "model_name": stats["model_name"],
+                "use_fp16": stats["use_fp16"]
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        })
+
+    except Exception as e:
+        logger.error(f"Load reranker failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reranker/unload")
+async def unload_reranker_model():
+    """
+    Unload the reranker model to free VRAM.
+    """
+    try:
+        from agentic.cross_encoder_reranker import get_cross_encoder_reranker
+
+        reranker = get_cross_encoder_reranker()
+        reranker.unload_model()
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "status": "unloaded"
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        })
+
+    except Exception as e:
+        logger.error(f"Unload reranker failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
