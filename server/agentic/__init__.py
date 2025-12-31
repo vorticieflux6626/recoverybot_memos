@@ -677,6 +677,93 @@ from .late_chunking import (
     compare_chunking_methods
 )
 
+# G.4.1: Circuit Breakers for Production Reliability (December 2025)
+from .circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerRegistry,
+    CircuitState,
+    CircuitMetrics,
+    CircuitBreakerError,
+    CircuitOpenError,
+    AllCircuitsOpenError,
+    get_circuit_breaker_registry,
+    with_circuit_breaker,
+    create_llm_circuit_breaker,
+    create_search_circuit_breaker,
+    create_embedding_circuit_breaker,
+    create_scraping_circuit_breaker,
+    execute_with_fallback,
+    get_circuit_health,
+    get_circuit_status,
+    reset_circuit,
+    LLM_CIRCUIT_CONFIG,
+    SEARCH_CIRCUIT_CONFIG,
+    EMBEDDING_CIRCUIT_CONFIG,
+    SCRAPING_CIRCUIT_CONFIG,
+)
+
+# G.4.2: Shadow Mode for Embedding Model Testing (December 2025)
+from .shadow_embeddings import (
+    ShadowEmbeddingTester,
+    ShadowEmbeddingRegistry,
+    ShadowConfig,
+    ShadowMode,
+    ShadowMetrics,
+    ComparisonResult,
+    EmbeddingProvider,
+    OllamaEmbeddingAdapter,
+    get_shadow_registry,
+    create_ollama_shadow_tester,
+)
+
+# G.4.3: Feature Flags for Gradual Rollout (December 2025)
+from .feature_flags import (
+    FeatureFlagManager,
+    Flag,
+    FlagType,
+    FlagStatus,
+    FlagBundle,
+    FlagEvaluation,
+    FeatureFlagOverride,
+    get_feature_flags,
+    is_enabled as is_flag_enabled,
+    get_flag_value,
+)
+
+# G.4.4: Embedding Drift Monitoring (December 2025)
+from .embedding_drift import (
+    EmbeddingDriftMonitor,
+    DriftConfig,
+    DriftType,
+    DriftSeverity,
+    DriftMetrics,
+    DriftResult,
+    AlertEvent,
+    get_drift_monitor,
+    record_embedding_for_drift,
+    check_embedding_drift,
+)
+
+# G.4.5: Blue-Green Deployment for Zero-Downtime Migrations (December 2025)
+from .blue_green import (
+    BlueGreenManager,
+    BlueGreenConfig,
+    Deployment,
+    DeploymentSlot,
+    DeploymentStatus,
+    DeploymentConfig,
+    DeploymentEvent,
+    HealthCheck,
+    HealthStatus,
+    ModelProvider,
+    MockModelProvider,
+    get_blue_green_manager,
+    deploy_model,
+    switch_to_slot,
+    rollback_deployment,
+)
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -1166,6 +1253,83 @@ __all__ = [
     "get_late_chunker",
     "create_late_chunker",
     "compare_chunking_methods",
+
+    # G.4.1: Circuit Breakers for Production Reliability (December 2025)
+    "CircuitBreaker",
+    "CircuitBreakerConfig",
+    "CircuitBreakerRegistry",
+    "CircuitState",
+    "CircuitMetrics",
+    "CircuitBreakerError",
+    "CircuitOpenError",
+    "AllCircuitsOpenError",
+    "get_circuit_breaker_registry",
+    "with_circuit_breaker",
+    "create_llm_circuit_breaker",
+    "create_search_circuit_breaker",
+    "create_embedding_circuit_breaker",
+    "create_scraping_circuit_breaker",
+    "execute_with_fallback",
+    "get_circuit_health",
+    "get_circuit_status",
+    "reset_circuit",
+    "LLM_CIRCUIT_CONFIG",
+    "SEARCH_CIRCUIT_CONFIG",
+    "EMBEDDING_CIRCUIT_CONFIG",
+    "SCRAPING_CIRCUIT_CONFIG",
+
+    # G.4.2: Shadow Mode for Embedding Model Testing (December 2025)
+    "ShadowEmbeddingTester",
+    "ShadowEmbeddingRegistry",
+    "ShadowConfig",
+    "ShadowMode",
+    "ShadowMetrics",
+    "ComparisonResult",
+    "EmbeddingProvider",
+    "OllamaEmbeddingAdapter",
+    "get_shadow_registry",
+    "create_ollama_shadow_tester",
+
+    # G.4.3: Feature Flags for Gradual Rollout (December 2025)
+    "FeatureFlagManager",
+    "Flag",
+    "FlagType",
+    "FlagStatus",
+    "FlagBundle",
+    "FlagEvaluation",
+    "FeatureFlagOverride",
+    "get_feature_flags",
+    "is_flag_enabled",
+    "get_flag_value",
+
+    # G.4.4: Embedding Drift Monitoring (December 2025)
+    "EmbeddingDriftMonitor",
+    "DriftConfig",
+    "DriftType",
+    "DriftSeverity",
+    "DriftMetrics",
+    "DriftResult",
+    "AlertEvent",
+    "get_drift_monitor",
+    "record_embedding_for_drift",
+    "check_embedding_drift",
+
+    # G.4.5: Blue-Green Deployment (December 2025)
+    "BlueGreenManager",
+    "BlueGreenConfig",
+    "Deployment",
+    "DeploymentSlot",
+    "DeploymentStatus",
+    "DeploymentConfig",
+    "DeploymentEvent",
+    "HealthCheck",
+    "HealthStatus",
+    "ModelProvider",
+    "MockModelProvider",
+    "get_blue_green_manager",
+    "deploy_model",
+    "switch_to_slot",
+    "rollback_deployment",
 ]
 
-__version__ = "0.53.0"  # G.3.5: Late Chunking for Context-Aware Embedding (Phase 3 Complete)
+__version__ = "0.58.0"  # G.4.5: Blue-Green Deployment Pattern
