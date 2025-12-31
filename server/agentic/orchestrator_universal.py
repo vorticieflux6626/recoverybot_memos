@@ -92,7 +92,8 @@ from .enhanced_reasoning import (
     EnhancedReasoningEngine,
     get_enhanced_reasoning,
     PreActPlan,
-    StuckStateMetrics
+    StuckStateMetrics,
+    ContradictionInfo
 )
 
 # Dynamic planning (from DynamicOrchestrator)
@@ -645,19 +646,42 @@ class UniversalOrchestrator(BaseSearchPipeline):
         """
         super().__init__(ollama_url, mcp_url, brave_api_key, memory_service)
 
-        # Determine configuration
+        # Determine configuration with logging
         if config is not None:
             self.config = config
+            logger.info("UniversalOrchestrator initialized with explicit FeatureConfig")
         elif preset is not None:
-            self.config = PRESET_CONFIGS.get(preset, PRESET_CONFIGS[OrchestratorPreset.BALANCED])
+            if preset in PRESET_CONFIGS:
+                self.config = PRESET_CONFIGS[preset]
+                enabled_count = sum(
+                    1 for field in self.config.__dataclass_fields__
+                    if field.startswith("enable_") and getattr(self.config, field, False)
+                )
+                logger.info(f"UniversalOrchestrator initialized with preset '{preset.value}' ({enabled_count} features enabled)")
+            else:
+                self.config = PRESET_CONFIGS[OrchestratorPreset.BALANCED]
+                logger.warning(
+                    f"Unknown preset '{preset}', falling back to BALANCED. "
+                    f"Available presets: {[p.value for p in OrchestratorPreset]}"
+                )
         else:
             # Default to balanced
             self.config = PRESET_CONFIGS[OrchestratorPreset.BALANCED]
+            logger.info("UniversalOrchestrator initialized with default BALANCED preset")
 
-        # Apply any feature overrides
+        # Apply any feature overrides with logging
+        applied_overrides = []
         for key, value in feature_overrides.items():
             if hasattr(self.config, key):
+                old_value = getattr(self.config, key)
                 setattr(self.config, key, value)
+                if old_value != value:
+                    applied_overrides.append(f"{key}: {old_value} -> {value}")
+            else:
+                logger.warning(f"Unknown feature override ignored: {key}={value}")
+
+        if applied_overrides:
+            logger.info(f"Feature overrides applied: {applied_overrides}")
 
         self.db_path = db_path or "/home/sparkone/sdd/Recovery_Bot/memOS/data"
 
@@ -3368,12 +3392,33 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 # Append contradiction summary to synthesis
                 synthesis += "\n\n**Note:** Some sources provide conflicting information:\n"
                 for c in contradictions[:3]:
-                    synthesis += f"- {c}\n"
+                    # Format ContradictionInfo object as readable string
+                    if hasattr(c, 'claim'):
+                        # ContradictionInfo dataclass
+                        contradiction_text = f"{c.claim}"
+                        if hasattr(c, 'resolution_suggestion') and c.resolution_suggestion:
+                            contradiction_text += f" ({c.resolution_suggestion})"
+                        synthesis += f"- {contradiction_text}\n"
+                    else:
+                        # Fallback for string
+                        synthesis += f"- {c}\n"
                 # Phase 5: Record contradictions in scratchpad for coordination
+                # Convert ContradictionInfo objects to serializable dicts
+                serializable_contradictions = []
+                for c in contradictions[:5]:
+                    if hasattr(c, 'claim'):
+                        serializable_contradictions.append({
+                            "claim": c.claim,
+                            "source_a": getattr(c, 'source_a', ''),
+                            "source_b": getattr(c, 'source_b', ''),
+                            "resolution": getattr(c, 'resolution_suggestion', '')
+                        })
+                    else:
+                        serializable_contradictions.append(str(c))
                 scratchpad.write_public(
                     agent_id="contradiction_detector",
                     key="detected_contradictions",
-                    value=contradictions[:5],  # Store up to 5 contradictions
+                    value=serializable_contradictions,
                     ttl_minutes=60
                 )
                 logger.info(f"[{request_id}] Recorded {len(contradictions)} contradictions in scratchpad")
@@ -5109,7 +5154,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
         synthesis: str,
         scraped_content: List[str],
         request_id: str
-    ) -> Optional[List[str]]:
+    ) -> Optional[List[ContradictionInfo]]:
         """Phase 9.5: Detect contradictions in sources."""
         start = time.time()
         try:

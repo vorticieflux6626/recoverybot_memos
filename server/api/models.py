@@ -401,3 +401,112 @@ async def get_overhead_stats():
             status_code=500,
             detail=f"Failed to calculate overhead: {str(e)}"
         )
+
+
+# ============== Model Validation Endpoints ==============
+
+from config.settings import (
+    validate_configured_models,
+    get_resolved_model_config,
+    get_available_ollama_models
+)
+
+
+@router.get("/validation/status")
+async def get_model_validation_status():
+    """
+    Get validation status of all configured models.
+
+    Returns:
+        - Which models are configured
+        - Whether each model is available in Ollama
+        - Resolved model (fallback applied if needed)
+        - Whether a fallback is being used
+
+    Use this endpoint to verify model configuration is correct
+    before running agentic search operations.
+    """
+    try:
+        report = validate_configured_models()
+
+        # Add summary statistics
+        models_info = report.get("models", {})
+        all_available = all(m.get("available", False) for m in models_info.values())
+        using_fallbacks = any(m.get("using_fallback", False) for m in models_info.values())
+
+        return {
+            "success": True,
+            "data": {
+                "all_models_available": all_available,
+                "using_fallbacks": using_fallbacks,
+                "ollama_models_count": report.get("available_count", 0),
+                "models": models_info
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Failed to validate models: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to validate models: {str(e)}"
+        )
+
+
+@router.get("/validation/resolved")
+async def get_resolved_models():
+    """
+    Get the resolved model configuration with fallbacks applied.
+
+    This shows which models will actually be used for each function,
+    after applying fallback logic for unavailable models.
+    """
+    try:
+        resolved = get_resolved_model_config()
+
+        return {
+            "success": True,
+            "data": resolved,
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Failed to get resolved models: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get resolved models: {str(e)}"
+        )
+
+
+@router.post("/validation/refresh")
+async def refresh_available_models():
+    """
+    Force refresh the list of available Ollama models.
+
+    Clears the cache and re-fetches from Ollama API.
+    Use this after pulling new models to update the validation cache.
+    """
+    try:
+        models = get_available_ollama_models(force_refresh=True)
+
+        return {
+            "success": True,
+            "data": {
+                "models_count": len(models),
+                "message": "Model cache refreshed"
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Failed to refresh models: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to refresh models: {str(e)}"
+        )

@@ -53,6 +53,23 @@ class MemOSSettings(BaseSettings):
     brave_api_key: Optional[str] = None  # Brave Search API key (optional fallback)
     data_dir: str = "/home/sparkone/sdd/Recovery_Bot/memOS/data"  # Data directory
 
+    # Model Fallback Configuration
+    # Each key maps to a list of fallback models in priority order
+    model_fallbacks: dict = {
+        # Main LLM fallbacks (largest to smallest)
+        "llama3.3:70b": ["qwen3:30b-a3b", "qwen3:8b", "llama3.2:3b"],
+        # Thinking/reasoning model fallbacks
+        "deepseek-r1:14b-qwen-distill-q8_0": ["deepseek-r1:8b-0528-qwen3-fp16", "qwen3:8b"],
+        # Synthesis model fallbacks
+        "qwen3:8b": ["llama3.2:3b", "llama3.2:1b-instruct-fp16"],
+        # Embedding model fallbacks
+        "mxbai-embed-large": ["bge-m3", "nomic-embed-text"],
+    }
+
+    # Model validation settings
+    validate_models_on_startup: bool = True
+    model_validation_timeout: float = 5.0  # seconds
+
     # PDF Extraction Tools API (FANUC Technical Documentation)
     pdf_api_url: str = "http://localhost:8002"
     pdf_api_timeout: int = 30
@@ -175,6 +192,147 @@ settings = MemOSSettings()
 def get_settings() -> MemOSSettings:
     """Get settings instance (for dependency injection)"""
     return settings
+
+
+# Model Validation Utilities
+import httpx
+import logging
+
+logger = logging.getLogger(__name__)
+
+_available_models_cache: Optional[set] = None
+
+
+def get_available_ollama_models(force_refresh: bool = False) -> set:
+    """
+    Fetch available models from Ollama API.
+    Caches result to avoid repeated API calls.
+
+    Returns:
+        Set of available model names (includes both with and without :latest suffix)
+    """
+    global _available_models_cache
+
+    if _available_models_cache is not None and not force_refresh:
+        return _available_models_cache
+
+    try:
+        response = httpx.get(
+            f"{settings.ollama_base_url}/api/tags",
+            timeout=settings.model_validation_timeout
+        )
+        if response.status_code == 200:
+            data = response.json()
+            raw_names = {m["name"] for m in data.get("models", [])}
+
+            # Also add versions without :latest suffix for easier matching
+            # e.g., "mxbai-embed-large:latest" -> also include "mxbai-embed-large"
+            normalized_names = set()
+            for name in raw_names:
+                normalized_names.add(name)
+                if name.endswith(":latest"):
+                    base_name = name.rsplit(":latest", 1)[0]
+                    normalized_names.add(base_name)
+
+            _available_models_cache = normalized_names
+            logger.info(f"Ollama models available: {len(raw_names)} (normalized: {len(normalized_names)})")
+            return _available_models_cache
+    except Exception as e:
+        logger.warning(f"Failed to fetch Ollama models: {e}")
+
+    return set()
+
+
+def resolve_model(requested_model: str, fallback_key: Optional[str] = None) -> str:
+    """
+    Resolve a model name to an available model, using fallbacks if needed.
+
+    Args:
+        requested_model: The preferred model name
+        fallback_key: Optional key in model_fallbacks dict (defaults to requested_model)
+
+    Returns:
+        The first available model from [requested_model, ...fallbacks]
+    """
+    available = get_available_ollama_models()
+
+    # If validation is disabled or no models found, return requested
+    if not settings.validate_models_on_startup or not available:
+        return requested_model
+
+    # Check if requested model is available
+    if requested_model in available:
+        return requested_model
+
+    # Check fallbacks
+    key = fallback_key or requested_model
+    fallbacks = settings.model_fallbacks.get(key, [])
+
+    for fallback in fallbacks:
+        if fallback in available:
+            logger.warning(
+                f"Model '{requested_model}' not available, using fallback: '{fallback}'"
+            )
+            return fallback
+
+    # No fallback available - log error and return requested (will fail at runtime)
+    logger.error(
+        f"Model '{requested_model}' not available and no fallbacks found. "
+        f"Available models: {sorted(available)[:10]}..."
+    )
+    return requested_model
+
+
+def validate_configured_models() -> dict:
+    """
+    Validate all configured models and return a status report.
+
+    Returns:
+        Dict with model availability status and resolved models
+    """
+    available = get_available_ollama_models(force_refresh=True)
+
+    models_to_check = {
+        "ollama_model": settings.ollama_model,
+        "classifier_model": settings.classifier_model,
+        "synthesizer_model": settings.synthesizer_model,
+        "thinking_model": settings.thinking_model,
+        "embedding_model": settings.ollama_embedding_model,
+    }
+
+    report = {
+        "available_count": len(available),
+        "models": {}
+    }
+
+    for name, model in models_to_check.items():
+        is_available = model in available
+        resolved = resolve_model(model) if not is_available else model
+
+        report["models"][name] = {
+            "configured": model,
+            "available": is_available,
+            "resolved": resolved,
+            "using_fallback": resolved != model,
+        }
+
+    return report
+
+
+def get_resolved_model_config() -> dict:
+    """
+    Get all model configurations with fallback resolution applied.
+
+    Returns:
+        Dict mapping config key to resolved model name
+    """
+    return {
+        "ollama_model": resolve_model(settings.ollama_model),
+        "classifier_model": resolve_model(settings.classifier_model),
+        "synthesizer_model": resolve_model(settings.synthesizer_model),
+        "thinking_model": resolve_model(settings.thinking_model),
+        "embedding_model": resolve_model(settings.ollama_embedding_model),
+    }
 
 
 # Validation for production environment

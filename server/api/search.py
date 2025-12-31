@@ -6571,3 +6571,177 @@ async def unload_reranker_model():
     except Exception as e:
         logger.error(f"Unload reranker failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Search Provider Circuit Breaker Endpoints
+# =============================================================================
+
+@router.get("/providers/status")
+async def get_search_providers_status():
+    """
+    Get status of all search providers and their circuit breaker state.
+
+    Returns:
+        - Provider availability and rate limit status
+        - SearXNG engine status (google, bing, etc.)
+        - Domain scrape success rates
+        - Recent query history
+
+    Use this endpoint to monitor search provider health and
+    diagnose rate limiting issues.
+    """
+    try:
+        from agentic.search_metrics import get_search_metrics
+
+        metrics = get_search_metrics()
+        summary = metrics.get_summary()
+
+        # Add availability status for each provider
+        providers = summary.get("providers", {})
+        for provider_name in providers.keys():
+            available, reason = metrics.is_provider_available(provider_name)
+            providers[provider_name]["available"] = available
+            providers[provider_name]["availability_reason"] = reason
+
+        return JSONResponse(content={
+            "success": True,
+            "data": summary,
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "description": "Search provider and engine circuit breaker status"
+            },
+            "errors": []
+        })
+
+    except Exception as e:
+        logger.error(f"Get provider status failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/providers/{provider}/status")
+async def get_provider_status(provider: str):
+    """
+    Get detailed status for a specific search provider.
+
+    Args:
+        provider: Provider name (searxng, duckduckgo, brave)
+    """
+    try:
+        from agentic.search_metrics import get_search_metrics
+
+        metrics = get_search_metrics()
+        stats = metrics.get_provider_stats(provider)
+
+        if stats is None:
+            return JSONResponse(content={
+                "success": True,
+                "data": {
+                    "name": provider,
+                    "status": "no_data",
+                    "message": f"No usage data for provider '{provider}'"
+                },
+                "meta": {"timestamp": datetime.now(timezone.utc).isoformat()},
+                "errors": []
+            })
+
+        available, reason = metrics.is_provider_available(provider)
+        stats["available"] = available
+        stats["availability_reason"] = reason
+
+        return JSONResponse(content={
+            "success": True,
+            "data": stats,
+            "meta": {"timestamp": datetime.now(timezone.utc).isoformat()},
+            "errors": []
+        })
+
+    except Exception as e:
+        logger.error(f"Get provider status failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/engines/status")
+async def get_engines_status():
+    """
+    Get status of SearXNG internal engines with circuit breaker state.
+
+    Shows which engines are available and which are in backoff
+    due to rate limits, CAPTCHAs, or timeouts.
+    """
+    try:
+        from agentic.search_metrics import get_search_metrics
+
+        metrics = get_search_metrics()
+
+        # Get all engine stats
+        engine_list = ["google", "bing", "duckduckgo", "brave", "wikipedia",
+                       "arxiv", "semantic_scholar", "google_scholar", "pubmed",
+                       "github", "stackoverflow", "pypi", "npm", "dockerhub"]
+
+        available, skipped = metrics.get_available_engines(engine_list)
+
+        engines_detail = {}
+        for engine in engine_list:
+            stats = metrics.get_engine_stats(engine)
+            if stats:
+                engines_detail[engine] = stats
+            else:
+                engines_detail[engine] = {
+                    "name": engine,
+                    "total_queries": 0,
+                    "status": "unused"
+                }
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "available_count": len(available),
+                "skipped_count": len(skipped),
+                "available_engines": available,
+                "skipped_engines": skipped,
+                "engine_details": engines_detail
+            },
+            "meta": {"timestamp": datetime.now(timezone.utc).isoformat()},
+            "errors": []
+        })
+
+    except Exception as e:
+        logger.error(f"Get engines status failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/providers/reset")
+async def reset_provider_rate_limits(provider: Optional[str] = Query(default=None)):
+    """
+    Reset rate limit counters for a provider or all providers.
+
+    Args:
+        provider: Optional provider name. If not specified, resets all.
+    """
+    try:
+        from agentic.search_metrics import get_search_metrics
+
+        metrics = get_search_metrics()
+
+        if provider:
+            metrics.reset_rate_limit(provider)
+            return JSONResponse(content={
+                "success": True,
+                "data": {"message": f"Reset rate limits for {provider}"},
+                "meta": {"timestamp": datetime.now(timezone.utc).isoformat()},
+                "errors": []
+            })
+        else:
+            for p in ["searxng", "duckduckgo", "brave"]:
+                metrics.reset_rate_limit(p)
+            return JSONResponse(content={
+                "success": True,
+                "data": {"message": "Reset rate limits for all providers"},
+                "meta": {"timestamp": datetime.now(timezone.utc).isoformat()},
+                "errors": []
+            })
+
+    except Exception as e:
+        logger.error(f"Reset rate limits failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
