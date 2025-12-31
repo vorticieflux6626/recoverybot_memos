@@ -21,7 +21,7 @@ from typing import Optional, List, Dict, Any
 
 from config.settings import get_settings
 
-from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, Body
 from fastapi.responses import JSONResponse, StreamingResponse
 
 # Phase 7: Unified exception handling

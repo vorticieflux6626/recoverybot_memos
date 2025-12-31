@@ -926,6 +926,23 @@ except ImportError as e:
     import logging
     logging.getLogger(__name__).warning(f"Information Bottleneck not available: {e}")
 
+# G.6.5 Contrastive Retriever (R3)
+try:
+    from .contrastive_retriever import (
+        ContrastiveRetriever,
+        DocumentOutcome,
+        DocumentUtility,
+        RetrievalSession,
+        RetrievalStrategy,
+        RetrievalInsight,
+        get_contrastive_retriever,
+    )
+    CONTRASTIVE_RETRIEVER_AVAILABLE = True
+except ImportError as e:
+    CONTRASTIVE_RETRIEVER_AVAILABLE = False
+    import logging
+    logging.getLogger(__name__).warning(f"Contrastive Retriever not available: {e}")
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -1602,6 +1619,15 @@ __all__ = [
     "get_ib_filter",
     "create_ib_filter",
     "IB_FILTER_AVAILABLE",
+    # Contrastive Retriever (G.6.5)
+    "ContrastiveRetriever",
+    "DocumentOutcome",
+    "DocumentUtility",
+    "RetrievalSession",
+    "RetrievalStrategy",
+    "RetrievalInsight",
+    "get_contrastive_retriever",
+    "CONTRASTIVE_RETRIEVER_AVAILABLE",
 ]
 
-__version__ = "0.68.0"  # G.6.1 A-MEM cross-session persistence complete (+ G.6.2 DyLAN, G.6.4 IB)
+__version__ = "0.70.0"  # G.6 complete + orchestrator integration: A-MEM, DyLAN, IB filtering, SharedContext, Contrastive retriever

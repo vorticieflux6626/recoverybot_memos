@@ -128,6 +128,13 @@ from .dylan_agent_network import (
     AgentContribution,
     get_dylan_network
 )
+
+# G.6.5: Contrastive Retriever Training (R3)
+from .contrastive_retriever import (
+    ContrastiveRetriever,
+    RetrievalStrategy,
+    get_contrastive_retriever
+)
 from .scraper import VisionAnalyzer, DeepReader
 
 # PDF Extraction Tools integration
@@ -415,6 +422,9 @@ class FeatureConfig:
     enable_information_bottleneck: bool = False  # IB-based noise filtering
     ib_filtering_level: str = "moderate"  # minimal/moderate/aggressive
 
+    # G.6.5: Contrastive Retriever Training (R3)
+    enable_contrastive_learning: bool = False  # Trial-and-feedback retrieval learning
+
     # Graph cache (Layer 4)
     enable_graph_cache: bool = False       # Agent step graph
     enable_prefetching: bool = False       # Proactive prefetching
@@ -524,7 +534,9 @@ PRESET_CONFIGS = {
         enable_dylan_agent_skipping=True,  # DyLAN conditional agent skipping
         # G.6.4: Information Bottleneck Filtering
         enable_information_bottleneck=True,
-        ib_filtering_level="moderate"  # Balanced compression
+        ib_filtering_level="moderate",  # Balanced compression
+        # G.6.5: Contrastive Retriever Training (R3)
+        enable_contrastive_learning=True  # Trial-and-feedback retrieval learning
     ),
     OrchestratorPreset.FULL: FeatureConfig(
         # ALL features enabled
@@ -588,7 +600,9 @@ PRESET_CONFIGS = {
         enable_dylan_agent_skipping=True,  # DyLAN conditional agent skipping
         # G.6.4: Information Bottleneck Filtering
         enable_information_bottleneck=True,
-        ib_filtering_level="aggressive"  # Maximum compression for full preset
+        ib_filtering_level="aggressive",  # Maximum compression for full preset
+        # G.6.5: Contrastive Retriever Training (R3)
+        enable_contrastive_learning=True  # Trial-and-feedback retrieval learning
     )
 }
 
@@ -717,6 +731,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
         # G.6.4: Information Bottleneck Filter
         self._ib_filter: Optional["InformationBottleneckFilter"] = None
+
+        # G.6.5: Contrastive Retriever Training
+        self._contrastive_retriever: Optional[ContrastiveRetriever] = None
 
         # Graph visualization state for SSE events
         self._graph_state = UniversalGraphState()
@@ -1379,6 +1396,55 @@ class UniversalOrchestrator(BaseSearchPipeline):
             decomposed_questions=decomposed_questions,
             filtering_level=level
         )
+
+    # ===== G.6.5: Contrastive Retriever Training (R3) =====
+
+    def _get_contrastive_retriever(self) -> ContrastiveRetriever:
+        """Lazy initialize Contrastive Retriever for trial-and-feedback learning."""
+        if self._contrastive_retriever is None:
+            self._contrastive_retriever = get_contrastive_retriever()
+        return self._contrastive_retriever
+
+    async def _record_retrieval_session(
+        self,
+        query: str,
+        strategy: str,
+        documents: List[Dict[str, Any]],
+        synthesis_confidence: float,
+        cited_urls: Optional[Set[str]] = None
+    ) -> None:
+        """
+        Record retrieval session for contrastive learning.
+
+        Based on R3 (arXiv 2025): Records which documents were actually used
+        in synthesis vs. retrieved but not cited. This enables the retriever
+        to learn from trial-and-feedback.
+        """
+        if not self.config.enable_contrastive_learning:
+            return
+
+        try:
+            retriever = self._get_contrastive_retriever()
+
+            # Map strategy string to enum
+            strategy_map = {
+                "hybrid": RetrievalStrategy.HYBRID,
+                "dense_only": RetrievalStrategy.DENSE_ONLY,
+                "sparse_only": RetrievalStrategy.SPARSE_ONLY,
+                "reranked": RetrievalStrategy.RERANKED,
+            }
+            strategy_enum = strategy_map.get(strategy, RetrievalStrategy.HYBRID)
+
+            retriever.record_session(
+                query=query,
+                strategy=strategy_enum,
+                documents=documents,
+                synthesis_confidence=synthesis_confidence,
+                cited_urls=cited_urls
+            )
+            logger.debug(f"Recorded contrastive session for query: {query[:50]}...")
+        except Exception as e:
+            logger.warning(f"Contrastive retriever recording failed: {e}")
 
     def _get_document_graph_service(self) -> DocumentGraphService:
         """Lazy initialize document graph service for PDF API integration."""
@@ -3454,6 +3520,49 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 logger.info(f"[{request_id}] DyLAN: Recorded contributions for {len(skipped) + 1} agents")
             except Exception as e:
                 logger.warning(f"[{request_id}] DyLAN contribution recording failed: {e}")
+
+        # PHASE 12.11: Contrastive Retriever Recording (G.6.5)
+        # Record retrieval session for trial-and-feedback learning
+        if self.config.enable_contrastive_learning:
+            try:
+                # Extract cited URLs from synthesis (look for [Source X] patterns)
+                import re
+                cited_indices = set(int(m.group(1)) for m in re.finditer(r'\[Source (\d+)\]', synthesis))
+                sources = self._get_sources(state)
+                cited_urls = set()
+                for idx in cited_indices:
+                    if 0 < idx <= len(sources):
+                        url = sources[idx - 1].get("url", "")
+                        if url:
+                            cited_urls.add(url)
+
+                # Build documents list with scores
+                documents = []
+                for source in sources:
+                    documents.append({
+                        "url": source.get("url", ""),
+                        "score": source.get("score", source.get("relevance_score", 0.5)),
+                        "title": source.get("title", ""),
+                    })
+
+                # Determine strategy used
+                strategy = "hybrid"
+                if self.config.enable_cross_encoder:
+                    strategy = "reranked"
+                elif self.config.enable_hybrid_reranking:
+                    strategy = "hybrid"
+
+                await self._record_retrieval_session(
+                    query=request.query,
+                    strategy=strategy,
+                    documents=documents,
+                    synthesis_confidence=final_confidence,
+                    cited_urls=cited_urls
+                )
+                enhancement_metadata["features_used"].append("contrastive_learning")
+                logger.info(f"[{request_id}] Contrastive: Recorded session with {len(cited_urls)} cited URLs")
+            except Exception as e:
+                logger.warning(f"[{request_id}] Contrastive retriever recording failed: {e}")
 
         return self.build_response(
             synthesis=synthesis,
