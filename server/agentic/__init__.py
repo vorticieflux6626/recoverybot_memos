@@ -764,6 +764,51 @@ from .blue_green import (
     rollback_deployment,
 )
 
+# G.5.1: Speculative RAG for 51% Latency Reduction (December 2025)
+from .speculative_rag import (
+    SpeculativeRAG,
+    SpeculativeRAGConfig,
+    SpeculativeRAGResult,
+    Document as SpeculativeDocument,
+    Draft,
+    PartitionStrategy,
+    SelectionMethod,
+    get_speculative_rag,
+    speculative_generate,
+)
+
+# G.5.2: LLMLingua-2 Prompt Compression (December 2025)
+from .prompt_compressor import (
+    PromptCompressor,
+    CompressionConfig,
+    CompressionResult,
+    CompressionMethod,
+    CompressionLevel,
+    get_prompt_compressor,
+    compress_prompt,
+    LIGHT_COMPRESSION,
+    MODERATE_COMPRESSION,
+    AGGRESSIVE_COMPRESSION,
+    FANUC_COMPRESSION,
+    LLMLINGUA_AVAILABLE,
+)
+
+# G.5.3: Jina-ColBERT-v2 (8K Context, MRL Support) (December 2025)
+from .jina_colbert import (
+    JinaColBERT,
+    ColBERTConfig,
+    ColBERTEmbedding,
+    ColBERTScore,
+    ColBERTSearchResult,
+    MRLDimension,
+    ScoringMethod,
+    get_jina_colbert,
+    colbert_encode,
+    colbert_search,
+    SENTENCE_TRANSFORMERS_AVAILABLE,
+    COLBERT_AVAILABLE,
+)
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -1330,6 +1375,45 @@ __all__ = [
     "deploy_model",
     "switch_to_slot",
     "rollback_deployment",
+
+    # G.5.1: Speculative RAG (December 2025)
+    "SpeculativeRAG",
+    "SpeculativeRAGConfig",
+    "SpeculativeRAGResult",
+    "SpeculativeDocument",
+    "Draft",
+    "PartitionStrategy",
+    "SelectionMethod",
+    "get_speculative_rag",
+    "speculative_generate",
+
+    # G.5.2: LLMLingua-2 Prompt Compression (December 2025)
+    "PromptCompressor",
+    "CompressionConfig",
+    "CompressionResult",
+    "CompressionMethod",
+    "CompressionLevel",
+    "get_prompt_compressor",
+    "compress_prompt",
+    "LIGHT_COMPRESSION",
+    "MODERATE_COMPRESSION",
+    "AGGRESSIVE_COMPRESSION",
+    "FANUC_COMPRESSION",
+    "LLMLINGUA_AVAILABLE",
+
+    # G.5.3: Jina-ColBERT-v2 (December 2025)
+    "JinaColBERT",
+    "ColBERTConfig",
+    "ColBERTEmbedding",
+    "ColBERTScore",
+    "ColBERTSearchResult",
+    "MRLDimension",
+    "ScoringMethod",
+    "get_jina_colbert",
+    "colbert_encode",
+    "colbert_search",
+    "SENTENCE_TRANSFORMERS_AVAILABLE",
+    "COLBERT_AVAILABLE",
 ]
 
-__version__ = "0.58.0"  # G.4.5: Blue-Green Deployment Pattern
+__version__ = "0.61.0"  # G.5.3: Jina-ColBERT-v2 (8K Context)

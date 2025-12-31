@@ -31,6 +31,10 @@ httpx>=0.25.2                    # HTTP client for Ollama
 openai>=1.3.8                    # OpenAI-compatible client
 ollama>=0.1.7                    # Ollama Python client
 
+# Advanced RAG (G.5)
+colbert-ai>=0.2.22               # ColBERT late interaction retrieval
+faiss-cpu>=1.7.4                 # Efficient similarity search indexing
+
 # Data Processing
 numpy>=1.24.4                    # Numerical operations
 pandas>=2.1.3                    # Data manipulation (optional)
