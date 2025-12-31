@@ -138,6 +138,100 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Phase 26** | Feature Synergy Integration | ✅ **COMPLETE** |
 | **Phase 27** | FANUC Ingestion Pipeline Design | ✅ **RESEARCH COMPLETE** |
 | **Part F** | Benchmark Test Suite + Technical Accuracy Scorer | ✅ **COMPLETE** |
+| **Part G.1** | RAG Foundation (BGE-M3, Redis Cache, Tracing, DeepEval) | ✅ **COMPLETE** |
+| **Part G.2** | Hierarchical Retrieval (Cascade, Fusion, Qdrant, CAR) | ✅ **COMPLETE** |
+
+#### ✅ Part G.2: Hierarchical Retrieval Optimization (Completed 2025-12-30)
+
+Phase 2 of 8-week RAG Architecture Improvement Roadmap:
+
+**New Components:**
+- **`agentic/cascade_retriever.py`** (~500 lines): FunnelRAG-style cascade retrieval
+- **`agentic/fusion_weight_adapter.py`** (~400 lines): Query intent classification
+- **`agentic/qdrant_storage.py`** (~560 lines): Qdrant vector storage with VRAM optimization
+- **`agentic/adaptive_topk.py`** (~500 lines): CAR algorithm for dynamic k selection
+
+**G.2.1-G.2.2 Cascade Retriever:**
+| Feature | Description |
+|---------|-------------|
+| Binary Oversampling | 3x oversampling with rescoring for coarse retrieval |
+| MRL Cascade | 64→256→1024→4096 dimension progression |
+| Early Exit | Score threshold, entropy, ranking stability checks |
+| Promotion Thresholds | Binary→Int8: 0.65, Int8→FP16: 0.80 |
+
+**G.2.3 Query Intent Classifier:**
+| Intent | Sparse Weight | Dense Weight | Use Case |
+|--------|---------------|--------------|----------|
+| ERROR_CODE | 0.70 | 0.20 | Exact matching critical |
+| PART_NUMBER | 0.80 | 0.15 | Alphanumeric lookup |
+| TROUBLESHOOTING | 0.30 | 0.60 | Semantic understanding |
+| CONCEPTUAL | 0.25 | 0.65 | Concept explanation |
+| PROCEDURE | 0.40 | 0.50 | Step-by-step guides |
+
+**G.2.4 Qdrant Storage Configurations:**
+| Config | Quantization | HNSW m | Use Case |
+|--------|--------------|--------|----------|
+| VRAM_EFFICIENT | Scalar (4x) | 16 | Default, balanced |
+| MAXIMUM_COMPRESSION | Binary (32x) | 12 | Large collections |
+| BALANCED | Scalar (4x) | 32 | Higher recall |
+
+**G.2.5 Adaptive Top-K (CAR Algorithm):**
+| Complexity | Base K | Description |
+|------------|--------|-------------|
+| SIMPLE | 10 | Single concept, direct lookup |
+| MODERATE | 25 | Multi-concept, some reasoning |
+| COMPLEX | 50 | Multi-hop, synthesis required |
+| EXPLORATORY | 100 | Open-ended, research-style |
+
+**Early Stopping Reasons:**
+- `score_cliff`: Sharp score drop (>15%)
+- `score_plateau`: Consecutive similar scores
+- `confidence_threshold`: Top score >0.90
+- `diversity_saturated`: No new information (knee point)
+
+**Module Version**: `agentic/__init__.py` → v0.50.0
+
+#### ✅ Part G.1: RAG Foundation (Completed 2025-12-30)
+
+Phase 1 of 8-week RAG Architecture Improvement Roadmap:
+
+**New Components:**
+- **`agentic/cross_encoder_reranker.py`** (~300 lines): bge-reranker-v2-m3 reranking
+- **`agentic/redis_embeddings_cache.py`** (~400 lines): 3-tier embeddings cache
+- **`agentic/tracing.py`** (~350 lines): OpenTelemetry instrumentation
+- **`agentic/deepeval_integration.py`** (~450 lines): RAG evaluation metrics
+
+**G.1.1 BGE-M3 ColBERT Mode:**
+- Enabled `return_colbert_vecs=True` for late interaction
+- FP16 precision with `use_fp16=True`
+- Hybrid scoring: `0.4*dense + 0.3*sparse + 0.3*colbert`
+
+**G.1.2 Redis 3-Tier Cache:**
+| Tier | Precision | MRL Dim | TTL | Compression |
+|------|-----------|---------|-----|-------------|
+| Hot | Binary | 64 | Session | 32x |
+| Warm | Int8 | 256 | 24h | 4x |
+| Cold | FP16 | 4096 | On-demand | 1x |
+
+**G.1.3 OpenTelemetry Tracing:**
+- Span tracking for all agentic operations
+- Automatic latency measurement
+- Integration with Jaeger/Zipkin exporters
+
+**G.1.5 DeepEval Metrics:**
+| Metric | Description |
+|--------|-------------|
+| Faithfulness | Claims supported by context |
+| Answer Relevancy | Addresses the question |
+| Hallucination | Unsupported claims detected |
+| Context Precision | Relevant context ranked higher |
+
+**G.1.6 Cross-Encoder Reranking:**
+- Model: `BAAI/bge-reranker-v2-m3`
+- Reranks top-50 → top-10
+- Latency: 100-300ms per batch
+
+**Module Version**: `agentic/__init__.py` → v0.46.0
 
 #### ✅ Part F: Benchmark Test Suite (Completed 2025-12-30)
 
