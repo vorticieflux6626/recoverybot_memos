@@ -809,6 +809,82 @@ from .jina_colbert import (
     COLBERT_AVAILABLE,
 )
 
+# G.5.4: RAPTOR Recursive Summarization (December 2025)
+# Based on ICLR 2024: "RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval"
+# 20% accuracy improvement on QuALITY benchmark
+try:
+    from .raptor import (
+        RAPTORConfig,
+        RAPTORBuilder,
+        RAPTORRetriever,
+        RAPTORTree,
+        TreeNode,
+        RetrievalResult as RAPTORRetrievalResult,
+        ClusteringMethod,
+        SummarizationStyle,
+        get_raptor_builder,
+        build_raptor_tree,
+        raptor_retrieve,
+        get_raptor_tree,
+        list_raptor_trees,
+    )
+    RAPTOR_AVAILABLE = True
+except ImportError as e:
+    RAPTOR_AVAILABLE = False
+    import logging
+    logging.getLogger(__name__).warning(f"RAPTOR not available: {e}")
+
+# G.5.5: HopRAG Multi-Hop Passage Graphs (December 2025)
+# Based on February 2025: "HopRAG: Multi-Hop Reasoning via Knowledge Graph Retrieval"
+# 76% higher answer metric, 65% retrieval F1 improvement
+try:
+    from .hoprag import (
+        HopRAGConfig,
+        HopRAGBuilder,
+        HopRAGRetriever,
+        PassageGraph,
+        Passage,
+        Edge,
+        ReasoningPath,
+        HopRAGResult,
+        EdgeType,
+        HopStrategy,
+        get_hoprag_builder,
+        build_hoprag_graph,
+        hoprag_retrieve,
+        get_hoprag_graph,
+        list_hoprag_graphs,
+    )
+    HOPRAG_AVAILABLE = True
+except ImportError as e:
+    HOPRAG_AVAILABLE = False
+    import logging
+    logging.getLogger(__name__).warning(f"HopRAG not available: {e}")
+
+# G.5.6: Three-Way Hybrid Fusion (December 2025)
+# Combines BM25 + Dense + ColBERT for +15-25% nDCG@10 improvement
+try:
+    from .hybrid_fusion import (
+        HybridFusionConfig,
+        HybridFusionRetriever,
+        HybridFusionResult,
+        FusedResult,
+        FusionMethod,
+        RetrieverType,
+        Document as FusionDocument,
+        RetrievalScore,
+        BM25Index,
+        get_hybrid_fusion_retriever,
+        hybrid_fusion_search,
+        add_to_fusion_index,
+        get_fusion_stats,
+    )
+    HYBRID_FUSION_AVAILABLE = True
+except ImportError as e:
+    HYBRID_FUSION_AVAILABLE = False
+    import logging
+    logging.getLogger(__name__).warning(f"Hybrid Fusion not available: {e}")
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -1414,6 +1490,56 @@ __all__ = [
     "colbert_search",
     "SENTENCE_TRANSFORMERS_AVAILABLE",
     "COLBERT_AVAILABLE",
+
+    # G.5.4: RAPTOR Recursive Summarization (December 2025)
+    "RAPTORConfig",
+    "RAPTORBuilder",
+    "RAPTORRetriever",
+    "RAPTORTree",
+    "TreeNode",
+    "RAPTORRetrievalResult",
+    "ClusteringMethod",
+    "SummarizationStyle",
+    "get_raptor_builder",
+    "build_raptor_tree",
+    "raptor_retrieve",
+    "get_raptor_tree",
+    "list_raptor_trees",
+    "RAPTOR_AVAILABLE",
+
+    # G.5.5: HopRAG Multi-Hop Passage Graphs (December 2025)
+    "HopRAGConfig",
+    "HopRAGBuilder",
+    "HopRAGRetriever",
+    "PassageGraph",
+    "Passage",
+    "Edge",
+    "ReasoningPath",
+    "HopRAGResult",
+    "EdgeType",
+    "HopStrategy",
+    "get_hoprag_builder",
+    "build_hoprag_graph",
+    "hoprag_retrieve",
+    "get_hoprag_graph",
+    "list_hoprag_graphs",
+    "HOPRAG_AVAILABLE",
+
+    # G.5.6: Three-Way Hybrid Fusion (December 2025)
+    "HybridFusionConfig",
+    "HybridFusionRetriever",
+    "HybridFusionResult",
+    "FusedResult",
+    "FusionMethod",
+    "RetrieverType",
+    "FusionDocument",
+    "RetrievalScore",
+    "BM25Index",
+    "get_hybrid_fusion_retriever",
+    "hybrid_fusion_search",
+    "add_to_fusion_index",
+    "get_fusion_stats",
+    "HYBRID_FUSION_AVAILABLE",
 ]
 
-__version__ = "0.61.0"  # G.5.3: Jina-ColBERT-v2 (8K Context)
+__version__ = "0.64.0"  # G.5.6: Three-Way Hybrid Fusion (+15-25% nDCG@10)
