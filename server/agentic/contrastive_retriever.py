@@ -43,6 +43,7 @@ class RetrievalStrategy(Enum):
     HYDE_EXPANDED = "hyde_expanded"
     QUERY_TREE = "query_tree"
     MULTI_HOP = "multi_hop"
+    RERANKED = "reranked"  # Cross-encoder reranked results
 
 
 @dataclass

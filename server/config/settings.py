@@ -115,7 +115,7 @@ class MemOSSettings(BaseSettings):
     
     # Monitoring
     enable_prometheus_metrics: bool = True
-    metrics_port: int = 8002
+    metrics_port: int = 9090  # Changed from 8002 to avoid conflict with PDF API
     log_level: str = "INFO"
     structured_logging: bool = True
     
