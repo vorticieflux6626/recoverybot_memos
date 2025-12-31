@@ -525,12 +525,17 @@ class JinaColBERT:
 
         results = []
         for rank, (score, (doc_id, doc_text), doc_emb) in enumerate(scored[:top_k], 1):
+            # Convert numpy float16 to native Python float for JSON serialization
+            token_scores_list = None
+            if score.token_scores is not None:
+                token_scores_list = [float(x) for x in score.token_scores.tolist()]
+
             results.append(ColBERTSearchResult(
                 document_id=doc_id,
-                score=score.score,
+                score=float(score.score) if hasattr(score.score, 'item') else score.score,
                 rank=rank,
                 text=doc_text[:500],  # Truncate for result
-                token_scores=score.token_scores.tolist() if score.token_scores is not None else None,
+                token_scores=token_scores_list,
                 metadata={
                     "token_count": doc_emb.token_count,
                 }

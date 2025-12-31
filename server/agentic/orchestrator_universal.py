@@ -119,6 +119,15 @@ from .actor_factory import (
     get_actor_factory
 )
 from .multi_agent import MultiAgentOrchestrator
+
+# G.6.2: DyLAN Agent Importance Scores
+from .dylan_agent_network import (
+    DyLANAgentNetwork,
+    QueryComplexity,
+    AgentRole as DyLANAgentRole,
+    AgentContribution,
+    get_dylan_network
+)
 from .scraper import VisionAnalyzer, DeepReader
 
 # PDF Extraction Tools integration
@@ -399,6 +408,13 @@ class FeatureConfig:
     enable_actor_factory: bool = False     # Dynamic agent creation
     enable_multi_agent: bool = False       # Parallel agent execution
 
+    # Agent Coordination (Layer 4) - G.6.2
+    enable_dylan_agent_skipping: bool = False  # DyLAN conditional agent skipping
+
+    # G.6.4: Information Bottleneck Filtering
+    enable_information_bottleneck: bool = False  # IB-based noise filtering
+    ib_filtering_level: str = "moderate"  # minimal/moderate/aggressive
+
     # Graph cache (Layer 4)
     enable_graph_cache: bool = False       # Agent step graph
     enable_prefetching: bool = False       # Proactive prefetching
@@ -503,7 +519,12 @@ PRESET_CONFIGS = {
         enable_prefetching=True,
         # Layer 3 technical documentation (PDF API)
         enable_technical_docs=True,
-        enable_hsea_context=True  # HSEA three-stratum FANUC knowledge
+        enable_hsea_context=True,  # HSEA three-stratum FANUC knowledge
+        # Agent Coordination (G.6.2)
+        enable_dylan_agent_skipping=True,  # DyLAN conditional agent skipping
+        # G.6.4: Information Bottleneck Filtering
+        enable_information_bottleneck=True,
+        ib_filtering_level="moderate"  # Balanced compression
     ),
     OrchestratorPreset.FULL: FeatureConfig(
         # ALL features enabled
@@ -562,7 +583,12 @@ PRESET_CONFIGS = {
         enable_llm_debug=True,
         # Layer 3 technical documentation (PDF API)
         enable_technical_docs=True,
-        enable_hsea_context=True  # HSEA three-stratum FANUC knowledge
+        enable_hsea_context=True,  # HSEA three-stratum FANUC knowledge
+        # Agent Coordination (G.6.2)
+        enable_dylan_agent_skipping=True,  # DyLAN conditional agent skipping
+        # G.6.4: Information Bottleneck Filtering
+        enable_information_bottleneck=True,
+        ib_filtering_level="aggressive"  # Maximum compression for full preset
     )
 }
 
@@ -685,6 +711,12 @@ class UniversalOrchestrator(BaseSearchPipeline):
         # Phase 5: Template Reuse Optimization components
         self._meta_buffer: Optional[MetaBuffer] = None
         self._reasoning_composer: Optional[ReasoningComposer] = None
+
+        # G.6.2: DyLAN Agent Importance Scores
+        self._dylan_network: Optional[DyLANAgentNetwork] = None
+
+        # G.6.4: Information Bottleneck Filter
+        self._ib_filter: Optional["InformationBottleneckFilter"] = None
 
         # Graph visualization state for SSE events
         self._graph_state = UniversalGraphState()
@@ -1279,6 +1311,74 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 ollama_url=self.ollama_url
             )
         return self._reasoning_composer
+
+    # ===== G.6.2: DyLAN Agent Importance Scores =====
+
+    def _get_dylan_network(self) -> DyLANAgentNetwork:
+        """Lazy initialize DyLAN agent network for conditional agent skipping."""
+        if self._dylan_network is None:
+            self._dylan_network = get_dylan_network()
+        return self._dylan_network
+
+    async def _classify_query_complexity(self, query: str) -> "QueryComplexityResult":
+        """Classify query complexity for DyLAN agent skipping."""
+        dylan = self._get_dylan_network()
+        return await dylan.classify_complexity(query)
+
+    def _should_skip_agent(
+        self,
+        agent_role: DyLANAgentRole,
+        complexity_result: "QueryComplexityResult",
+        current_confidence: float
+    ) -> "SkipDecision":
+        """Check if agent should be skipped based on DyLAN network."""
+        dylan = self._get_dylan_network()
+        return dylan.should_skip_agent(agent_role, complexity_result, current_confidence)
+
+    def _record_agent_contribution(self, contribution: "AgentContribution") -> None:
+        """Record agent contribution for importance score updates."""
+        dylan = self._get_dylan_network()
+        dylan.record_contribution(contribution)
+
+    # ===== G.6.4: Information Bottleneck Filtering =====
+
+    def _get_ib_filter(self) -> "InformationBottleneckFilter":
+        """Lazy initialize Information Bottleneck filter for noise reduction."""
+        if self._ib_filter is None:
+            from .information_bottleneck import get_ib_filter
+            self._ib_filter = get_ib_filter()
+        return self._ib_filter
+
+    async def _apply_ib_filtering(
+        self,
+        query: str,
+        passages: List[Dict[str, Any]],
+        decomposed_questions: Optional[List[str]] = None
+    ) -> "IBFilterResult":
+        """
+        Apply Information Bottleneck filtering to reduce noise in retrieved content.
+
+        Based on Zhu et al., ACL 2024: Achieves 2.5% compression while improving
+        answer correctness.
+        """
+        from .information_bottleneck import FilteringLevel
+
+        ib_filter = self._get_ib_filter()
+
+        # Map config level to FilteringLevel enum
+        level_map = {
+            "minimal": FilteringLevel.MINIMAL,
+            "moderate": FilteringLevel.MODERATE,
+            "aggressive": FilteringLevel.AGGRESSIVE
+        }
+        level = level_map.get(self.config.ib_filtering_level, FilteringLevel.MODERATE)
+
+        return await ib_filter.filter(
+            query=query,
+            passages=passages,
+            decomposed_questions=decomposed_questions,
+            filtering_level=level
+        )
 
     def _get_document_graph_service(self) -> DocumentGraphService:
         """Lazy initialize document graph service for PDF API integration."""
@@ -2718,6 +2818,23 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     request, query_analysis, request_id, start_time
                 )
 
+        # PHASE 1.4: DyLAN Query Complexity Classification (G.6.2)
+        dylan_complexity = None
+        if self.config.enable_dylan_agent_skipping:
+            try:
+                dylan_complexity = await self._classify_query_complexity(request.query)
+                enhancement_metadata["features_used"].append("dylan_agent_skipping")
+                enhancement_metadata["query_complexity"] = dylan_complexity.complexity.value
+                enhancement_metadata["skippable_agents"] = [
+                    a.value for a in dylan_complexity.skippable_agents
+                ]
+                logger.info(
+                    f"[{request_id}] DyLAN: complexity={dylan_complexity.complexity.value}, "
+                    f"skippable={enhancement_metadata['skippable_agents']}"
+                )
+            except Exception as e:
+                logger.warning(f"[{request_id}] DyLAN classification failed: {e}")
+
         # PHASE 1.5: Entity Extraction (if enabled)
         if self.config.enable_entity_tracking:
             await self._phase_entity_extraction(request, scratchpad, request_id)
@@ -2797,7 +2914,20 @@ class UniversalOrchestrator(BaseSearchPipeline):
             enhancement_metadata["features_used"].append("domain_corpus")
 
         # PHASE 5: CRAG Evaluation (if enabled)
-        if self.config.enable_crag_evaluation:
+        # Check DyLAN skip decision for EVALUATOR
+        skip_crag = False
+        if self.config.enable_dylan_agent_skipping and dylan_complexity:
+            current_confidence = getattr(state, 'confidence', 0.0)
+            skip_decision = self._should_skip_agent(
+                DyLANAgentRole.EVALUATOR, dylan_complexity, current_confidence
+            )
+            skip_crag = skip_decision.should_skip
+            if skip_crag:
+                logger.info(f"[{request_id}] DyLAN: Skipping CRAG ({skip_decision.reason})")
+                enhancement_metadata["skipped_agents"] = enhancement_metadata.get("skipped_agents", [])
+                enhancement_metadata["skipped_agents"].append("evaluator")
+
+        if self.config.enable_crag_evaluation and not skip_crag:
             await self._phase_crag_evaluation(
                 request, state, search_trace, request_id
             )
@@ -2914,9 +3044,67 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 logger.warning(f"[{request_id}] Context curation failed: {e}")
                 # Continue with original scraped_content
 
+        # PHASE 7.9: Information Bottleneck Filtering (G.6.4)
+        # Applies IB theory to reduce noise while preserving task-relevant info
+        ib_result = None
+        if self.config.enable_information_bottleneck and scraped_content:
+            ib_start = time.time()
+            try:
+                # Convert scraped content to passage format for IB filter
+                passages = []
+                for idx, content in enumerate(scraped_content[:10]):
+                    # Get source info if available
+                    source = state.raw_results[idx] if idx < len(state.raw_results) else {}
+                    passages.append({
+                        "content": content,
+                        "title": source.get("title", f"Source {idx+1}"),
+                        "url": source.get("url", "")
+                    })
+
+                ib_result = await self._apply_ib_filtering(
+                    query=request.query,
+                    passages=passages,
+                    decomposed_questions=decomposed
+                )
+
+                # Replace scraped_content with filtered content
+                if ib_result and ib_result.compressed_content:
+                    # Use the compressed key sentences for synthesis
+                    scraped_content = [ib_result.compressed_content]
+                    enhancement_metadata["features_used"].append("information_bottleneck")
+                    enhancement_metadata["ib_filtering"] = {
+                        "original_passages": ib_result.original_count,
+                        "filtered_passages": ib_result.filtered_count,
+                        "compression_rate": f"{ib_result.compression_rate:.1%}",
+                        "total_compression_rate": f"{ib_result.total_compression_rate:.1%}",
+                        "average_ib_score": ib_result.average_ib_score
+                    }
+
+                ib_ms = (time.time() - ib_start) * 1000
+                logger.info(
+                    f"[{request_id}] IB Filtering: {ib_result.original_count}→{ib_result.filtered_count} "
+                    f"passages ({ib_result.total_compression_rate:.1%} compression) in {ib_ms:.0f}ms"
+                )
+            except Exception as e:
+                logger.warning(f"[{request_id}] Information Bottleneck filtering failed: {e}")
+                # Continue with original scraped_content
+
         # PHASE 8: Verification
+        # Check DyLAN skip decision for VERIFIER
         verification_result = None
-        if self.config.enable_verification:
+        skip_verification = False
+        if self.config.enable_dylan_agent_skipping and dylan_complexity:
+            current_confidence = getattr(state, 'confidence', 0.5)
+            skip_decision = self._should_skip_agent(
+                DyLANAgentRole.VERIFIER, dylan_complexity, current_confidence
+            )
+            skip_verification = skip_decision.should_skip
+            if skip_verification:
+                logger.info(f"[{request_id}] DyLAN: Skipping Verification ({skip_decision.reason})")
+                enhancement_metadata["skipped_agents"] = enhancement_metadata.get("skipped_agents", [])
+                enhancement_metadata["skipped_agents"].append("verifier")
+
+        if self.config.enable_verification and not skip_verification:
             verification_result = await self._phase_verification(
                 state, scraped_content, search_trace, request_id
             )
@@ -2958,8 +3146,21 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 logger.info(f"[{request_id}] Recorded {len(contradictions)} contradictions in scratchpad")
 
         # PHASE 10: Self-Reflection (if enabled)
+        # Check DyLAN skip decision for REFLECTOR
         reflection_result = None
-        if self.config.enable_self_reflection:
+        skip_reflection = False
+        if self.config.enable_dylan_agent_skipping and dylan_complexity:
+            current_confidence = getattr(state, 'confidence', 0.5)
+            skip_decision = self._should_skip_agent(
+                DyLANAgentRole.REFLECTOR, dylan_complexity, current_confidence
+            )
+            skip_reflection = skip_decision.should_skip
+            if skip_reflection:
+                logger.info(f"[{request_id}] DyLAN: Skipping Self-RAG ({skip_decision.reason})")
+                enhancement_metadata["skipped_agents"] = enhancement_metadata.get("skipped_agents", [])
+                enhancement_metadata["skipped_agents"].append("reflector")
+
+        if self.config.enable_self_reflection and not skip_reflection:
             reflection_result = await self._phase_self_reflection(
                 request.query, synthesis, state, scraped_content, request_id
             )
@@ -3225,6 +3426,34 @@ class UniversalOrchestrator(BaseSearchPipeline):
             message=f"Found {len(self._get_sources(state))} sources (confidence: {int(final_confidence * 100)}%)",
             graph_line=self._graph_state.to_line()
         )
+
+        # PHASE 12.10: DyLAN Contribution Recording (G.6.2)
+        # Record agent contributions for importance score updates
+        if self.config.enable_dylan_agent_skipping and dylan_complexity:
+            try:
+                # Record synthesizer contribution (always runs)
+                self._record_agent_contribution(AgentContribution(
+                    agent_role=DyLANAgentRole.SYNTHESIZER,
+                    execution_time_ms=execution_time_ms,
+                    quality_delta=final_confidence - 0.5,  # Delta from baseline
+                ))
+
+                # Record skipped agents
+                skipped = enhancement_metadata.get("skipped_agents", [])
+                for agent_name in skipped:
+                    agent_role = getattr(DyLANAgentRole, agent_name.upper(), None)
+                    if agent_role:
+                        self._record_agent_contribution(AgentContribution(
+                            agent_role=agent_role,
+                            execution_time_ms=0,
+                            quality_delta=0.0,
+                            was_skipped=True,
+                            skip_reason="dylan_decision",
+                        ))
+
+                logger.info(f"[{request_id}] DyLAN: Recorded contributions for {len(skipped) + 1} agents")
+            except Exception as e:
+                logger.warning(f"[{request_id}] DyLAN contribution recording failed: {e}")
 
         return self.build_response(
             synthesis=synthesis,

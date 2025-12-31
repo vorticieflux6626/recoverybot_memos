@@ -219,6 +219,9 @@ class HopRAGResult:
     all_relevant_passages: List[Passage]
     retrieval_time_ms: float
     num_hops_explored: int
+    # P1 Fix: Include helpfulness scores for analysis
+    helpfulness_scores: Dict[str, float] = field(default_factory=dict)
+    arrival_counts: Dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -229,6 +232,12 @@ class HopRAGResult:
             "retrieval_time_ms": self.retrieval_time_ms,
             "max_hops": max((len(p) for p in self.reasoning_paths), default=0),
             "top_paths": [p.to_dict() for p in self.reasoning_paths[:3]],
+            # P1 Fix: Include helpfulness info
+            "helpfulness_alpha": 0.7,  # Paper default
+            "top_helpfulness": {
+                pid: self.helpfulness_scores.get(pid, 0.0)
+                for pid in list(self.helpfulness_scores.keys())[:5]
+            } if self.helpfulness_scores else {},
         }
 
 
@@ -934,7 +943,12 @@ Respond with ONLY a JSON array of selected passage numbers with relevance scores
         query_emb: np.ndarray,
         seeds: List[Tuple[Passage, float]],
     ) -> List[ReasoningPath]:
-        """Expand paths using beam search (sync version, fallback when LLM reasoning disabled)."""
+        """Expand paths using beam search with Helpfulness metric.
+
+        P1 Fix: Now uses Helpfulness metric H(v,q) = α×SIM + (1-α)×IMP
+        for scoring instead of raw similarity. Tracks arrival counts
+        for importance scoring.
+        """
         # Initialize beams with seed passages
         current_beams: List[ReasoningPath] = []
         for passage, score in seeds:
@@ -945,6 +959,8 @@ Respond with ONLY a JSON array of selected passage numbers with relevance scores
                 hop_scores=[score],
             )
             current_beams.append(path)
+            # P1 Fix: Track arrivals for importance scoring
+            self._arrival_counts[passage.id] = self._arrival_counts.get(passage.id, 0) + 1
 
         all_paths = list(current_beams)
         visited_states: Set[Tuple[str, ...]] = {(p.passages[-1],) for p in current_beams}
@@ -975,15 +991,18 @@ Respond with ONLY a JSON array of selected passage numbers with relevance scores
                     if not neighbor_passage:
                         continue
 
-                    neighbor_score = self._compute_similarity(
-                        query_emb,
-                        neighbor_passage.embedding,
+                    # P1 Fix: Track arrivals for importance scoring
+                    self._arrival_counts[neighbor_id] = (
+                        self._arrival_counts.get(neighbor_id, 0) + 1
                     )
 
-                    # Combine path score with hop decay
+                    # P1 Fix: Use Helpfulness metric instead of raw similarity
+                    helpfulness = self._calculate_helpfulness(neighbor_passage, query_emb)
+
+                    # Combine path score with hop decay using Helpfulness
                     new_score = (
                         path.score * self.config.hop_decay +
-                        neighbor_score * edge.weight
+                        helpfulness * edge.weight
                     ) / (1 + self.config.hop_decay)
 
                     if new_score < self.config.min_path_score:
@@ -994,7 +1013,7 @@ Respond with ONLY a JSON array of selected passage numbers with relevance scores
                         passages=path.passages + [neighbor_id],
                         edges=path.edges + [edge],
                         score=new_score,
-                        hop_scores=path.hop_scores + [neighbor_score],
+                        hop_scores=path.hop_scores + [helpfulness],
                     )
                     next_beams.append(new_path)
 
@@ -1126,11 +1145,18 @@ Respond with ONLY a JSON array of selected passage numbers with relevance scores
             if self.graph.get_passage(pid)
         ]
 
-        # Sort by relevance
+        # P1 Fix: Sort by Helpfulness metric H(v,q) = α×SIM + (1-α)×IMP
+        # instead of raw similarity for final ranking
         all_passages.sort(
-            key=lambda p: self._compute_similarity(query_emb, p.embedding),
+            key=lambda p: self._calculate_helpfulness(p, query_emb),
             reverse=True,
         )
+
+        # P1 Fix: Calculate and store helpfulness scores for all passages
+        helpfulness_scores = {}
+        for passage in all_passages:
+            passage.importance_score = self._arrival_counts.get(passage.id, 0)
+            helpfulness_scores[passage.id] = self._calculate_helpfulness(passage, query_emb)
 
         return HopRAGResult(
             query=query,
@@ -1139,6 +1165,9 @@ Respond with ONLY a JSON array of selected passage numbers with relevance scores
             all_relevant_passages=all_passages[:top_k],
             retrieval_time_ms=(time.time() - start_time) * 1000,
             num_hops_explored=max((len(p) - 1 for p in paths), default=0),
+            # P1 Fix: Include helpfulness data in result
+            helpfulness_scores=helpfulness_scores,
+            arrival_counts=dict(self._arrival_counts),
         )
 
 

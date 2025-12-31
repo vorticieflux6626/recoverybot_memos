@@ -29,6 +29,16 @@ import numpy as np
 # Import JinaColBERT for real late interaction scoring (G.5.3/P1 fix)
 from .jina_colbert import JinaColBERT, ColBERTConfig, get_jina_colbert, ColBERTEmbedding
 
+# Import FusionWeightAdapter for query-adaptive weights (G.5.6/P1 fix)
+from .fusion_weight_adapter import (
+    FusionWeightAdapter,
+    FusionWeights,
+    IntentClassification,
+    QueryIntent,
+    get_fusion_weight_adapter,
+    classify_for_fusion,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,6 +92,10 @@ class HybridFusionConfig:
     enable_cache: bool = True
     cache_ttl_seconds: int = 600
     parallel_retrievers: bool = True  # Run retrievers in parallel
+
+    # Query-adaptive weights (G.5.6/P1 fix)
+    enable_adaptive_weights: bool = True  # Use query intent to select fusion weights
+    adaptive_blend_factor: float = 0.7  # 0=all static, 1=all adaptive (0.7 recommended)
 
 
 @dataclass
@@ -142,9 +156,14 @@ class HybridFusionResult:
     fusion_time_ms: float
     total_time_ms: float
     retrievers_used: List[RetrieverType]
+    # Query-adaptive weights (G.5.6/P1 fix)
+    adaptive_weights_used: bool = False
+    detected_intent: Optional[str] = None
+    intent_confidence: float = 0.0
+    applied_weights: Optional[Dict[str, float]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "query": self.query,
             "num_results": len(self.results),
             "top_results": [r.to_dict() for r in self.results[:5]],
@@ -152,6 +171,15 @@ class HybridFusionResult:
             "fusion_time_ms": self.fusion_time_ms,
             "total_time_ms": self.total_time_ms,
         }
+        # G.5.6/P1 fix: Include adaptive weight info
+        if self.adaptive_weights_used:
+            result["adaptive_weights"] = {
+                "enabled": True,
+                "detected_intent": self.detected_intent,
+                "intent_confidence": round(self.intent_confidence, 3),
+                "applied_weights": self.applied_weights,
+            }
+        return result
 
 
 class BM25Index:
@@ -249,6 +277,10 @@ class HybridFusionRetriever:
         self._colbert: Optional[JinaColBERT] = None
         self._colbert_embeddings: Dict[str, ColBERTEmbedding] = {}  # doc_id -> ColBERT embedding
 
+        # Query-adaptive weights (G.5.6/P1 fix)
+        self._weight_adapter: Optional[FusionWeightAdapter] = None
+        self._last_classification: Optional[IntentClassification] = None
+
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
@@ -263,6 +295,55 @@ class HybridFusionRetriever:
             self._colbert = get_jina_colbert()
             await self._colbert.initialize()
         return self._colbert
+
+    def _get_weight_adapter(self) -> FusionWeightAdapter:
+        """Get or create weight adapter instance (G.5.6/P1 fix)."""
+        if self._weight_adapter is None:
+            self._weight_adapter = get_fusion_weight_adapter()
+        return self._weight_adapter
+
+    def _get_adaptive_weights(
+        self,
+        query: str,
+    ) -> Tuple[Dict[RetrieverType, float], IntentClassification]:
+        """
+        Get query-adaptive fusion weights (G.5.6/P1 fix).
+
+        Uses pattern matching to classify query intent and return optimal weights
+        for BM25/Dense/ColBERT fusion based on query type:
+        - ERROR_CODE queries: Higher BM25 weight (exact matching)
+        - TROUBLESHOOTING: Higher Dense weight (semantic)
+        - PROCEDURE: Balanced weights
+        - etc.
+
+        Args:
+            query: User query string
+
+        Returns:
+            Tuple of (weights dict, classification result)
+        """
+        adapter = self._get_weight_adapter()
+        classification = adapter.classify_intent(query)
+        self._last_classification = classification
+
+        # Convert FusionWeights to RetrieverType dict format
+        adaptive_weights = {
+            RetrieverType.BM25: classification.weights.sparse,
+            RetrieverType.DENSE: classification.weights.dense,
+            RetrieverType.COLBERT: classification.weights.colbert,
+        }
+
+        # Blend with static weights if blend_factor < 1.0
+        if self.config.adaptive_blend_factor < 1.0:
+            blend = self.config.adaptive_blend_factor
+            blended_weights = {}
+            for rt in [RetrieverType.BM25, RetrieverType.DENSE, RetrieverType.COLBERT]:
+                static = self.config.weights.get(rt, 0.33)
+                adaptive = adaptive_weights.get(rt, 0.33)
+                blended_weights[rt] = static * (1 - blend) + adaptive * blend
+            return blended_weights, classification
+
+        return adaptive_weights, classification
 
     async def close(self):
         if self._client:
@@ -405,13 +486,18 @@ class HybridFusionRetriever:
             # Build results
             results = []
             for rank, (doc_id, score, token_scores) in enumerate(scores[:top_k]):
+                # Convert numpy float16 to native Python float for JSON serialization
+                token_scores_list = None
+                if token_scores is not None:
+                    token_scores_list = [float(x) for x in token_scores.tolist()[:10]]
+
                 results.append(RetrievalScore(
                     doc_id=doc_id,
-                    score=score,
+                    score=float(score) if hasattr(score, 'item') else score,  # Handle numpy scalar
                     rank=rank + 1,
                     retriever=RetrieverType.COLBERT,
                     metadata={
-                        "token_scores": token_scores.tolist()[:10] if token_scores is not None else None,
+                        "token_scores": token_scores_list,
                         "method": "maxsim"
                     }
                 ))
@@ -468,8 +554,24 @@ class HybridFusionRetriever:
         self,
         results_by_retriever: Dict[RetrieverType, List[RetrievalScore]],
         top_k: int,
+        weights: Optional[Dict[RetrieverType, float]] = None,
     ) -> List[FusedResult]:
-        """Weighted linear fusion with min-max normalization."""
+        """
+        Weighted linear fusion with min-max normalization.
+
+        G.5.6/P1 fix: Now accepts dynamic weights parameter for query-adaptive fusion.
+
+        Args:
+            results_by_retriever: Results from each retriever
+            top_k: Number of results to return
+            weights: Optional custom weights (if None, uses config.weights)
+
+        Returns:
+            List of fused results
+        """
+        # Use provided weights or fall back to config
+        active_weights = weights or self.config.weights
+
         # Normalize scores per retriever
         normalized: Dict[RetrieverType, Dict[str, float]] = {}
         for retriever, results in results_by_retriever.items():
@@ -490,7 +592,7 @@ class HybridFusionRetriever:
         doc_component_ranks: Dict[str, Dict[RetrieverType, int]] = {}
 
         for retriever, results in results_by_retriever.items():
-            weight = self.config.weights.get(retriever, 1.0)
+            weight = active_weights.get(retriever, 1.0)
             for result in results:
                 if result.doc_id not in doc_scores:
                     doc_scores[result.doc_id] = 0.0
@@ -570,13 +672,32 @@ class HybridFusionRetriever:
         top_k: int = 10,
         retrievers: Optional[List[RetrieverType]] = None,
     ) -> HybridFusionResult:
-        """Retrieve with hybrid fusion."""
+        """
+        Retrieve with hybrid fusion.
+
+        G.5.6/P1 fix: Now uses query-adaptive weights when enabled.
+        Different query types (error codes, troubleshooting, procedures)
+        get optimized BM25/Dense/ColBERT weight ratios.
+        """
         start_time = time.time()
         retrievers = retrievers or [
             RetrieverType.BM25,
             RetrieverType.DENSE,
             RetrieverType.COLBERT,
         ]
+
+        # G.5.6/P1 fix: Get adaptive weights based on query intent
+        adaptive_weights: Optional[Dict[RetrieverType, float]] = None
+        classification: Optional[IntentClassification] = None
+        if self.config.enable_adaptive_weights:
+            adaptive_weights, classification = self._get_adaptive_weights(query)
+            logger.debug(
+                f"Adaptive weights for '{query[:50]}...': "
+                f"intent={classification.intent.value}, "
+                f"weights={{BM25: {adaptive_weights[RetrieverType.BM25]:.2f}, "
+                f"Dense: {adaptive_weights[RetrieverType.DENSE]:.2f}, "
+                f"ColBERT: {adaptive_weights[RetrieverType.COLBERT]:.2f}}}"
+            )
 
         retrieval_times: Dict[RetrieverType, float] = {}
         results_by_retriever: Dict[RetrieverType, List[RetrievalScore]] = {}
@@ -614,12 +735,13 @@ class HybridFusionRetriever:
                 results_by_retriever[retriever] = results
                 retrieval_times[retriever] = (time.time() - r_start) * 1000
 
-        # Fusion
+        # Fusion (G.5.6/P1 fix: use adaptive weights for LINEAR fusion)
         fusion_start = time.time()
         if self.config.fusion_method == FusionMethod.RRF:
             fused_results = self._fuse_rrf(results_by_retriever, top_k)
         elif self.config.fusion_method == FusionMethod.LINEAR:
-            fused_results = self._fuse_linear(results_by_retriever, top_k)
+            # Pass adaptive weights to linear fusion
+            fused_results = self._fuse_linear(results_by_retriever, top_k, adaptive_weights)
         elif self.config.fusion_method == FusionMethod.COMBMNZ:
             fused_results = self._fuse_combmnz(results_by_retriever, top_k)
         else:
@@ -628,6 +750,13 @@ class HybridFusionRetriever:
         fusion_time = (time.time() - fusion_start) * 1000
         total_time = (time.time() - start_time) * 1000
 
+        # G.5.6/P1 fix: Include adaptive weight info in result
+        applied_weights_dict = None
+        if adaptive_weights:
+            applied_weights_dict = {
+                k.value: round(v, 3) for k, v in adaptive_weights.items()
+            }
+
         return HybridFusionResult(
             query=query,
             results=fused_results,
@@ -635,6 +764,11 @@ class HybridFusionRetriever:
             fusion_time_ms=fusion_time,
             total_time_ms=total_time,
             retrievers_used=list(retrievers),
+            # G.5.6/P1 fix: Include adaptive weight info
+            adaptive_weights_used=self.config.enable_adaptive_weights and adaptive_weights is not None,
+            detected_intent=classification.intent.value if classification else None,
+            intent_confidence=classification.confidence if classification else 0.0,
+            applied_weights=applied_weights_dict,
         )
 
 
@@ -684,6 +818,11 @@ def get_fusion_stats() -> Dict[str, Any]:
     if _retriever_instance._colbert:
         colbert_stats = _retriever_instance._colbert.get_statistics()
 
+    # G.5.6/P1 fix: Include adaptive weight statistics
+    adaptive_stats = {}
+    if _retriever_instance._weight_adapter:
+        adaptive_stats = _retriever_instance._weight_adapter.get_statistics()
+
     return {
         "num_documents": len(_retriever_instance.documents),
         "bm25_docs": _retriever_instance.bm25_index.total_docs,
@@ -691,4 +830,14 @@ def get_fusion_stats() -> Dict[str, Any]:
         "cache_size": len(_retriever_instance._embedding_cache),
         "colbert_embeddings": len(_retriever_instance._colbert_embeddings),
         "colbert_stats": colbert_stats,
+        # G.5.6/P1 fix
+        "adaptive_weights": {
+            "enabled": _retriever_instance.config.enable_adaptive_weights,
+            "blend_factor": _retriever_instance.config.adaptive_blend_factor,
+            "last_intent": (
+                _retriever_instance._last_classification.intent.value
+                if _retriever_instance._last_classification else None
+            ),
+            "statistics": adaptive_stats,
+        },
     }

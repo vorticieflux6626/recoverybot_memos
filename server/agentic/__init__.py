@@ -885,6 +885,47 @@ except ImportError as e:
     import logging
     logging.getLogger(__name__).warning(f"Hybrid Fusion not available: {e}")
 
+# G.6.2: DyLAN Agent Importance Scores (December 2025)
+# Based on DyLAN: Dynamic Language Agent Network (2025)
+# Implements conditional agent skipping for 25% accuracy improvement
+try:
+    from .dylan_agent_network import (
+        DyLANAgentNetwork,
+        QueryComplexity,
+        AgentRole,
+        AgentContribution,
+        AgentStats,
+        SkipDecision,
+        QueryComplexityResult,
+        get_dylan_network,
+        reset_dylan_network,
+    )
+    DYLAN_AVAILABLE = True
+except ImportError as e:
+    DYLAN_AVAILABLE = False
+    import logging
+    logging.getLogger(__name__).warning(f"DyLAN not available: {e}")
+
+# G.6.4: Information Bottleneck Filtering (December 2025)
+# Based on Zhu et al., ACL 2024: "An Information Bottleneck Perspective for
+# Effective Noise Filtering on Retrieval-Augmented Generation"
+# Achieves 2.5% compression rate while improving answer correctness
+try:
+    from .information_bottleneck import (
+        InformationBottleneckFilter,
+        FilteringLevel,
+        ContentType as IBContentType,
+        PassageScore,
+        IBFilterResult,
+        get_ib_filter,
+        create_ib_filter,
+    )
+    IB_FILTER_AVAILABLE = True
+except ImportError as e:
+    IB_FILTER_AVAILABLE = False
+    import logging
+    logging.getLogger(__name__).warning(f"Information Bottleneck not available: {e}")
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -1540,6 +1581,27 @@ __all__ = [
     "add_to_fusion_index",
     "get_fusion_stats",
     "HYBRID_FUSION_AVAILABLE",
+
+    # G.6.2: DyLAN Agent Importance Scores (December 2025)
+    "DyLANAgentNetwork",
+    "QueryComplexity",
+    "AgentRole",
+    "AgentContribution",
+    "AgentStats",
+    "SkipDecision",
+    "QueryComplexityResult",
+    "get_dylan_network",
+    "reset_dylan_network",
+    "DYLAN_AVAILABLE",
+    # G.6.4: Information Bottleneck Filtering
+    "InformationBottleneckFilter",
+    "FilteringLevel",
+    "IBContentType",
+    "PassageScore",
+    "IBFilterResult",
+    "get_ib_filter",
+    "create_ib_filter",
+    "IB_FILTER_AVAILABLE",
 ]
 
-__version__ = "0.64.0"  # G.5.6: Three-Way Hybrid Fusion (+15-25% nDCG@10)
+__version__ = "0.67.0"  # G.6.4: Information Bottleneck filtering for CRAG noise reduction
