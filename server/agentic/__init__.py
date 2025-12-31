@@ -1630,4 +1630,4 @@ __all__ = [
     "CONTRASTIVE_RETRIEVER_AVAILABLE",
 ]
 
-__version__ = "0.70.0"  # G.6 complete + orchestrator integration: A-MEM, DyLAN, IB filtering, SharedContext, Contrastive retriever
+__version__ = "0.71.0"  # G.6 streaming integration: DyLAN, IB filtering, Contrastive in search_with_events()

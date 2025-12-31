@@ -140,6 +140,8 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Part F** | Benchmark Test Suite + Technical Accuracy Scorer | ✅ **COMPLETE** |
 | **Part G.1** | RAG Foundation (BGE-M3, Redis Cache, Tracing, DeepEval) | ✅ **COMPLETE** |
 | **Part G.2** | Hierarchical Retrieval (Cascade, Fusion, Qdrant, CAR) | ✅ **COMPLETE** |
+| **Part G.6** | Agent Coordination (DyLAN, IB Filtering, Contrastive) | ✅ **COMPLETE** |
+| **Part G.6-SSE** | G.6 Streaming Integration | ✅ **COMPLETE** |
 
 #### ✅ Part G.2: Hierarchical Retrieval Optimization (Completed 2025-12-30)
 
@@ -232,6 +234,82 @@ Phase 1 of 8-week RAG Architecture Improvement Roadmap:
 - Latency: 100-300ms per batch
 
 **Module Version**: `agentic/__init__.py` → v0.46.0
+
+#### ✅ Part G.6: Agent Coordination (Completed 2025-12-31)
+
+Phase 6 of 8-week RAG Architecture Improvement Roadmap:
+
+**New Components:**
+- **`agentic/semantic_memory.py`** (~1018 lines): A-MEM with SQLite persistence
+- **`agentic/information_bottleneck.py`** (~550 lines): IB theory-based noise filtering
+- **`agentic/contrastive_retriever.py`** (~600 lines): Trial-and-feedback learning
+- **`agentic/dylan_agent.py`** (~400 lines): Query complexity classification
+
+**G.6.1 A-MEM Semantic Memory:**
+| Feature | Description |
+|---------|-------------|
+| SQLite Persistence | Cross-session memory in `data/semantic_memory.db` |
+| Auto-Connection | Similarity-based links (threshold 0.7) |
+| Access Tracking | Ebbinghaus decay + access count |
+| Graph Traversal | BFS with strength-weighted paths |
+
+**G.6.2 DyLAN Agent Importance Scores:**
+| Complexity | Skippable Agents | Use Case |
+|------------|------------------|----------|
+| SIMPLE | Verifier, Reflector | Direct lookups |
+| MODERATE | Reflector | Multi-step queries |
+| COMPLEX | None | Research queries |
+
+**G.6.4 Information Bottleneck Filtering:**
+| Content Type | IB Score | Action |
+|--------------|----------|--------|
+| ESSENTIAL | ≥0.7 | Keep, extract key sentences |
+| SUPPORTING | 0.4-0.7 | Keep if space allows |
+| PERIPHERAL | 0.2-0.4 | Filter if compressing |
+| NOISE | <0.2 | Always filter |
+
+**G.6.5 Contrastive Retriever Training:**
+- Session recording with cited URL tracking
+- Contrastive pairs from ranking mistakes
+- Per-domain weight learning
+- Strategy performance statistics
+
+**Module Version**: `agentic/__init__.py` → v0.40.0
+
+#### ✅ Part G.6-SSE: G.6 Streaming Integration (Completed 2025-12-31)
+
+Added G.6 Agent Coordination features to `search_with_events()` streaming method:
+
+**Features Added to Streaming:**
+| Feature | Location | SSE Events |
+|---------|----------|------------|
+| DyLAN Classification | After PHASE 1 | `dylan_complexity_classified` |
+| DyLAN Agent Skipping | PHASE 5, 7 | `dylan_agent_skipped` |
+| IB Filtering | PHASE 5.9 | `ib_filtering_start`, `ib_filtering_complete` |
+| Contrastive Learning | PHASE 9.5 | `contrastive_session_recorded` |
+
+**SSE Event Flow (Extended):**
+```
+... → dylan_complexity_classified → ... → dylan_agent_skipped (optional)
+→ ib_filtering_start → ib_filtering_complete → synthesizing → ...
+→ contrastive_session_recorded → search_completed
+```
+
+**Preset Configuration:**
+| Preset | DyLAN | IB Filter | Contrastive |
+|--------|-------|-----------|-------------|
+| minimal | ❌ | ❌ | ❌ |
+| balanced | ❌ | ❌ | ❌ |
+| enhanced | ❌ | ❌ | ❌ |
+| research | ✅ | ✅ | ✅ |
+| full | ✅ | ✅ | ✅ |
+
+**Test Results:**
+- All 22 G.6 unit tests passing
+- Streaming/non-streaming feature parity achieved
+- SSE events properly emitted for Android client
+
+**Module Version**: `agentic/__init__.py` → v0.71.0
 
 #### ✅ Part F: Benchmark Test Suite (Completed 2025-12-30)
 
