@@ -1,6 +1,6 @@
 # memOS Server
 
-> **Updated**: 2026-01-01 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.78.0
+> **Updated**: 2026-01-01 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.80.0
 
 ## Quick Reference
 
@@ -489,6 +489,71 @@ if should_use:
 - TEDS-S benchmark for table structure accuracy
 
 **Module Version**: `agentic/__init__.py` → v0.78.0
+
+#### ✅ B.10: LLM Gateway Client Integration (Completed 2026-01-01)
+
+Unified routing layer integration between memOS agentic agents and LLM backends (Ollama, vLLM).
+
+**Implementation Files:**
+- `agentic/gateway_client.py` (~700 lines): Core gateway client with fallback
+- `agentic/synthesizer.py`: Gateway integration for synthesis
+- `agentic/query_classifier.py`: Gateway integration for classification
+- `agentic/analyzer.py`: Gateway integration for query analysis
+- `agentic/self_reflection.py`: Gateway integration for Self-RAG reflection
+- `agentic/retrieval_evaluator.py`: Gateway integration for CRAG evaluation
+
+**Key Components:**
+| Component | Description |
+|-----------|-------------|
+| `GatewayClient` | Async HTTP client with circuit breaker pattern |
+| `LogicalModel` | Enum mapping purpose to physical models |
+| `GatewayResponse` | Unified response with fallback tracking |
+| `get_gateway_client()` | Singleton factory function |
+
+**Logical Model Mappings:**
+| Logical Name | Purpose | Default Model |
+|--------------|---------|---------------|
+| SYNTHESIZER | Answer synthesis | llama3.3:70b |
+| SYNTHESIZER_FAST | Fast synthesis | qwen3:8b |
+| ANALYZER | Query analysis | gemma3:4b |
+| CLASSIFIER | Query classification | qwen3:8b |
+| THINKING | Complex reasoning | deepseek-r1:14b |
+| VERIFIER | Claim verification | gemma3:4b |
+| REFLECTOR | Self-RAG reflection | gemma3:4b |
+| VISION | Image processing | qwen3-vl:7b |
+| EMBEDDINGS | Text embeddings | mxbai-embed-large |
+
+**Feature Flag:**
+```python
+enable_gateway_routing: bool = False  # Route LLM calls through gateway (port 8100)
+```
+
+**Usage:**
+```python
+from agentic import get_gateway_client, LogicalModel
+
+gateway = get_gateway_client()
+response = await gateway.generate(
+    prompt="Synthesize these findings...",
+    model=LogicalModel.SYNTHESIZER,
+    timeout=60.0,
+    options={"temperature": 0.7}
+)
+
+if response.fallback_used:
+    logger.info(f"Used fallback model: {response.model}")
+```
+
+**Integrated Agents:**
+| Agent | Status |
+|-------|--------|
+| Synthesizer | ✅ Complete |
+| QueryClassifier | ✅ Complete |
+| Analyzer | ✅ Complete |
+| SelfReflection | ✅ Complete |
+| RetrievalEvaluator | ✅ Complete |
+
+**Module Version**: `agentic/__init__.py` → v0.80.0
 
 #### ✅ Part G.2: Hierarchical Retrieval Optimization (Completed 2025-12-30)
 
@@ -1066,6 +1131,13 @@ pdf_api_cache_ttl: int = 300  # 5 minutes
 - **PDF Extraction Tools API** running on port 8002
 - Location: `/home/sparkone/sdd/PDF_Extraction_Tools`
 - Integration plan: `PDF_Extraction_Tools/MEMOS_INTEGRATION_PLAN.md`
+
+**Corpus Status (2026-01-01 Audit):**
+- 137/137 FANUC manuals ingested (100%)
+- 8,471 indexed error codes across 104 categories
+- 268,886 nodes, 269,466 edges
+- HNSW indices: 1.4 GB, 0.17ms P95 latency
+- See `PDF_Extraction_Tools/CLAUDE.md` for full audit
 
 **Module Version**: `agentic/__init__.py` → v0.35.0
 
