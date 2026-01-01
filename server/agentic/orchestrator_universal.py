@@ -4418,11 +4418,12 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
             # Emit VL scraping start event if JS-heavy domain detected
             if is_js_heavy:
-                await self.emitter.emit(vl_scraping_start(
-                    request_id,
-                    url,
-                    f"JS-heavy domain detected: {domain}"
-                ))
+                if hasattr(self, 'emitter') and self.emitter:
+                    await self.emitter.emit(vl_scraping_start(
+                        request_id,
+                        url,
+                        f"JS-heavy domain detected: {domain}"
+                    ))
                 logger.info(f"[{request_id}] VL scraping started for JS-heavy domain: {domain}")
 
             # Emit scraping URL event
@@ -4446,13 +4447,14 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         # Emit VL scraping complete event
                         vl_model = result.get("vl_model", "unknown")
                         extraction_type = result.get("extraction_type", "general")
-                        await self.emitter.emit(vl_scraping_complete(
-                            request_id,
-                            url,
-                            len(content),
-                            vl_model,
-                            extraction_type
-                        ))
+                        if hasattr(self, 'emitter') and self.emitter:
+                            await self.emitter.emit(vl_scraping_complete(
+                                request_id,
+                                url,
+                                len(content),
+                                vl_model,
+                                extraction_type
+                            ))
                         logger.info(f"[{request_id}] VL scraped {len(content):,} chars from {url[:60]} using {vl_model}")
                     else:
                         # Emit standard URL scraped event
@@ -4469,21 +4471,23 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     logger.debug(f"[{request_id}] Scrape returned no content for {url[:60]}: {error_msg}")
                     # Emit VL scraping failed if we expected VL scraping
                     if is_js_heavy:
-                        await self.emitter.emit(vl_scraping_failed(
-                            request_id,
-                            url,
-                            error_msg
-                        ))
+                        if hasattr(self, 'emitter') and self.emitter:
+                            await self.emitter.emit(vl_scraping_failed(
+                                request_id,
+                                url,
+                                error_msg
+                            ))
                         logger.warning(f"[{request_id}] VL scraping failed for {url[:60]}: {error_msg}")
             except Exception as e:
                 logger.warning(f"[{request_id}] Failed to scrape {url[:60]}: {e}")
                 # Emit VL scraping failed if we expected VL scraping
                 if is_js_heavy:
-                    await self.emitter.emit(vl_scraping_failed(
-                        request_id,
-                        url,
-                        str(e)
-                    ))
+                    if hasattr(self, 'emitter') and self.emitter:
+                        await self.emitter.emit(vl_scraping_failed(
+                            request_id,
+                            url,
+                            str(e)
+                        ))
                     logger.warning(f"[{request_id}] VL scraping failed for {url[:60]}: {e}")
 
         scrape_duration_ms = int((time.time() - start) * 1000)
