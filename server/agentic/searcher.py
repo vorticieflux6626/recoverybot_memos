@@ -1677,6 +1677,7 @@ class SearcherAgent:
         self.brave = BraveSearchProvider(brave_api_key)
         self.duckduckgo = DuckDuckGoProvider()
         self._embedding_model = None  # Lazy-load for semantic similarity
+        self.last_provider: Optional[str] = None  # Track most recently used provider
 
     def _stem_word(self, word: str) -> str:
         """Apply simple stemming to normalize a word to its base form."""
@@ -1990,6 +1991,9 @@ class SearcherAgent:
                 provider_name = "DuckDuckGo"
 
         logger.info(f"Using {provider_name} search provider")
+
+        # Track the provider used for this search (accessible via self.last_provider)
+        self.last_provider = provider_name
 
         # Auto-detect query type from first query if not specified
         if query_type is None and queries and isinstance(provider, SearXNGSearchProvider):

@@ -1,6 +1,6 @@
 # memOS Server
 
-> **Updated**: 2025-12-30 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.40.1
+> **Updated**: 2025-12-31 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.75.0
 
 ## Quick Reference
 
@@ -142,6 +142,163 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Part G.2** | Hierarchical Retrieval (Cascade, Fusion, Qdrant, CAR) | ✅ **COMPLETE** |
 | **Part G.6** | Agent Coordination (DyLAN, IB Filtering, Contrastive) | ✅ **COMPLETE** |
 | **Part G.6-SSE** | G.6 Streaming Integration | ✅ **COMPLETE** |
+| **Part G.7.2** | Hyperbolic Embeddings for Hierarchical Documents | ✅ **COMPLETE** |
+| **Part G.7.3** | Optimal Transport for Dense-Sparse Fusion | ✅ **COMPLETE** |
+| **Part G.7.4** | TSDAE Domain Adaptation | ✅ **COMPLETE** |
+
+#### ✅ Part G.7.2: Hyperbolic Embeddings (Completed 2025-12-31)
+
+Based on HyperbolicRAG (arXiv:2511.18808) achieving +5.6% Recall@5 via Poincaré ball geometry.
+
+**Implementation Files:**
+- `agentic/hyperbolic_embeddings.py` (~744 lines): Core Poincaré ball geometry and retriever
+- `tests/unit/test_hyperbolic_embeddings.py` (25 tests): Comprehensive test suite
+
+**Key Components:**
+| Component | Description |
+|-----------|-------------|
+| `PoincareBall` | Poincaré ball manifold with exp/log maps and geodesic distance |
+| `HyperbolicRetriever` | Hierarchical document retrieval with hyperbolic embeddings |
+| `HyperbolicDocument` | Document with Euclidean and hyperbolic embeddings |
+| `HierarchyLevel` | Enum: CORPUS→MANUAL→CHAPTER→SECTION→PROCEDURE→STEP |
+
+**Hierarchy-Aware Depth Encoding:**
+| Level | Value | Radial Position | Description |
+|-------|-------|-----------------|-------------|
+| CORPUS | 0 | Near origin | Entire corpus (most general) |
+| MANUAL | 1 | 0.1-0.26 | Manual/document level |
+| CHAPTER | 2 | 0.26-0.42 | Chapter/major section |
+| SECTION | 3 | 0.42-0.58 | Subsection |
+| PROCEDURE | 4 | 0.58-0.74 | Procedure/topic |
+| STEP | 5 | Near boundary | Individual step (most specific) |
+
+**Score Fusion:**
+```python
+fused_score = euclidean_weight * cosine_similarity + hyperbolic_weight * exp(-geodesic_distance)
+# Default: 50% Euclidean + 50% Hyperbolic
+```
+
+**API Endpoints:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/hyperbolic/stats` | GET | Retriever statistics |
+| `/hyperbolic/index` | POST | Index with hyperbolic embedding |
+| `/hyperbolic/search` | POST | Hierarchy-aware search |
+| `/hyperbolic/search-by-hierarchy` | POST | Multi-level search |
+| `/hyperbolic/tree/{doc_id}` | GET | Document hierarchy tree |
+
+**Test Results:** 25/25 tests passing
+
+**Module Version**: `agentic/__init__.py` → v0.72.0
+
+#### ✅ Part G.7.3: Optimal Transport Fusion (Completed 2025-12-31)
+
+Based on Wasserstein distance and Sinkhorn algorithm for superior dense-sparse alignment.
+
+**Implementation Files:**
+- `agentic/optimal_transport.py` (~700 lines): Core OT implementation
+- `tests/unit/test_optimal_transport.py` (31 tests): Comprehensive test suite
+
+**Key Components:**
+| Component | Description |
+|-----------|-------------|
+| `SinkhornSolver` | Entropy-regularized OT with Sinkhorn-Knopp algorithm |
+| `GromovWassersteinSolver` | Cross-domain alignment for heterogeneous spaces |
+| `OptimalTransportFusion` | Main class for dense-sparse retrieval fusion |
+| `OTConfig` | Configuration for epsilon, weights, cost metrics |
+
+**Fusion Methods:**
+| Method | Description |
+|--------|-------------|
+| `fuse_scores()` | Two-way OT fusion (dense + sparse) |
+| `fuse_multiway()` | Wasserstein barycenter for multiple retrievers |
+| `align_heterogeneous()` | Gromov-Wasserstein cross-domain alignment |
+
+**API Endpoints:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/ot/stats` | GET | OT fusion statistics |
+| `/ot/fuse` | POST | Two-way OT fusion |
+| `/ot/fuse-multiway` | POST | Multi-way barycentric fusion |
+| `/ot/wasserstein-distance` | POST | Compute Wasserstein distance |
+
+**Test Results:** 57/57 tests passing (26 new tests for SW + WMD)
+
+**Module Version**: `agentic/__init__.py` → v0.74.0
+
+#### ✅ Part G.7.4: TSDAE Domain Adaptation (Completed 2025-12-31)
+
+Based on Wang, Reimers, Gurevych (EMNLP 2021): "TSDAE: Using Transformer-based Sequential
+Denoising Auto-Encoder for Unsupervised Sentence Embedding Learning".
+
+**Implementation Files:**
+- `agentic/tsdae_adapter.py` (~530 lines): TSDAE domain adapter with multi-domain support
+- `tests/unit/test_tsdae_adapter.py` (34 tests): Comprehensive test suite including training tests
+
+**Key Components:**
+| Component | Description |
+|-----------|-------------|
+| `TSDaeAdapter` | Main adapter for training and encoding |
+| `MultiDomainAdapter` | Combines embeddings from multiple domains |
+| `DomainConfig` | Configuration for domain adaptation tasks |
+| `AdaptationResult` | Training outcome with metrics |
+
+**Key Features:**
+| Feature | Description |
+|---------|-------------|
+| Unsupervised Adaptation | No labeled data needed - works with raw domain text |
+| Denoising Objective | Corrupts sentences and trains encoder to reconstruct |
+| 93.1% Performance | Achieves up to 93.1% of supervised fine-tuning |
+| Minimal Data | Requires only ~10K domain sentences |
+| Incremental Updates | Add new domain data without full retraining |
+
+**Predefined Domain Configs:**
+| Config | Domain | Description |
+|--------|--------|-------------|
+| `FANUC_DOMAIN_CONFIG` | FANUC Robotics | Error codes, procedures, components |
+| `SIEMENS_DOMAIN_CONFIG` | Siemens PLC | PLC alarms, ladder logic |
+| `ROCKWELL_DOMAIN_CONFIG` | Rockwell/Allen-Bradley | Controller faults, I/O |
+
+**Noise Types:**
+- DELETE (default, 0.6 ratio): Random word deletion
+- SWAP: Random word swapping
+- INSERT: Random word insertion
+- SUBSTITUTE: Random word substitution
+
+**API Endpoints:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/tsdae/stats` | GET | Adapter statistics |
+| `/tsdae/train` | POST | Train domain adapter |
+| `/tsdae/encode` | POST | Encode text with domain adapter |
+| `/tsdae/domains` | GET | List available domains |
+
+**Usage:**
+```python
+from agentic import TSDaeAdapter, DomainConfig, FANUC_DOMAIN_CONFIG
+
+adapter = TSDaeAdapter()
+
+# Train on FANUC documentation
+result = await adapter.train_adapter(
+    sentences=fanuc_sentences,  # List of domain sentences
+    config=FANUC_DOMAIN_CONFIG
+)
+
+# Encode with domain-adapted model
+embeddings = await adapter.encode(
+    ["SRVO-063 alarm detected"],
+    domain_id="fanuc"
+)
+```
+
+**Research Reference:**
+- arXiv: https://arxiv.org/abs/2104.06979
+- EMNLP 2021
+
+**Test Results:** 34/34 tests passing
+
+**Module Version**: `agentic/__init__.py` → v0.75.0
 
 #### ✅ Part G.2: Hierarchical Retrieval Optimization (Completed 2025-12-30)
 

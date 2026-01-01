@@ -1081,12 +1081,25 @@ async def _execute_universal_streaming_search(
             max_sources=request.max_sources
         )
 
-        # Emit searching event
+        # Check which search engines are available
+        engines = []
+        if await orchestrator.searcher.searxng.check_availability():
+            engines.append("SearXNG")
+        else:
+            if orchestrator.searcher.duckduckgo:
+                engines.append("DuckDuckGo")
+            if orchestrator.searcher.brave and orchestrator.searcher.brave.available:
+                engines.append("Brave")
+            if not engines:
+                engines.append("DuckDuckGo")
+
+        # Emit searching event with engines info
         await emitter.emit(SearchEvent(
             event_type=EventType.SEARCHING,
             request_id=request_id,
-            message="Executing universal search pipeline",
+            message=f"Searching via {', '.join(engines)}",
             progress_percent=20,
+            engines=engines,
             data={"queries": [request.query]}
         ))
 
@@ -5431,41 +5444,97 @@ async def get_troubleshooting_path(request: TroubleshootRequest):
     """
     Get step-by-step troubleshooting path for a FANUC error code.
 
-    Uses PathRAG traversal to build a resolution path from the
-    knowledge graph of FANUC technical documentation.
+    Proxies to PDF Extraction Tools HSEA troubleshoot endpoint
+    so innovations there propagate naturally to memOS.
 
     Args:
         request: Error code and optional context
 
     Returns:
-        Ordered troubleshooting steps with sources.
+        Troubleshooting context from PDF Tools.
     """
     try:
-        doc_service = await get_doc_graph_service()
+        settings = get_settings()
+        pdf_api_url = getattr(settings, 'pdf_api_url', 'http://localhost:8002')
 
-        # Get error category
-        category = get_error_category(request.error_code)
+        async with aiohttp.ClientSession() as session:
+            url = f"{pdf_api_url}/api/v1/search/hsea/troubleshoot/{request.error_code}"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
 
-        # Query troubleshooting path
-        steps = await doc_service.query_troubleshooting_path(
-            error_code=request.error_code,
-            context=request.context
-        )
+                    if data.get("success"):
+                        result = data.get("data", {})
+                        context = result.get("context", {})
+                        metadata = context.get("metadata", {})
 
-        # Find related error codes (same category)
-        related = []
-        if category:
-            # This would be populated from the PDF API's related errors
-            related = []  # TODO: Implement related errors lookup
+                        # Build troubleshooting steps from the SRVO error info
+                        # The actual cause/remedy are in metadata
+                        steps = []
 
-        return TroubleshootResponse(
-            success=True,
-            error_code=request.error_code,
-            category=category,
-            steps=[s.model_dump() for s in steps] if steps else [],
-            related_errors=related
-        )
+                        # Step 1: Diagnosis (cause from metadata)
+                        cause = metadata.get("cause") or context.get("cause")
+                        if cause:
+                            steps.append({
+                                "node_id": f"{request.error_code}_diagnosis",
+                                "title": f"{metadata.get('title', request.error_code)} - Cause",
+                                "content": cause,
+                                "step_type": "diagnosis",
+                                "relevance_score": 1.0,
+                                "hop_number": 0,
+                                "metadata": {"error_code": request.error_code}
+                            })
 
+                        # Step 2: Solution (remedy from metadata)
+                        remedy = metadata.get("remedy") or context.get("remedy")
+                        if remedy:
+                            steps.append({
+                                "node_id": f"{request.error_code}_remedy",
+                                "title": "Remedy",
+                                "content": remedy,
+                                "step_type": "solution",
+                                "relevance_score": 1.0,
+                                "hop_number": 1,
+                                "metadata": {"error_code": request.error_code}
+                            })
+
+                        # Step 3: Additional notes if present
+                        note = metadata.get("note")
+                        if note:
+                            steps.append({
+                                "node_id": f"{request.error_code}_note",
+                                "title": "Note",
+                                "content": note,
+                                "step_type": "info",
+                                "relevance_score": 0.9,
+                                "hop_number": 2,
+                                "metadata": {"error_code": request.error_code}
+                            })
+
+                        # Extract related from PDF Tools response
+                        related = []
+                        for r in result.get("related_codes", []):
+                            code = r.get("error_code")
+                            if code:
+                                related.append(code)
+
+                        return TroubleshootResponse(
+                            success=True,
+                            error_code=request.error_code,
+                            category=context.get("category"),
+                            steps=steps,
+                            related_errors=related
+                        )
+                    else:
+                        raise HTTPException(status_code=500, detail="PDF Tools returned error")
+                elif resp.status == 404:
+                    raise HTTPException(status_code=404, detail=f"Error code {request.error_code} not found")
+                else:
+                    raise HTTPException(status_code=resp.status, detail=await resp.text())
+
+    except aiohttp.ClientError as e:
+        logger.error(f"PDF Tools connection failed: {e}")
+        raise HTTPException(status_code=503, detail=f"PDF Tools unavailable: {str(e)}")
     except Exception as e:
         logger.error(f"Troubleshooting path query failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -6071,6 +6140,211 @@ async def hsea_stats():
 
     except Exception as e:
         logger.error(f"HSEA stats failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# HSEA Sync from PDF Extraction Tools
+# =============================================================================
+
+import aiohttp
+
+class HSEASyncRequest(BaseModel):
+    """Request model for syncing HSEA from PDF Tools."""
+    limit: int = 100
+    offset: int = 0
+    category: Optional[str] = None
+    generate_embeddings: bool = True
+
+
+@router.post("/hsea/sync/pdf-tools")
+async def hsea_sync_from_pdf_tools(
+    request: HSEASyncRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Sync error code entities from PDF Extraction Tools into HSEA.
+
+    This endpoint:
+    1. Fetches entities from PDF Tools export endpoint
+    2. Generates Matryoshka embeddings for each entity
+    3. Indexes them in the HSEA system
+
+    Args:
+        limit: Maximum number of entities per batch (default 100)
+        offset: Starting offset for pagination
+        category: Filter to specific category (e.g., "SRVO")
+        generate_embeddings: Generate new embeddings via PDF Tools API
+    """
+    settings = get_settings()
+    pdf_api_url = getattr(settings, 'pdf_api_url', 'http://localhost:8002')
+
+    try:
+        # Step 1: Fetch entities from PDF Tools
+        async with aiohttp.ClientSession() as session:
+            params = {
+                "limit": request.limit,
+                "offset": request.offset,
+                "include_embeddings": "true" if not request.generate_embeddings else "false"
+            }
+            if request.category:
+                params["category"] = request.category
+
+            async with session.get(
+                f"{pdf_api_url}/api/v1/search/hsea/export/entities",
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as resp:
+                if resp.status != 200:
+                    raise HTTPException(
+                        status_code=resp.status,
+                        detail=f"PDF Tools export failed: {await resp.text()}"
+                    )
+                export_data = await resp.json()
+
+        if not export_data.get("success"):
+            raise HTTPException(
+                status_code=500,
+                detail=f"PDF Tools export failed: {export_data.get('errors', [])}"
+            )
+
+        entities = export_data["data"]["entities"]
+        logger.info(f"Fetched {len(entities)} entities from PDF Tools")
+
+        # Step 2: Generate embeddings if needed
+        if request.generate_embeddings:
+            async with aiohttp.ClientSession() as session:
+                for entity in entities:
+                    # Create text for embedding from entity fields
+                    embed_text = f"{entity['canonical_form']} {entity['title']} {entity.get('cause', '')} {entity.get('remedy', '')}"
+                    embed_text = embed_text.strip()
+
+                    try:
+                        async with session.post(
+                            f"{pdf_api_url}/api/v1/embeddings/generate",
+                            json={"text": embed_text, "dimensions": [128, 256, 768]},
+                            timeout=aiohttp.ClientTimeout(total=30)
+                        ) as resp:
+                            if resp.status == 200:
+                                embed_data = await resp.json()
+                                if embed_data.get("success"):
+                                    embeddings = embed_data["data"]["embeddings"]
+                                    entity["embeddings"] = {
+                                        "systemic": embeddings.get("128d", []),
+                                        "structural": embeddings.get("256d", []),
+                                        "substantive": embeddings.get("768d", [])
+                                    }
+                    except Exception as e:
+                        logger.warning(f"Failed to generate embeddings for {entity['canonical_form']}: {e}")
+
+        # Step 3: Index into HSEA
+        controller = get_hsea_controller()
+        entity_objects = []
+
+        for e in entities:
+            try:
+                entity_obj = ErrorCodeEntity(
+                    entity_id=e["entity_id"],
+                    canonical_form=e["canonical_form"],
+                    title=e["title"],
+                    category=e["category"],
+                    code_number=e.get("code_number", 0),
+                    cause=e.get("cause", ""),
+                    remedy=e.get("remedy", ""),
+                    severity=e.get("severity", "alarm"),
+                    related_codes=e.get("related_codes", [])
+                )
+                entity_objects.append(entity_obj)
+            except Exception as ex:
+                logger.warning(f"Failed to create entity object for {e.get('canonical_form', 'unknown')}: {ex}")
+
+        if entity_objects:
+            stats = await controller.index_batch(entity_objects)
+        else:
+            stats = {"indexed": 0, "skipped": 0}
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "fetched": len(entities),
+                "with_embeddings": sum(1 for e in entities if e.get("embeddings")),
+                "indexed": stats.get("indexed", 0),
+                "skipped": stats.get("skipped", 0),
+                "offset": request.offset,
+                "has_more": len(entities) == request.limit
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "pdf_api_url": pdf_api_url
+            },
+            "errors": []
+        })
+
+    except aiohttp.ClientError as e:
+        logger.error(f"HSEA sync connection error: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to connect to PDF Tools API: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"HSEA sync failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/hsea/sync/status")
+async def hsea_sync_status():
+    """
+    Get the current sync status between memOS HSEA and PDF Tools.
+
+    Compares entity counts and coverage between systems.
+    """
+    settings = get_settings()
+    pdf_api_url = getattr(settings, 'pdf_api_url', 'http://localhost:8002')
+
+    try:
+        # Get PDF Tools stats
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{pdf_api_url}/api/v1/search/hsea/export/stats",
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
+                if resp.status == 200:
+                    pdf_stats = await resp.json()
+                else:
+                    pdf_stats = {"success": False, "error": f"Status {resp.status}"}
+
+        # Get memOS HSEA stats
+        controller = get_hsea_controller()
+        memos_stats = controller.get_stats()
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "pdf_tools": {
+                    "total_entities": pdf_stats.get("data", {}).get("error_code_entities", 0),
+                    "with_embeddings": pdf_stats.get("data", {}).get("entities_with_embeddings", 0),
+                    "categories": pdf_stats.get("data", {}).get("category_count", 0)
+                },
+                "memos_hsea": {
+                    "indexed_entities": memos_stats.get("layer_3_entities", 0),
+                    "systemic_anchors": memos_stats.get("layer_1_anchors", 0),
+                    "memory_connections": memos_stats.get("layer_2_connections", 0)
+                },
+                "sync_gap": max(
+                    0,
+                    pdf_stats.get("data", {}).get("error_code_entities", 0) -
+                    memos_stats.get("layer_3_entities", 0)
+                )
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "pdf_api_url": pdf_api_url
+            },
+            "errors": []
+        })
+
+    except Exception as e:
+        logger.error(f"HSEA sync status failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -6744,4 +7018,667 @@ async def reset_provider_rate_limits(provider: Optional[str] = Query(default=Non
 
     except Exception as e:
         logger.error(f"Reset rate limits failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Hyperbolic Embeddings Endpoints (G.7.2)
+# =============================================================================
+
+@router.get("/hyperbolic/stats")
+async def get_hyperbolic_stats():
+    """
+    Get hyperbolic retriever statistics.
+
+    Returns statistics about indexed documents, hierarchy distribution,
+    embedding dimensions, and curvature settings.
+    """
+    try:
+        from agentic.hyperbolic_embeddings import get_hyperbolic_retriever
+
+        retriever = get_hyperbolic_retriever()
+        stats = retriever.get_stats()
+
+        return JSONResponse(content={
+            "success": True,
+            "data": stats,
+            "meta": {"timestamp": datetime.now(timezone.utc).isoformat()},
+            "errors": []
+        })
+
+    except Exception as e:
+        logger.error(f"Hyperbolic stats failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hyperbolic/index")
+async def index_hyperbolic_document(
+    doc_id: str = Body(..., description="Unique document ID"),
+    content: str = Body(..., description="Document text content"),
+    embedding: List[float] = Body(..., description="Euclidean embedding vector"),
+    hierarchy_level: str = Body("STEP", description="Hierarchy level: CORPUS, MANUAL, CHAPTER, SECTION, PROCEDURE, STEP"),
+    parent_id: Optional[str] = Body(None, description="Parent document ID for tree structure"),
+    metadata: Optional[Dict[str, Any]] = Body(None, description="Additional metadata")
+):
+    """
+    Index a document with hyperbolic embedding.
+
+    Projects the Euclidean embedding to Poincaré ball space with hierarchy-aware
+    depth encoding. More specific documents (STEP) are placed closer to the ball
+    boundary, while general documents (CORPUS) are near the origin.
+    """
+    try:
+        from agentic.hyperbolic_embeddings import (
+            get_hyperbolic_retriever,
+            HierarchyLevel
+        )
+        import numpy as np
+
+        retriever = get_hyperbolic_retriever()
+        level = HierarchyLevel[hierarchy_level.upper()]
+
+        doc = await retriever.add_document(
+            doc_id=doc_id,
+            content=content,
+            euclidean_embedding=np.array(embedding, dtype=np.float32),
+            hierarchy_level=level,
+            parent_id=parent_id,
+            metadata=metadata or {}
+        )
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "doc_id": doc.doc_id,
+                "hierarchy_level": doc.hierarchy_level.name,
+                "depth": float(doc.depth),
+                "euclidean_dim": len(doc.euclidean_embedding),
+                "hyperbolic_dim": len(doc.hyperbolic_embedding)
+            },
+            "meta": {"timestamp": datetime.now(timezone.utc).isoformat()},
+            "errors": []
+        })
+
+    except KeyError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid hierarchy level: {hierarchy_level}. Valid: CORPUS, MANUAL, CHAPTER, SECTION, PROCEDURE, STEP"
+        )
+    except Exception as e:
+        logger.error(f"Hyperbolic index failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hyperbolic/search")
+async def search_hyperbolic(
+    query_embedding: List[float] = Body(..., description="Query embedding vector"),
+    top_k: int = Body(10, description="Number of results to return"),
+    hierarchy_filter: Optional[List[str]] = Body(None, description="Filter by hierarchy levels"),
+    use_fusion: bool = Body(True, description="Use Euclidean-Hyperbolic score fusion")
+):
+    """
+    Search using hyperbolic geometry for hierarchy-aware retrieval.
+
+    Combines Euclidean cosine similarity (40%) with hyperbolic geodesic distance (60%)
+    for improved retrieval of hierarchically structured documents.
+    """
+    try:
+        from agentic.hyperbolic_embeddings import (
+            get_hyperbolic_retriever,
+            HierarchyLevel
+        )
+        import numpy as np
+
+        retriever = get_hyperbolic_retriever()
+
+        # Convert hierarchy filter strings to enums
+        level_filter = None
+        if hierarchy_filter:
+            level_filter = [HierarchyLevel[level.upper()] for level in hierarchy_filter]
+
+        results = await retriever.search(
+            query_embedding=np.array(query_embedding, dtype=np.float32),
+            top_k=top_k,
+            hierarchy_filter=level_filter,
+            use_fusion=use_fusion
+        )
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "results": [
+                    {
+                        "doc_id": r.doc_id,
+                        "content": r.content[:500] + "..." if len(r.content) > 500 else r.content,
+                        "euclidean_score": float(r.euclidean_score),
+                        "hyperbolic_score": float(r.hyperbolic_score),
+                        "fused_score": float(r.fused_score),
+                        "hierarchy_level": r.hierarchy_level.name,
+                        "depth": float(r.depth),
+                        "metadata": r.metadata
+                    }
+                    for r in results
+                ],
+                "total": len(results)
+            },
+            "meta": {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "use_fusion": use_fusion
+            },
+            "errors": []
+        })
+
+    except KeyError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid hierarchy level in filter. Valid: CORPUS, MANUAL, CHAPTER, SECTION, PROCEDURE, STEP"
+        )
+    except Exception as e:
+        logger.error(f"Hyperbolic search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hyperbolic/search-by-hierarchy")
+async def search_hyperbolic_by_hierarchy(
+    query_embedding: List[float] = Body(..., description="Query embedding vector"),
+    target_level: str = Body(..., description="Primary hierarchy level to search"),
+    top_k: int = Body(5, description="Number of results per level"),
+    include_parents: bool = Body(True, description="Include parent levels in results"),
+    include_children: bool = Body(True, description="Include child levels in results")
+):
+    """
+    Search with hierarchy-aware expansion.
+
+    Returns results grouped by hierarchy level, optionally including
+    parent levels (more general) and child levels (more specific).
+    """
+    try:
+        from agentic.hyperbolic_embeddings import (
+            get_hyperbolic_retriever,
+            HierarchyLevel
+        )
+        import numpy as np
+
+        retriever = get_hyperbolic_retriever()
+        level = HierarchyLevel[target_level.upper()]
+
+        results = await retriever.search_by_hierarchy(
+            query_embedding=np.array(query_embedding, dtype=np.float32),
+            target_level=level,
+            top_k=top_k,
+            include_parents=include_parents,
+            include_children=include_children
+        )
+
+        # Format results
+        formatted = {}
+        for level_name, level_results in results.items():
+            formatted[level_name] = [
+                {
+                    "doc_id": r.doc_id,
+                    "content": r.content[:300] + "..." if len(r.content) > 300 else r.content,
+                    "fused_score": float(r.fused_score),
+                    "depth": float(r.depth)
+                }
+                for r in level_results
+            ]
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "results_by_level": formatted,
+                "target_level": target_level.upper(),
+                "include_parents": include_parents,
+                "include_children": include_children
+            },
+            "meta": {"timestamp": datetime.now(timezone.utc).isoformat()},
+            "errors": []
+        })
+
+    except KeyError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid hierarchy level: {target_level}. Valid: CORPUS, MANUAL, CHAPTER, SECTION, PROCEDURE, STEP"
+        )
+    except Exception as e:
+        logger.error(f"Hyperbolic hierarchy search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/hyperbolic/tree/{doc_id}")
+async def get_hyperbolic_document_tree(
+    doc_id: str,
+    max_depth: int = Query(3, description="Maximum tree depth to traverse")
+):
+    """
+    Get document with its hierarchy tree.
+
+    Returns the document along with its parent and children,
+    useful for navigating hierarchical documentation.
+    """
+    try:
+        from agentic.hyperbolic_embeddings import get_hyperbolic_retriever
+
+        retriever = get_hyperbolic_retriever()
+        tree = await retriever.get_document_tree(doc_id, max_depth=max_depth)
+
+        if not tree:
+            raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
+
+        return JSONResponse(content={
+            "success": True,
+            "data": tree,
+            "meta": {"timestamp": datetime.now(timezone.utc).isoformat()},
+            "errors": []
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Hyperbolic tree failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# G.7.3: Optimal Transport Fusion Endpoints (December 2025)
+# Based on Wasserstein distance and Sinkhorn algorithm for dense-sparse fusion
+# =============================================================================
+
+@router.get("/ot/stats")
+async def get_ot_stats():
+    """
+    Get Optimal Transport fusion statistics.
+
+    Returns:
+        OT fusion statistics and configuration
+    """
+    try:
+        from agentic.optimal_transport import get_ot_fusion
+
+        fusion = get_ot_fusion()
+        stats = fusion.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"OT stats failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ot/fuse")
+async def fuse_with_ot(
+    dense_results: List[Dict[str, float]] = Body(..., description="Dense retrieval results [{doc_id: score}]"),
+    sparse_results: List[Dict[str, float]] = Body(..., description="Sparse retrieval results [{doc_id: score}]"),
+    top_k: int = Body(10, description="Number of results to return"),
+    epsilon: float = Body(0.1, description="Sinkhorn entropy regularization"),
+    dense_weight: float = Body(0.5, description="Weight for dense scores"),
+    sparse_weight: float = Body(0.5, description="Weight for sparse scores")
+):
+    """
+    Fuse dense and sparse retrieval results using Optimal Transport.
+
+    Uses Sinkhorn algorithm to find optimal alignment between retrieval distributions.
+
+    Args:
+        dense_results: List of {doc_id: score} from dense retrieval
+        sparse_results: List of {doc_id: score} from sparse retrieval
+        top_k: Number of results to return
+        epsilon: Entropy regularization (lower = closer to exact OT)
+        dense_weight: Weight for dense scores in fusion
+        sparse_weight: Weight for sparse scores in fusion
+
+    Returns:
+        Fused results with transport-weighted scores
+    """
+    try:
+        from agentic.optimal_transport import OptimalTransportFusion, OTConfig
+
+        # Convert dict format to (doc_id, score) pairs
+        dense_pairs = [(list(d.keys())[0], list(d.values())[0]) for d in dense_results]
+        sparse_pairs = [(list(d.keys())[0], list(d.values())[0]) for d in sparse_results]
+
+        config = OTConfig(
+            epsilon=epsilon,
+            dense_weight=dense_weight,
+            sparse_weight=sparse_weight
+        )
+
+        fusion = OptimalTransportFusion(config)
+        results = fusion.fuse_scores(dense_pairs, sparse_pairs, top_k=top_k)
+
+        return {
+            "success": True,
+            "data": {
+                "results": [
+                    {
+                        "doc_id": r.doc_id,
+                        "fused_score": r.fused_score,
+                        "dense_score": r.dense_score,
+                        "sparse_score": r.sparse_score,
+                        "transport_weight": r.transport_weight,
+                        "rank": r.rank,
+                        "metadata": r.metadata
+                    }
+                    for r in results
+                ],
+                "stats": fusion.get_stats()
+            },
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"OT fusion failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ot/fuse-multiway")
+async def fuse_multiway_with_ot(
+    result_lists: Dict[str, List[Dict[str, float]]] = Body(..., description="Retriever results {name: [{doc_id: score}]}"),
+    weights: Optional[Dict[str, float]] = Body(None, description="Weights for each retriever"),
+    top_k: int = Body(10, description="Number of results to return")
+):
+    """
+    Fuse multiple retrieval result lists using Wasserstein barycenter.
+
+    Computes the barycenter distribution that minimizes total Wasserstein distance
+    to all input distributions.
+
+    Args:
+        result_lists: Dict mapping retriever name to list of {doc_id: score}
+        weights: Optional weights for each retriever (sum to 1)
+        top_k: Number of results to return
+
+    Returns:
+        Barycentric fused results
+    """
+    try:
+        from agentic.optimal_transport import OptimalTransportFusion
+
+        # Convert dict format to (doc_id, score) pairs
+        converted_lists = {}
+        for name, results in result_lists.items():
+            converted_lists[name] = [(list(d.keys())[0], list(d.values())[0]) for d in results]
+
+        fusion = OptimalTransportFusion()
+        results = fusion.fuse_multiway(converted_lists, weights=weights, top_k=top_k)
+
+        return {
+            "success": True,
+            "data": {
+                "results": [
+                    {
+                        "doc_id": r.doc_id,
+                        "fused_score": r.fused_score,
+                        "rank": r.rank,
+                        "metadata": r.metadata
+                    }
+                    for r in results
+                ]
+            },
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"OT multiway fusion failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ot/wasserstein-distance")
+async def compute_wasserstein_distance(
+    scores1: List[float] = Body(..., description="First score distribution"),
+    scores2: List[float] = Body(..., description="Second score distribution")
+):
+    """
+    Compute Wasserstein distance between two score distributions.
+
+    Useful for measuring similarity between retrieval result distributions.
+
+    Args:
+        scores1: First score distribution
+        scores2: Second score distribution
+
+    Returns:
+        Wasserstein distance
+    """
+    try:
+        from agentic.optimal_transport import OptimalTransportFusion
+
+        fusion = OptimalTransportFusion()
+        distance = fusion.compute_wasserstein_distance(scores1, scores2)
+
+        return {
+            "success": True,
+            "data": {
+                "distance": float(distance),
+                "interpretation": (
+                    "low" if distance < 0.1 else
+                    "moderate" if distance < 0.3 else
+                    "high"
+                )
+            },
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Wasserstein distance failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ot/sliced-wasserstein")
+async def compute_sliced_wasserstein_distance(
+    source: List[List[float]] = Body(..., description="Source point cloud (n x d)"),
+    target: List[List[float]] = Body(..., description="Target point cloud (m x d)"),
+    n_projections: int = Body(50, description="Number of random projections")
+):
+    """
+    Compute Sliced-Wasserstein distance between two point clouds.
+
+    O(n log n) approximation via random 1D projections.
+    Based on SLoSH (WACV 2024) for efficient distribution comparison.
+
+    Returns:
+        Sliced-Wasserstein distance
+    """
+    try:
+        import numpy as np
+        from agentic.optimal_transport import SlicedWassersteinSolver
+
+        solver = SlicedWassersteinSolver(n_projections=n_projections)
+        source_arr = np.array(source)
+        target_arr = np.array(target)
+
+        distance = solver.sliced_wasserstein_distance(source_arr, target_arr)
+
+        return {
+            "success": True,
+            "data": {
+                "distance": float(distance),
+                "n_projections": n_projections,
+                "source_shape": list(source_arr.shape),
+                "target_shape": list(target_arr.shape),
+                "interpretation": (
+                    "identical" if distance < 0.01 else
+                    "similar" if distance < 0.1 else
+                    "moderate" if distance < 0.5 else
+                    "different"
+                )
+            },
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0",
+                "algorithm": "sliced_wasserstein"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Sliced-Wasserstein distance failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ot/sliced-wasserstein-embedding")
+async def create_sliced_wasserstein_embedding(
+    points: List[List[float]] = Body(..., description="Point cloud (n x d)"),
+    n_projections: int = Body(50, description="Number of projections (embedding dim = 2*n)")
+):
+    """
+    Create Sliced-Wasserstein embedding for indexing.
+
+    Maps a point cloud to a vector where Euclidean distance
+    approximates Sliced-Wasserstein distance. Useful for
+    approximate nearest neighbor search in vector databases.
+
+    Returns:
+        Embedding vector of dimension (2 * n_projections)
+    """
+    try:
+        import numpy as np
+        from agentic.optimal_transport import SlicedWassersteinSolver
+
+        solver = SlicedWassersteinSolver(n_projections=n_projections)
+        points_arr = np.array(points)
+
+        embedding = solver.sliced_wasserstein_embedding(points_arr, n_projections)
+
+        return {
+            "success": True,
+            "data": {
+                "embedding": embedding.tolist(),
+                "dimension": len(embedding),
+                "n_projections": n_projections,
+                "input_shape": list(points_arr.shape)
+            },
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Sliced-Wasserstein embedding failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ot/word-movers-distance")
+async def compute_word_movers_distance(
+    doc1_embeddings: List[List[float]] = Body(..., description="Document 1 word embeddings (n x d)"),
+    doc2_embeddings: List[List[float]] = Body(..., description="Document 2 word embeddings (m x d)"),
+    doc1_weights: Optional[List[float]] = Body(None, description="Word weights for document 1"),
+    doc2_weights: Optional[List[float]] = Body(None, description="Word weights for document 2"),
+    use_relaxed: bool = Body(False, description="Use fast O(n+m) relaxed WMD lower bound")
+):
+    """
+    Compute Word Mover's Distance between two documents.
+
+    Based on Kusner et al. ICML 2015 - optimal transport of word embeddings.
+    Can use full WMD (more accurate) or relaxed WMD (faster, lower bound).
+
+    Returns:
+        WMD or RWMD distance and similarity score
+    """
+    try:
+        import numpy as np
+        from agentic.optimal_transport import WordMoverSolver, OTConfig
+
+        config = OTConfig(epsilon=0.1, max_iter=100)
+        solver = WordMoverSolver(config)
+
+        doc1_arr = np.array(doc1_embeddings)
+        doc2_arr = np.array(doc2_embeddings)
+
+        weights1 = np.array(doc1_weights) if doc1_weights else None
+        weights2 = np.array(doc2_weights) if doc2_weights else None
+
+        if use_relaxed:
+            distance = solver.relaxed_word_movers_distance(doc1_arr, doc2_arr, weights1, weights2)
+            method = "relaxed_wmd"
+        else:
+            distance = solver.word_movers_distance(doc1_arr, doc2_arr, weights1, weights2)
+            method = "wmd"
+
+        # Convert distance to similarity (1 / (1 + distance))
+        similarity = 1.0 / (1.0 + distance)
+
+        return {
+            "success": True,
+            "data": {
+                "distance": float(distance),
+                "similarity": float(similarity),
+                "method": method,
+                "doc1_words": doc1_arr.shape[0],
+                "doc2_words": doc2_arr.shape[0],
+                "interpretation": (
+                    "very_similar" if similarity > 0.8 else
+                    "similar" if similarity > 0.6 else
+                    "moderate" if similarity > 0.4 else
+                    "different"
+                )
+            },
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Word Mover's Distance failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ot/document-similarity-matrix")
+async def compute_document_similarity_matrix(
+    documents: List[List[List[float]]] = Body(..., description="List of documents, each as word embeddings"),
+    use_relaxed: bool = Body(True, description="Use fast RWMD (default True for large corpora)")
+):
+    """
+    Compute pairwise document similarity matrix using Word Mover's Distance.
+
+    Returns:
+        n x n similarity matrix where entry (i,j) is similarity between doc i and doc j
+    """
+    try:
+        import numpy as np
+        from agentic.optimal_transport import WordMoverSolver, OTConfig
+
+        config = OTConfig(epsilon=0.1, max_iter=100)
+        solver = WordMoverSolver(config)
+
+        # Convert to numpy arrays
+        doc_arrays = [np.array(doc) for doc in documents]
+
+        sim_matrix = solver.document_similarity_matrix(doc_arrays, use_relaxed=use_relaxed)
+
+        return {
+            "success": True,
+            "data": {
+                "similarity_matrix": sim_matrix.tolist(),
+                "n_documents": len(documents),
+                "method": "relaxed_wmd" if use_relaxed else "wmd",
+                "avg_similarity": float(np.mean(sim_matrix)),
+                "min_similarity": float(np.min(sim_matrix)),
+                "max_similarity": float(np.max(sim_matrix))
+            },
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Document similarity matrix failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

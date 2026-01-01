@@ -247,6 +247,7 @@ class SearchEvent:
     results_count: Optional[int] = None
     sources_count: Optional[int] = None
     confidence: Optional[float] = None  # Confidence score (0.0-1.0) for search_completed
+    engines: Optional[list] = None  # Search engines used (e.g., ["SearXNG", "DuckDuckGo", "Brave"])
 
     # Model-specific data
     model_name: Optional[str] = None
@@ -294,6 +295,8 @@ class SearchEvent:
             event_data["sources_count"] = self.sources_count
         if self.confidence is not None:
             event_data["confidence"] = self.confidence
+        if self.engines:
+            event_data["engines"] = self.engines
         if self.model_name:
             event_data["model"] = self.model_name
         if self.url:
@@ -517,16 +520,35 @@ def search_planned(request_id: str, queries: list, phases: int) -> SearchEvent:
     )
 
 
-def searching(request_id: str, queries: list, iteration: int, max_iterations: int) -> SearchEvent:
+def searching(
+    request_id: str,
+    queries: list,
+    iteration: int,
+    max_iterations: int,
+    engines: Optional[list] = None
+) -> SearchEvent:
+    """
+    Create a searching event.
+
+    Args:
+        request_id: Request identifier
+        queries: List of search queries
+        iteration: Current iteration
+        max_iterations: Maximum iterations
+        engines: List of search engines being used (e.g., ["SearXNG", "DuckDuckGo", "Brave"])
+    """
     progress = 20 + int((iteration / max_iterations) * 40)  # 20-60%
+    # Format message with engine info if provided
+    engine_str = f" via {', '.join(engines)}" if engines else ""
     return SearchEvent(
         event_type=EventType.SEARCHING,
         request_id=request_id,
-        message=f"Searching: {', '.join(queries[:2])}{'...' if len(queries) > 2 else ''}",
+        message=f"Searching{engine_str}: {', '.join(queries[:2])}{'...' if len(queries) > 2 else ''}",
         queries=queries,
         iteration=iteration,
         max_iterations=max_iterations,
-        progress_percent=progress
+        progress_percent=progress,
+        engines=engines
     )
 
 

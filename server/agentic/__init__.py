@@ -943,6 +943,54 @@ except ImportError as e:
     import logging
     logging.getLogger(__name__).warning(f"Contrastive Retriever not available: {e}")
 
+# G.7.2: Hyperbolic Embeddings for Hierarchical Documents (December 2025)
+# Based on HyperbolicRAG (arXiv:2511.18808) - +5.6% Recall@5 improvement
+from .hyperbolic_embeddings import (
+    PoincareBall,
+    HyperbolicRetriever,
+    HyperbolicDocument,
+    HyperbolicSearchResult,
+    HierarchyLevel,
+    detect_hierarchy_level,
+    get_hyperbolic_retriever,
+)
+
+# G.7.3: Optimal Transport for Dense-Sparse Fusion (December 2025)
+# Based on Wasserstein distance and Sinkhorn algorithm for superior alignment
+# Extended with Sliced-Wasserstein (O(n log n)) and Word Mover's Distance
+from .optimal_transport import (
+    SinkhornSolver,
+    GromovWassersteinSolver,
+    SlicedWassersteinSolver,
+    WordMoverSolver,
+    OptimalTransportFusion,
+    OTConfig,
+    OTMethod,
+    CostMetric,
+    OTResult,
+    TransportPlan,
+    get_ot_fusion,
+    ot_fuse_scores,
+    ot_fuse_multiway,
+)
+
+# G.7.4: TSDAE Domain Adaptation (unsupervised, no fine-tuning)
+from .tsdae_adapter import (
+    TSDaeAdapter,
+    MultiDomainAdapter,
+    DomainConfig,
+    AdaptationResult,
+    AdaptationStatus,
+    DomainEmbeddingResult,
+    NoiseType,
+    PoolingMode,
+    FANUC_DOMAIN_CONFIG,
+    SIEMENS_DOMAIN_CONFIG,
+    ROCKWELL_DOMAIN_CONFIG,
+    get_tsdae_adapter,
+    get_multi_domain_adapter,
+)
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -1628,6 +1676,46 @@ __all__ = [
     "RetrievalInsight",
     "get_contrastive_retriever",
     "CONTRASTIVE_RETRIEVER_AVAILABLE",
+
+    # G.7.2: Hyperbolic Embeddings for Hierarchical Documents
+    "PoincareBall",
+    "HyperbolicRetriever",
+    "HyperbolicDocument",
+    "HyperbolicSearchResult",
+    "HierarchyLevel",
+    "detect_hierarchy_level",
+    "get_hyperbolic_retriever",
+
+    # G.7.3: Optimal Transport for Dense-Sparse Fusion
+    # Extended with Sliced-Wasserstein (O(n log n)) and Word Mover's Distance
+    "SinkhornSolver",
+    "GromovWassersteinSolver",
+    "SlicedWassersteinSolver",
+    "WordMoverSolver",
+    "OptimalTransportFusion",
+    "OTConfig",
+    "OTMethod",
+    "CostMetric",
+    "OTResult",
+    "TransportPlan",
+    "get_ot_fusion",
+    "ot_fuse_scores",
+    "ot_fuse_multiway",
+
+    # G.7.4: TSDAE Domain Adaptation
+    "TSDaeAdapter",
+    "MultiDomainAdapter",
+    "DomainConfig",
+    "AdaptationResult",
+    "AdaptationStatus",
+    "DomainEmbeddingResult",
+    "NoiseType",
+    "PoolingMode",
+    "FANUC_DOMAIN_CONFIG",
+    "SIEMENS_DOMAIN_CONFIG",
+    "ROCKWELL_DOMAIN_CONFIG",
+    "get_tsdae_adapter",
+    "get_multi_domain_adapter",
 ]
 
-__version__ = "0.71.0"  # G.6 streaming integration: DyLAN, IB filtering, Contrastive in search_with_events()
+__version__ = "0.75.0"  # G.7.4 TSDAE Domain Adaptation for unsupervised embedding adaptation

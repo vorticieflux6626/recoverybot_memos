@@ -122,14 +122,51 @@ class BaseSearchPipeline(ABC):
         message: str = "",
         graph_line: str = None
     ):
-        """Emit an event if emitter is set."""
+        """
+        Emit an event if emitter is set.
+
+        Extracts specific fields from data dict to pass as SearchEvent attributes:
+        - url, url_index, url_total: For scraping progress display
+        - progress: For progress percentage
+        - query: For query display
+        - results_count, sources_count: For counts
+        - confidence: For confidence score
+        """
         if self.event_emitter:
+            # Extract specific fields from data dict to pass as direct attributes
+            # This ensures they're properly serialized in to_sse()
+            # Use .get() to avoid mutating the original dict
+            url = data.get("url")
+            url_index = data.get("url_index")
+            url_total = data.get("url_total")
+            progress = data.get("progress") or data.get("progress_percent")
+            query = data.get("query")
+            results_count = data.get("results_count")
+            sources_count = data.get("sources_count")
+            confidence = data.get("confidence")
+            engines = data.get("engines")  # Search engines list
+
+            # Create filtered data dict without extracted fields
+            extracted_keys = {"url", "url_index", "url_total", "progress", "progress_percent",
+                              "query", "results_count", "sources_count", "confidence", "engines"}
+            remaining_data = {k: v for k, v in data.items() if k not in extracted_keys}
+
             await self.event_emitter.emit(SearchEvent(
                 event_type=event_type,
                 request_id=request_id or str(uuid.uuid4())[:8],
-                data=data,
+                data=remaining_data if remaining_data else None,  # Only include if non-empty
                 message=message,
-                graph_line=graph_line
+                graph_line=graph_line,
+                # Extracted fields as direct attributes
+                url=url,
+                url_index=url_index,
+                url_total=url_total,
+                progress_percent=progress,
+                query=query,
+                results_count=results_count,
+                sources_count=sources_count,
+                confidence=confidence,
+                engines=engines
             ))
 
     def get_cache_key(self, request: SearchRequest) -> str:

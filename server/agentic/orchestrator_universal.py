@@ -4022,12 +4022,30 @@ class UniversalOrchestrator(BaseSearchPipeline):
         self._graph_state.complete("P")
         self._graph_state.enter("S")
 
-        # Emit searching event with queries
+        # Pre-check which search engines are available
+        engines_list = []
+        if await self.searcher.searxng.check_availability():
+            engines_list.append("SearXNG")
+        else:
+            # Fallback engines - check what would be used
+            if self.searcher.duckduckgo:
+                engines_list.append("DuckDuckGo")
+            if self.searcher.brave and self.searcher.brave.available:
+                engines_list.append("Brave")
+            if not engines_list:
+                engines_list.append("DuckDuckGo")  # Default fallback
+
+        # Emit searching event with queries and engines
         await self.emit_event(
             EventType.SEARCHING,
-            {"queries": queries, "iteration": 1, "max_iterations": request.max_iterations},
+            {
+                "queries": queries,
+                "iteration": 1,
+                "max_iterations": request.max_iterations,
+                "engines": engines_list
+            },
             request_id,
-            message=f"Searching {len(queries)} queries...",
+            message=f"Searching via {', '.join(engines_list)}...",
             graph_line=self._graph_state.to_line()
         )
 
