@@ -1,0 +1,16 @@
+{
+  "timestamp": "2025-12-31 22:27:26",
+  "ollama": {
+    "provider": "ollama",
+    "model": "qwen3:8b",
+    "num_requests": 10,
+    "avg_ttft_ms": 31719.4314151071,
+    "p50_ttft_ms": 25770.949789031874,
+    "p95_ttft_ms": 88693.99061298463,
+    "avg_tokens_per_second": 24.163784588084983,
+    "p50_tokens_per_second": 30.638448260346628,
+    "total_tokens": 7386,
+    "success_rate": 1.0
+  },
+  "sglang": null
+}

@@ -1,0 +1,1947 @@
+{
+  "evalId": "eval-9r3-2026-01-01T03:04:45",
+  "results": {
+    "version": 3,
+    "timestamp": "2026-01-01T03:04:45.385Z",
+    "prompts": [
+      {
+        "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n",
+        "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n",
+        "id": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "provider": "memOS-synthesis",
+        "metrics": {
+          "score": 14.333333333333332,
+          "testPassCount": 14,
+          "testFailCount": 1,
+          "testErrorCount": 0,
+          "assertPassCount": 24,
+          "assertFailCount": 2,
+          "totalLatencyMs": 355969,
+          "tokenUsage": {
+            "prompt": 957,
+            "completion": 14373,
+            "cached": 0,
+            "total": 15330,
+            "numRequests": 15,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0
+            },
+            "assertions": {
+              "total": 5907,
+              "prompt": 4043,
+              "completion": 1864,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0
+              }
+            }
+          },
+          "namedScores": {},
+          "namedScoresCount": {},
+          "cost": 0
+        }
+      }
+    ],
+    "results": [
+      {
+        "cost": 0,
+        "error": "The response does not mention encoder battery issues or calibration procedures, focusing instead on brake solenoid, wiring, and power supply issues.",
+        "gradingResult": {
+          "pass": false,
+          "score": 0.3333333333333333,
+          "reason": "The response does not mention encoder battery issues or calibration procedures, focusing instead on brake solenoid, wiring, and power supply issues.",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 937,
+            "prompt": 656,
+            "completion": 281,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains",
+                "value": "SRVO-063"
+              }
+            },
+            {
+              "pass": false,
+              "score": 0,
+              "reason": "Expected output to contain one of \"encoder, pulsecoder, calibration, mastering\"",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "encoder",
+                  "pulsecoder",
+                  "calibration",
+                  "mastering"
+                ]
+              }
+            },
+            {
+              "assertion": {
+                "type": "llm-rubric",
+                "value": "The response should explain encoder battery issues and calibration procedures"
+              },
+              "pass": false,
+              "score": 0,
+              "reason": "The response does not mention encoder battery issues or calibration procedures, focusing instead on brake solenoid, wiring, and power supply issues.",
+              "tokensUsed": {
+                "total": 937,
+                "prompt": 656,
+                "completion": 281,
+                "cached": 0,
+                "numRequests": 0,
+                "completionDetails": {
+                  "reasoning": 0,
+                  "acceptedPrediction": 0,
+                  "rejectedPrediction": 0
+                }
+              },
+              "metadata": {
+                "renderedGradingPrompt": "[{\"role\":\"system\",\"content\":\"You are grading output according to a user-specified rubric. If the statement in the rubric is true, then the output passes the test. You respond with a JSON object with this structure: {reason: string, pass: boolean, score: number}\\n\\nExamples:\\n\\n<Output>Hello world</Output>\\n<Rubric>Content contains a greeting</Rubric>\\n{\\\"reason\\\": \\\"the content contains the word 'Hello'\\\", \\\"pass\\\": true, \\\"score\\\": 1.0}\\n\\n<Output>Avast ye swabs, repel the invaders!</Output>\\n<Rubric>Does not speak like a pirate</Rubric>\\n{\\\"reason\\\": \\\"'avast ye' is a common pirate term\\\", \\\"pass\\\": false, \\\"score\\\": 0.0}\"},{\"role\":\"user\",\"content\":\"<Output>\\nThe **SRVO-063 BZAL** alarm on FANUC robots indicates a **brake release failure** (SRVO-063) with a **brake release circuit fault** (BZAL). This typically occurs when the brake solenoid fails to energize or the brake circuit is interrupted, preventing the robot from releasing its mechanical brake.  \\n\\n### **Causes**:  \\n1. **Faulty brake solenoid** (e.g., SRVO-063-01).  \\n2. **Open/shorted wiring** in the brake circuit (e.g., SRVO-063-02).  \\n3. **Brake mechanism jammed** or mechanical damage.  \\n4. **Power supply issues** to the brake solenoid.  \\n5. **Encoder or position feedback errors** affecting brake release.  \\n\\n### **Fix**:  \\n1. **Check brake solenoid**: Use the **FANUC diagnostics** (e.g., `BRK` command) to test solenoid functionality. Replace if faulty.  \\n2. **Inspect wiring**: Verify continuity and connections in the brake circuit (e.g., terminals 10/11 on the motor cable). Look for damage or corrosion.  \\n3. **Mechanical inspection**: Ensure the brake mechanism is unlatched and free of obstructions.  \\n4. **Power supply test**: Confirm the solenoid receives 24V DC (check voltage at the solenoid terminals).  \\n5. **Reset alarm**: Use the **`SRVO-063` reset procedure** in the FANUC controller. If unresolved, consult the **FANUC manual** (e.g., *FANUC R-30iA/30iB/30iC Series Manual*).  \\n\\n**Note**: Always isolate the robot before troubleshooting to avoid injury. If the issue persists, contact FANUC support for advanced diagnostics.\\n</Output>\\n<Rubric>\\nThe response should explain encoder battery issues and calibration procedures\\n</Rubric>\"}]"
+              }
+            }
+          ]
+        },
+        "id": "02a23a44-e941-40cc-be62-cd30e9a3e8e4",
+        "latencyMs": 19414,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: What causes SRVO-063 BZAL alarm on FANUC robots and how do I fix it?\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "The **SRVO-063 BZAL** alarm on FANUC robots indicates a **brake release failure** (SRVO-063) with a **brake release circuit fault** (BZAL). This typically occurs when the brake solenoid fails to energize or the brake circuit is interrupted, preventing the robot from releasing its mechanical brake.  \n\n### **Causes**:  \n1. **Faulty brake solenoid** (e.g., SRVO-063-01).  \n2. **Open/shorted wiring** in the brake circuit (e.g., SRVO-063-02).  \n3. **Brake mechanism jammed** or mechanical damage.  \n4. **Power supply issues** to the brake solenoid.  \n5. **Encoder or position feedback errors** affecting brake release.  \n\n### **Fix**:  \n1. **Check brake solenoid**: Use the **FANUC diagnostics** (e.g., `BRK` command) to test solenoid functionality. Replace if faulty.  \n2. **Inspect wiring**: Verify continuity and connections in the brake circuit (e.g., terminals 10/11 on the motor cable). Look for damage or corrosion.  \n3. **Mechanical inspection**: Ensure the brake mechanism is unlatched and free of obstructions.  \n4. **Power supply test**: Confirm the solenoid receives 24V DC (check voltage at the solenoid terminals).  \n5. **Reset alarm**: Use the **`SRVO-063` reset procedure** in the FANUC controller. If unresolved, consult the **FANUC manual** (e.g., *FANUC R-30iA/30iB/30iC Series Manual*).  \n\n**Note**: Always isolate the robot before troubleshooting to avoid injury. If the issue persists, contact FANUC support for advanced diagnostics.",
+          "tokenUsage": {
+            "prompt": 74,
+            "completion": 1104,
+            "total": 1178
+          }
+        },
+        "score": 0.3333333333333333,
+        "success": false,
+        "testCase": {
+          "vars": {
+            "query": "What causes SRVO-063 BZAL alarm on FANUC robots and how do I fix it?"
+          },
+          "assert": [
+            {
+              "type": "contains",
+              "value": "SRVO-063"
+            },
+            {
+              "type": "contains-any",
+              "value": [
+                "encoder",
+                "pulsecoder",
+                "calibration",
+                "mastering"
+              ]
+            },
+            {
+              "type": "llm-rubric",
+              "value": "The response should explain encoder battery issues and calibration procedures"
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 0,
+        "vars": {
+          "query": "What causes SRVO-063 BZAL alarm on FANUC robots and how do I fix it?"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 1
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 1005,
+            "prompt": 698,
+            "completion": 307,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains",
+                "value": "MOTN-023"
+              }
+            },
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "motion",
+                  "position",
+                  "acceleration"
+                ]
+              }
+            },
+            {
+              "assertion": {
+                "type": "llm-rubric",
+                "value": "The response should explain motion control issues"
+              },
+              "pass": true,
+              "score": 1,
+              "reason": "The response thoroughly explains motion control issues by detailing the MOTN-023 error, its causes (e.g., TCP parameters, coordinate system misalignment), and resolution steps related to motion control systems.",
+              "tokensUsed": {
+                "total": 1005,
+                "prompt": 698,
+                "completion": 307,
+                "cached": 0,
+                "numRequests": 0,
+                "completionDetails": {
+                  "reasoning": 0,
+                  "acceptedPrediction": 0,
+                  "rejectedPrediction": 0
+                }
+              },
+              "metadata": {
+                "renderedGradingPrompt": "[{\"role\":\"system\",\"content\":\"You are grading output according to a user-specified rubric. If the statement in the rubric is true, then the output passes the test. You respond with a JSON object with this structure: {reason: string, pass: boolean, score: number}\\n\\nExamples:\\n\\n<Output>Hello world</Output>\\n<Rubric>Content contains a greeting</Rubric>\\n{\\\"reason\\\": \\\"the content contains the word 'Hello'\\\", \\\"pass\\\": true, \\\"score\\\": 1.0}\\n\\n<Output>Avast ye swabs, repel the invaders!</Output>\\n<Rubric>Does not speak like a pirate</Rubric>\\n{\\\"reason\\\": \\\"'avast ye' is a common pirate term\\\", \\\"pass\\\": false, \\\"score\\\": 0.0}\"},{\"role\":\"user\",\"content\":\"<Output>\\n**MOTN-023 Error Code Explanation:**  \\nThe **MOTN-023** error on FANUC robots indicates an **invalid or improperly defined Tool Coordinate System (TCO)**, typically due to incorrect **TCP (Tool Center Point)** parameters, **tool data**, or **coordinate system misalignment**. This error often occurs when the robot's motion control system detects inconsistencies in the tool's spatial definition, preventing accurate motion execution.  \\n\\n**Resolution Steps:**  \\n1. **Verify Tool Data:**  \\n   - Use the **Teach Pendant** (e.g., `TEACH` mode) to check the **Tool Coordinate System** parameters (TCP coordinates, orientation, and tool offsets).  \\n   - Ensure the TCP is correctly set using the **Tool Data Setup** function (e.g., `TOOL DATA` > `SETUP`).  \\n\\n2. **Recalibrate the Tool:**  \\n   - Perform a **TCP recalibration** using the robot's built-in calibration tools (e.g., `CALIBRATION` > `TOOL`).  \\n   - Ensure the tool is physically aligned with the robot's flange and the TCP is accurately defined.  \\n\\n3. **Check Coordinate System Configuration:**  \\n   - Confirm the **Tool Coordinate System** is active and correctly assigned in the **Robot Settings** (`ROBOT` > `COORDINATE SYSTEM`).  \\n   - Avoid conflicts with other coordinate systems (e.g., WORLD or USER).  \\n\\n4. **Reset the Error:**  \\n   - After correcting the tool data, **power cycle the robot** or use the **`RESET`** function in the **System Menu** to clear the error.  \\n\\n5. **Test Motion:**  \\n   - Execute a simple motion program to validate the tool's functionality. If the error persists, inspect **servo drives**, **axis encoders**, or **system firmware** for underlying hardware issues.  \\n\\n**Technical Note:** MOTN-023 is often linked to **motion control errors (MOTN)** related to tool geometry. Always cross-reference with the **FANUC ROBOT PROGRAMMING and OPERATION Manual** for model-specific details.\\n</Output>\\n<Rubric>\\nThe response should explain motion control issues\\n</Rubric>\"}]"
+              }
+            }
+          ]
+        },
+        "id": "6bbc21e8-d1ab-4f4b-b855-569b192a1aeb",
+        "latencyMs": 34439,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: Explain MOTN-023 error code meaning and resolution steps\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "**MOTN-023 Error Code Explanation:**  \nThe **MOTN-023** error on FANUC robots indicates an **invalid or improperly defined Tool Coordinate System (TCO)**, typically due to incorrect **TCP (Tool Center Point)** parameters, **tool data**, or **coordinate system misalignment**. This error often occurs when the robot's motion control system detects inconsistencies in the tool's spatial definition, preventing accurate motion execution.  \n\n**Resolution Steps:**  \n1. **Verify Tool Data:**  \n   - Use the **Teach Pendant** (e.g., `TEACH` mode) to check the **Tool Coordinate System** parameters (TCP coordinates, orientation, and tool offsets).  \n   - Ensure the TCP is correctly set using the **Tool Data Setup** function (e.g., `TOOL DATA` > `SETUP`).  \n\n2. **Recalibrate the Tool:**  \n   - Perform a **TCP recalibration** using the robot's built-in calibration tools (e.g., `CALIBRATION` > `TOOL`).  \n   - Ensure the tool is physically aligned with the robot's flange and the TCP is accurately defined.  \n\n3. **Check Coordinate System Configuration:**  \n   - Confirm the **Tool Coordinate System** is active and correctly assigned in the **Robot Settings** (`ROBOT` > `COORDINATE SYSTEM`).  \n   - Avoid conflicts with other coordinate systems (e.g., WORLD or USER).  \n\n4. **Reset the Error:**  \n   - After correcting the tool data, **power cycle the robot** or use the **`RESET`** function in the **System Menu** to clear the error.  \n\n5. **Test Motion:**  \n   - Execute a simple motion program to validate the tool's functionality. If the error persists, inspect **servo drives**, **axis encoders**, or **system firmware** for underlying hardware issues.  \n\n**Technical Note:** MOTN-023 is often linked to **motion control errors (MOTN)** related to tool geometry. Always cross-reference with the **FANUC ROBOT PROGRAMMING and OPERATION Manual** for model-specific details.",
+          "tokenUsage": {
+            "prompt": 64,
+            "completion": 1086,
+            "total": 1150
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "Explain MOTN-023 error code meaning and resolution steps"
+          },
+          "assert": [
+            {
+              "type": "contains",
+              "value": "MOTN-023"
+            },
+            {
+              "type": "contains-any",
+              "value": [
+                "motion",
+                "position",
+                "acceleration"
+              ]
+            },
+            {
+              "type": "llm-rubric",
+              "value": "The response should explain motion control issues"
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 1,
+        "vars": {
+          "query": "Explain MOTN-023 error code meaning and resolution steps"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains",
+                "value": "HOST-001"
+              }
+            },
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "communication",
+                  "network",
+                  "ethernet",
+                  "timeout"
+                ]
+              }
+            }
+          ]
+        },
+        "id": "cabbce29-5d9c-4801-8d15-d0036ae7ed8f",
+        "latencyMs": 13633,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: What does HOST-001 alarm indicate on FANUC controllers?\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "The **HOST-001** alarm on FANUC controllers indicates a **communication failure between the robot controller and the host computer** (e.g., a PC running Robot Controller Software (RCS) or a PLC).  \n\n### **Common Causes**:  \n1. **Network issues** (e.g., disconnected Ethernet cables, incorrect IP configuration).  \n2. **Host software not running** (e.g., RCS or HMI application).  \n3. **Communication module (COM) failure** on the robot controller.  \n4. **Firewall/antivirus blocking communication ports**.  \n\n### **Resolution Steps**:  \n1. **Verify network connectivity**:  \n   - Check physical Ethernet connections.  \n   - Confirm IP addresses and subnet masks match between the robot controller and host (e.g., using `ipconfig` on Windows or `ifconfig` on Linux).  \n   - Ensure the **COM light** on the robot controller is solid green (active).  \n2. **Restart the host software** (RCS/HMI) or the robot controller.  \n3. **Check firewall/antivirus settings** to ensure ports (e.g., 50000 for RCS) are allowed.  \n4. **Replace the communication module** if COM light is off or blinking abnormally.  \n\n### **Technical Note**:  \n- HOST-001 is often accompanied by **HOST-002** (host not responding) or **HOST-003** (communication error).  \n- Use **FANUC's Network Configuration Tool** to validate IP settings and communication status.  \n\nAlways refer to the **FANUC manual** for specific model details (e.g., R-30iB, R-30iA).",
+          "tokenUsage": {
+            "prompt": 65,
+            "completion": 673,
+            "total": 738
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "What does HOST-001 alarm indicate on FANUC controllers?"
+          },
+          "assert": [
+            {
+              "type": "contains",
+              "value": "HOST-001"
+            },
+            {
+              "type": "contains-any",
+              "value": [
+                "communication",
+                "network",
+                "ethernet",
+                "timeout"
+              ]
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 2,
+        "vars": {
+          "query": "What does HOST-001 alarm indicate on FANUC controllers?"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 1035,
+            "prompt": 659,
+            "completion": 376,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "servo",
+                  "motor",
+                  "encoder",
+                  "gain",
+                  "tuning"
+                ]
+              }
+            },
+            {
+              "assertion": {
+                "type": "llm-rubric",
+                "value": "The response should mention mechanical or servo tuning causes"
+              },
+              "pass": true,
+              "score": 1,
+              "reason": "The response addresses both mechanical causes (e.g., motor/gearbox issues, misalignment, load imbalance) and servo tuning causes (e.g., servo feedback issues, encoder calibration, motion parameters).",
+              "tokensUsed": {
+                "total": 1035,
+                "prompt": 659,
+                "completion": 376,
+                "cached": 0,
+                "numRequests": 0,
+                "completionDetails": {
+                  "reasoning": 0,
+                  "acceptedPrediction": 0,
+                  "rejectedPrediction": 0
+                }
+              },
+              "metadata": {
+                "renderedGradingPrompt": "[{\"role\":\"system\",\"content\":\"You are grading output according to a user-specified rubric. If the statement in the rubric is true, then the output passes the test. You respond with a JSON object with this structure: {reason: string, pass: boolean, score: number}\\n\\nExamples:\\n\\n<Output>Hello world</Output>\\n<Rubric>Content contains a greeting</Rubric>\\n{\\\"reason\\\": \\\"the content contains the word 'Hello'\\\", \\\"pass\\\": true, \\\"score\\\": 1.0}\\n\\n<Output>Avast ye swabs, repel the invaders!</Output>\\n<Rubric>Does not speak like a pirate</Rubric>\\n{\\\"reason\\\": \\\"'avast ye' is a common pirate term\\\", \\\"pass\\\": false, \\\"score\\\": 0.0}\"},{\"role\":\"user\",\"content\":\"<Output>\\n**Answer:**  \\nExcessive vibration in a FANUC robot arm may indicate:  \\n\\n1. **Motor/Gearbox Issues**:  \\n   - **Error Code SRVO-008 (Servo Amplifier Error)** or **SRVO-011 (Motor Torque Error)**.  \\n   - Faulty motor bearings, worn gears, or insufficient torque.  \\n   - **Procedure**: Inspect motor and gearbox for wear, check torque settings via the **FANUC ROBOT Controller** (e.g., using the **Torque Check** function in the **System Settings** menu).  \\n\\n2. **Misalignment**:  \\n   - Misaligned axes or joints.  \\n   - **Procedure**: Verify axis alignment using the **Axis Alignment Tool** or **Manual Data Input (MDI)** mode.  \\n\\n3. **Load Imbalance**:  \\n   - Overloaded or unbalanced tooling.  \\n   - **Procedure**: Confirm load weight and center of gravity are within robot specifications.  \\n\\n4. **Servo Feedback Issues**:  \\n   - **Error Code SRVO-023 (Position Error)** or encoder faults.  \\n   - **Procedure**: Check encoder connections and calibration; use **Servo Parameter Check** (e.g., **SRVO-023** diagnostic).  \\n\\n5. **Motion Profile Aggressiveness**:  \\n   - High jerk or acceleration settings.  \\n   - **Procedure**: Adjust motion parameters (e.g., **Jerk**, **Acceleration**) in the **Motion Settings** menu.  \\n\\n**Action Steps**:  \\n- Check for error codes via the **Robot Status Screen**.  \\n- Perform a **Motor Torque Check** and **Encoder Calibration**.  \\n- Inspect mechanical components for wear or misalignment.  \\n- Update firmware if applicable.  \\n\\nIf unresolved, consult FANUC technical support with specific error codes and diagnostic data.\\n</Output>\\n<Rubric>\\nThe response should mention mechanical or servo tuning causes\\n</Rubric>\"}]"
+              }
+            }
+          ]
+        },
+        "id": "a17fffb9-5f66-4cb0-a3c9-c188ec09f16c",
+        "latencyMs": 22360,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: Robot arm is vibrating excessively during motion, what could be wrong?\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "**Answer:**  \nExcessive vibration in a FANUC robot arm may indicate:  \n\n1. **Motor/Gearbox Issues**:  \n   - **Error Code SRVO-008 (Servo Amplifier Error)** or **SRVO-011 (Motor Torque Error)**.  \n   - Faulty motor bearings, worn gears, or insufficient torque.  \n   - **Procedure**: Inspect motor and gearbox for wear, check torque settings via the **FANUC ROBOT Controller** (e.g., using the **Torque Check** function in the **System Settings** menu).  \n\n2. **Misalignment**:  \n   - Misaligned axes or joints.  \n   - **Procedure**: Verify axis alignment using the **Axis Alignment Tool** or **Manual Data Input (MDI)** mode.  \n\n3. **Load Imbalance**:  \n   - Overloaded or unbalanced tooling.  \n   - **Procedure**: Confirm load weight and center of gravity are within robot specifications.  \n\n4. **Servo Feedback Issues**:  \n   - **Error Code SRVO-023 (Position Error)** or encoder faults.  \n   - **Procedure**: Check encoder connections and calibration; use **Servo Parameter Check** (e.g., **SRVO-023** diagnostic).  \n\n5. **Motion Profile Aggressiveness**:  \n   - High jerk or acceleration settings.  \n   - **Procedure**: Adjust motion parameters (e.g., **Jerk**, **Acceleration**) in the **Motion Settings** menu.  \n\n**Action Steps**:  \n- Check for error codes via the **Robot Status Screen**.  \n- Perform a **Motor Torque Check** and **Encoder Calibration**.  \n- Inspect mechanical components for wear or misalignment.  \n- Update firmware if applicable.  \n\nIf unresolved, consult FANUC technical support with specific error codes and diagnostic data.",
+          "tokenUsage": {
+            "prompt": 63,
+            "completion": 957,
+            "total": 1020
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "Robot arm is vibrating excessively during motion, what could be wrong?"
+          },
+          "assert": [
+            {
+              "type": "contains-any",
+              "value": [
+                "servo",
+                "motor",
+                "encoder",
+                "gain",
+                "tuning"
+              ]
+            },
+            {
+              "type": "llm-rubric",
+              "value": "The response should mention mechanical or servo tuning causes"
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 3,
+        "vars": {
+          "query": "Robot arm is vibrating excessively during motion, what could be wrong?"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 1099,
+            "prompt": 730,
+            "completion": 369,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "overcurrent",
+                  "motor",
+                  "amplifier",
+                  "load"
+                ]
+              }
+            },
+            {
+              "assertion": {
+                "type": "llm-rubric",
+                "value": "The response should provide diagnostic steps for overcurrent issues"
+              },
+              "pass": true,
+              "score": 1,
+              "reason": "The response provides detailed diagnostic steps for SRVO-003 (Motor Overcurrent) and SRVO-004 (Motor Overvoltage) alarms, including cable checks, mechanical load verification, encoder testing, amplifier settings, power supply analysis, and replacement recommendations.",
+              "tokensUsed": {
+                "total": 1099,
+                "prompt": 730,
+                "completion": 369,
+                "cached": 0,
+                "numRequests": 0,
+                "completionDetails": {
+                  "reasoning": 0,
+                  "acceptedPrediction": 0,
+                  "rejectedPrediction": 0
+                }
+              },
+              "metadata": {
+                "renderedGradingPrompt": "[{\"role\":\"system\",\"content\":\"You are grading output according to a user-specified rubric. If the statement in the rubric is true, then the output passes the test. You respond with a JSON object with this structure: {reason: string, pass: boolean, score: number}\\n\\nExamples:\\n\\n<Output>Hello world</Output>\\n<Rubric>Content contains a greeting</Rubric>\\n{\\\"reason\\\": \\\"the content contains the word 'Hello'\\\", \\\"pass\\\": true, \\\"score\\\": 1.0}\\n\\n<Output>Avast ye swabs, repel the invaders!</Output>\\n<Rubric>Does not speak like a pirate</Rubric>\\n{\\\"reason\\\": \\\"'avast ye' is a common pirate term\\\", \\\"pass\\\": false, \\\"score\\\": 0.0}\"},{\"role\":\"user\",\"content\":\"<Output>\\n**Answer:**  \\nIntermittent **SRVO-003** (Motor Overcurrent) or **SRVO-004** (Motor Overvoltage) alarms on FANUC robots typically stem from electrical, mechanical, or control system issues.  \\n\\n### **Troubleshooting Steps:**  \\n1. **Check Motor Cables:**  \\n   - Inspect for damage, loose connections, or insulation breakdown. Use a **continuity test** and **voltage drop test** (per FANUC manual, section 6.3).  \\n   - Replace faulty cables or connectors.  \\n\\n2. **Mechanical Load/Obstruction:**  \\n   - Verify for **binding joints, gear backlash, or excessive friction** in the robot’s axes. Use **manual joint movement** to test for resistance.  \\n\\n3. **Encoder Feedback Issues:**  \\n   - Test **encoder signal integrity** (e.g., **SRVO-011** or **SRVO-012** alarms may accompany this). Ensure encoder connections are secure and clean.  \\n\\n4. **Amplifier/Drive Settings:**  \\n   - Check **parameters 1345 (motor current limit)** and **1346 (torque limit)**. Adjust if necessary.  \\n   - Verify **amplifier cooling** (overheating may cause intermittent faults).  \\n\\n5. **Power Supply Stability:**  \\n   - Measure **input voltage** to the amplifier (per FANUC’s **SRVO-010** diagnostics). Fluctuations can trigger overcurrent.  \\n\\n6. **Motor/Drive Replacement:**  \\n   - If intermittent, replace the **servo motor** or **drive unit** (common in cases of **internal short circuits** or **faulty power modules**).  \\n\\n### **Diagnostic Tools:**  \\n- Use **FANUC’s SRVO-003 alarm screen** to analyze current waveform anomalies.  \\n- Perform **motor insulation resistance tests** (per IEC 60243-1).  \\n\\n**Note:** If unresolved, consult **FANUC’s technical support** with **alarm logs** and **parameter settings** (e.g., **parameter 1332** for motor type).\\n</Output>\\n<Rubric>\\nThe response should provide diagnostic steps for overcurrent issues\\n</Rubric>\"}]"
+              }
+            }
+          ]
+        },
+        "id": "e2ca3af3-1442-4ecc-825e-149ab0f5eb48",
+        "latencyMs": 27239,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: How do I troubleshoot intermittent SRVO overcurrent alarms?\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "**Answer:**  \nIntermittent **SRVO-003** (Motor Overcurrent) or **SRVO-004** (Motor Overvoltage) alarms on FANUC robots typically stem from electrical, mechanical, or control system issues.  \n\n### **Troubleshooting Steps:**  \n1. **Check Motor Cables:**  \n   - Inspect for damage, loose connections, or insulation breakdown. Use a **continuity test** and **voltage drop test** (per FANUC manual, section 6.3).  \n   - Replace faulty cables or connectors.  \n\n2. **Mechanical Load/Obstruction:**  \n   - Verify for **binding joints, gear backlash, or excessive friction** in the robot’s axes. Use **manual joint movement** to test for resistance.  \n\n3. **Encoder Feedback Issues:**  \n   - Test **encoder signal integrity** (e.g., **SRVO-011** or **SRVO-012** alarms may accompany this). Ensure encoder connections are secure and clean.  \n\n4. **Amplifier/Drive Settings:**  \n   - Check **parameters 1345 (motor current limit)** and **1346 (torque limit)**. Adjust if necessary.  \n   - Verify **amplifier cooling** (overheating may cause intermittent faults).  \n\n5. **Power Supply Stability:**  \n   - Measure **input voltage** to the amplifier (per FANUC’s **SRVO-010** diagnostics). Fluctuations can trigger overcurrent.  \n\n6. **Motor/Drive Replacement:**  \n   - If intermittent, replace the **servo motor** or **drive unit** (common in cases of **internal short circuits** or **faulty power modules**).  \n\n### **Diagnostic Tools:**  \n- Use **FANUC’s SRVO-003 alarm screen** to analyze current waveform anomalies.  \n- Perform **motor insulation resistance tests** (per IEC 60243-1).  \n\n**Note:** If unresolved, consult **FANUC’s technical support** with **alarm logs** and **parameter settings** (e.g., **parameter 1332** for motor type).",
+          "tokenUsage": {
+            "prompt": 62,
+            "completion": 1016,
+            "total": 1078
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "How do I troubleshoot intermittent SRVO overcurrent alarms?"
+          },
+          "assert": [
+            {
+              "type": "contains-any",
+              "value": [
+                "overcurrent",
+                "motor",
+                "amplifier",
+                "load"
+              ]
+            },
+            {
+              "type": "llm-rubric",
+              "value": "The response should provide diagnostic steps for overcurrent issues"
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 4,
+        "vars": {
+          "query": "How do I troubleshoot intermittent SRVO overcurrent alarms?"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "iRVision",
+                  "camera",
+                  "calibration",
+                  "lighting",
+                  "focus"
+                ]
+              }
+            }
+          ]
+        },
+        "id": "7db7a808-bf09-47ac-b86a-64c8940306e9",
+        "latencyMs": 16030,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: iRVision camera showing drift in calibration, how to fix?\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "To address iRVision camera calibration drift:  \n\n1. **Check Physical Setup**: Ensure the camera and target are securely mounted, free from vibration. Loose mounting or mechanical misalignment can cause drift.  \n2. **Verify Environmental Conditions**: Confirm stable lighting (no glare, shadows) and consistent temperature. Use a calibration target with high contrast.  \n3. **Recalibrate**:  \n   - Use **iRVision Calibration Tool** (e.g., `Calibrate Vision System` in the iRVision menu).  \n   - Reacquire the target using **Auto Target Detection** or manual input.  \n   - Save new calibration data (e.g., `.cal` file).  \n4. **Check for Error Codes**:  \n   - Look for **E011** (calibration data invalid) or **E012** (target not detected).  \n   - Reboot the camera and recheck calibration.  \n5. **Update Firmware/Software**: Ensure iRVision and camera firmware are up to date (e.g., via FANUC’s **FANUC Support** portal).  \n6. **Inspect Hardware**: Clean the camera lens; check for motor/encoder faults (e.g., **E013** for motor issues). Replace faulty components if needed.  \n\n**Key Terminology**: Calibration data, Auto Target Detection, Encoder, Firmware, iRVision Calibration Tool.  \n\nIf drift persists, consult FANUC technical support with error logs and calibration files.",
+          "tokenUsage": {
+            "prompt": 63,
+            "completion": 774,
+            "total": 837
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "iRVision camera showing drift in calibration, how to fix?"
+          },
+          "assert": [
+            {
+              "type": "contains-any",
+              "value": [
+                "iRVision",
+                "camera",
+                "calibration",
+                "lighting",
+                "focus"
+              ]
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 5,
+        "vars": {
+          "query": "iRVision camera showing drift in calibration, how to fix?"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 938,
+            "prompt": 668,
+            "completion": 270,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "mastering",
+                  "encoder",
+                  "RCAL",
+                  "zero",
+                  "position"
+                ]
+              }
+            },
+            {
+              "assertion": {
+                "type": "llm-rubric",
+                "value": "The response should provide ordered steps for the mastering procedure"
+              },
+              "pass": true,
+              "score": 1,
+              "reason": "the response contains a clear, ordered list of steps for the FANUC robot mastering procedure",
+              "tokensUsed": {
+                "total": 938,
+                "prompt": 668,
+                "completion": 270,
+                "cached": 0,
+                "numRequests": 0,
+                "completionDetails": {
+                  "reasoning": 0,
+                  "acceptedPrediction": 0,
+                  "rejectedPrediction": 0
+                }
+              },
+              "metadata": {
+                "renderedGradingPrompt": "[{\"role\":\"system\",\"content\":\"You are grading output according to a user-specified rubric. If the statement in the rubric is true, then the output passes the test. You respond with a JSON object with this structure: {reason: string, pass: boolean, score: number}\\n\\nExamples:\\n\\n<Output>Hello world</Output>\\n<Rubric>Content contains a greeting</Rubric>\\n{\\\"reason\\\": \\\"the content contains the word 'Hello'\\\", \\\"pass\\\": true, \\\"score\\\": 1.0}\\n\\n<Output>Avast ye swabs, repel the invaders!</Output>\\n<Rubric>Does not speak like a pirate</Rubric>\\n{\\\"reason\\\": \\\"'avast ye' is a common pirate term\\\", \\\"pass\\\": false, \\\"score\\\": 0.0}\"},{\"role\":\"user\",\"content\":\"<Output>\\n**Step-by-Step Procedure for FANUC Robot Mastering After Encoder Replacement**  \\n\\n1. **Power Off**: Turn off the robot and disconnect the power supply to ensure safety.  \\n2. **Access Teach Pendant**: Power on the robot and connect to the teach pendant.  \\n3. **Navigate to Mastering Menu**:  \\n   - Press **MENU** → **System** → **Robot Data** → **Mastering** (or **Encoder Mastering**, depending on the model).  \\n4. **Select Axis**: Choose the axis with the replaced encoder (e.g., J1-J6).  \\n5. **Zero-Point Setting**:  \\n   - Use the **Zero Point Setting** function to move the axis to a known reference position (e.g., home position).  \\n   - Confirm the zero-point position via the teach pendant.  \\n6. **Execute Encoder Mastering**:  \\n   - Select **Encoder Mastering** → **Start**. The robot will recalibrate the encoder.  \\n   - Ensure the axis moves freely without obstruction.  \\n7. **Error Code Checks**:  \\n   - If error **1001** (Encoder error) or **1002** (Encoder not connected) occurs, verify encoder connections and reattempt.  \\n8. **Save Settings**: After successful mastering, save the data (**Save** → **Robot Data**).  \\n9. **Restart and Verify**:  \\n   - Power cycle the robot.  \\n   - Use **Position Data** to confirm accuracy. Check for discrepancies in joint positions.  \\n\\n**Notes**:  \\n- Ensure the robot is in a safe, collision-free position during mastering.  \\n- Refer to the specific model’s manual for exact menu paths (e.g., LR Mate 200iD vs. ROBOT M-10iD).  \\n- Mastering may require a **Reference Point** (RPOS) or **User Coordinate System (UCS)** alignment for multi-axis systems.\\n</Output>\\n<Rubric>\\nThe response should provide ordered steps for the mastering procedure\\n</Rubric>\"}]"
+              }
+            }
+          ]
+        },
+        "id": "7fefb341-b444-460a-b1dd-cbe057d0615e",
+        "latencyMs": 26278,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: Step-by-step procedure for FANUC robot mastering after encoder replacement\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "**Step-by-Step Procedure for FANUC Robot Mastering After Encoder Replacement**  \n\n1. **Power Off**: Turn off the robot and disconnect the power supply to ensure safety.  \n2. **Access Teach Pendant**: Power on the robot and connect to the teach pendant.  \n3. **Navigate to Mastering Menu**:  \n   - Press **MENU** → **System** → **Robot Data** → **Mastering** (or **Encoder Mastering**, depending on the model).  \n4. **Select Axis**: Choose the axis with the replaced encoder (e.g., J1-J6).  \n5. **Zero-Point Setting**:  \n   - Use the **Zero Point Setting** function to move the axis to a known reference position (e.g., home position).  \n   - Confirm the zero-point position via the teach pendant.  \n6. **Execute Encoder Mastering**:  \n   - Select **Encoder Mastering** → **Start**. The robot will recalibrate the encoder.  \n   - Ensure the axis moves freely without obstruction.  \n7. **Error Code Checks**:  \n   - If error **1001** (Encoder error) or **1002** (Encoder not connected) occurs, verify encoder connections and reattempt.  \n8. **Save Settings**: After successful mastering, save the data (**Save** → **Robot Data**).  \n9. **Restart and Verify**:  \n   - Power cycle the robot.  \n   - Use **Position Data** to confirm accuracy. Check for discrepancies in joint positions.  \n\n**Notes**:  \n- Ensure the robot is in a safe, collision-free position during mastering.  \n- Refer to the specific model’s manual for exact menu paths (e.g., LR Mate 200iD vs. ROBOT M-10iD).  \n- Mastering may require a **Reference Point** (RPOS) or **User Coordinate System (UCS)** alignment for multi-axis systems.",
+          "tokenUsage": {
+            "prompt": 64,
+            "completion": 1128,
+            "total": 1192
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "Step-by-step procedure for FANUC robot mastering after encoder replacement"
+          },
+          "assert": [
+            {
+              "type": "contains-any",
+              "value": [
+                "mastering",
+                "encoder",
+                "RCAL",
+                "zero",
+                "position"
+              ]
+            },
+            {
+              "type": "llm-rubric",
+              "value": "The response should provide ordered steps for the mastering procedure"
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 6,
+        "vars": {
+          "query": "Step-by-step procedure for FANUC robot mastering after encoder replacement"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "backup",
+                  "restore",
+                  "USB",
+                  "memory",
+                  "program"
+                ]
+              }
+            }
+          ]
+        },
+        "id": "ad66cae8-ef1c-48ee-95b7-14b3a230dc04",
+        "latencyMs": 30349,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: How to perform backup and restore on FANUC R-30iB controller?\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "**Backup Procedure for FANUC R-30iB Controller:**  \n1. **Access Backup/Restore Menu**:  \n   - Navigate to **System Settings > Backup/Restore**.  \n   - Select **Backup** > **System** (entire controller data) or **Program** (specific programs).  \n2. **Choose Storage Medium**:  \n   - Connect a USB drive or network share. Ensure the device is formatted as FAT32.  \n3. **Initiate Backup**:  \n   - Confirm backup parameters (e.g., backup type, destination).  \n   - Start the backup process.  \n\n**Error Codes During Backup**:  \n- **B-001**: Communication error (check USB/network connection).  \n- **B-002**: File system error (verify storage medium compatibility).  \n\n**Restore Procedure**:  \n1. **Access Backup/Restore Menu**:  \n   - Navigate to **System Settings > Backup/Restore**.  \n   - Select **Restore** > **System** or **Program**.  \n2. **Select Backup File**:  \n   - Choose the backup file from the connected storage medium.  \n3. **Initiate Restore**:  \n   - Confirm restore parameters. Ensure the robot is in **OFFLINE** mode.  \n   - Start the restore process.  \n\n**Error Codes During Restore**:  \n- **R-001**: File not found (verify backup file path).  \n- **R-002**: Incompatible file version (ensure backup matches controller firmware).  \n\n**Post-Restore Actions**:  \n- Restart the controller.  \n- Verify program integrity and safety settings.",
+          "tokenUsage": {
+            "prompt": 68,
+            "completion": 1053,
+            "total": 1121
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "How to perform backup and restore on FANUC R-30iB controller?"
+          },
+          "assert": [
+            {
+              "type": "contains-any",
+              "value": [
+                "backup",
+                "restore",
+                "USB",
+                "memory",
+                "program"
+              ]
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 7,
+        "vars": {
+          "query": "How to perform backup and restore on FANUC R-30iB controller?"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "zero",
+                  "mastering",
+                  "fixture",
+                  "position"
+                ]
+              }
+            }
+          ]
+        },
+        "id": "9697d415-7efc-4a12-b7cd-53393df9e796",
+        "latencyMs": 17293,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: Explain the zero mastering procedure for FANUC robots\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "The **zero mastering** procedure for FANUC robots sets the robot's zero position (origin) for coordinate systems (e.g., WORLD, TOOL, USER). It is critical for accurate motion control and programming. Here's a concise breakdown:\n\n### **Procedure Steps**  \n1. **Safety Check**: Ensure the robot is in a safe, stationary position with no obstructions.  \n2. **Access Zero Mastering**:  \n   - Use the **teach pendant** to navigate to **MENU > SYSTEM > ZERO MASTERING**.  \n   - Select **ABSOLUTE** (standard) or **RELATIVE** mode (for incremental adjustments).  \n3. **Position the Robot**:  \n   - Move the robot to the desired zero position (e.g., home or reference point).  \n   - Confirm the position using the teach pendant’s **DISPLAY** or **COORDINATE SYSTEM**.  \n4. **Execute Mastering**:  \n   - Press **START** to save the position as the new zero.  \n   - The system will verify the position and update the coordinate system.  \n\n### **Error Codes & Troubleshooting**  \n- **SRVO-022**: Robot not in the correct position (absolute mode).  \n- **SRVO-023**: Position outside acceptable range (e.g., joint limits).  \n- **SRVO-025/SRVO-026**: Movement beyond physical limits during mastering.  \n- **SRVO-030**: Communication error with the robot controller.  \n\n### **Key Notes**  \n- After mastering, the robot’s **coordinate system** is reset, affecting all subsequent motion commands.  \n- Always verify the new zero position with **manual jogging** or **program testing**.  \n- Use **relative zero mastering** for minor adjustments (e.g., tool center point offset).  \n\n**Important**: Ensure the robot is powered off and restarted after mastering to apply changes.",
+          "tokenUsage": {
+            "prompt": 61,
+            "completion": 945,
+            "total": 1006
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "Explain the zero mastering procedure for FANUC robots"
+          },
+          "assert": [
+            {
+              "type": "contains-any",
+              "value": [
+                "zero",
+                "mastering",
+                "fixture",
+                "position"
+              ]
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 8,
+        "vars": {
+          "query": "Explain the zero mastering procedure for FANUC robots"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 893,
+            "prompt": 632,
+            "completion": 261,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "collision",
+                  "detection",
+                  "ACAL",
+                  "torque",
+                  "sensor"
+                ]
+              }
+            },
+            {
+              "assertion": {
+                "type": "llm-rubric",
+                "value": "The response should compare at least two approaches"
+              },
+              "pass": true,
+              "score": 1,
+              "reason": "The response compares ACAL and External Sensing across multiple dimensions including function, error codes, procedures, and key differences.",
+              "tokensUsed": {
+                "total": 893,
+                "prompt": 632,
+                "completion": 261,
+                "cached": 0,
+                "numRequests": 0,
+                "completionDetails": {
+                  "reasoning": 0,
+                  "acceptedPrediction": 0,
+                  "rejectedPrediction": 0
+                }
+              },
+              "metadata": {
+                "renderedGradingPrompt": "[{\"role\":\"system\",\"content\":\"You are grading output according to a user-specified rubric. If the statement in the rubric is true, then the output passes the test. You respond with a JSON object with this structure: {reason: string, pass: boolean, score: number}\\n\\nExamples:\\n\\n<Output>Hello world</Output>\\n<Rubric>Content contains a greeting</Rubric>\\n{\\\"reason\\\": \\\"the content contains the word 'Hello'\\\", \\\"pass\\\": true, \\\"score\\\": 1.0}\\n\\n<Output>Avast ye swabs, repel the invaders!</Output>\\n<Rubric>Does not speak like a pirate</Rubric>\\n{\\\"reason\\\": \\\"'avast ye' is a common pirate term\\\", \\\"pass\\\": false, \\\"score\\\": 0.0}\"},{\"role\":\"user\",\"content\":\"<Output>\\n**Collision Detection Methods: ACAL vs External Sensing**  \\n\\n**ACAL (Advanced Collision Avoidance Logic):**  \\n- **Function:** Built-in system using sensors and algorithms to detect collisions during motion.  \\n- **Error Codes:**  \\n  - **SRVC-001:** ACAL activation (e.g., due to proximity sensors).  \\n  - **SRVC-005:** ACAL-1 (e.g., obstacle detected in the robot's path).  \\n  - **SRVC-006:** ACAL-2 (e.g., collision during high-speed motion).  \\n- **Procedures:**  \\n  - Check robot path and environment for obstacles.  \\n  - Verify ACAL sensor calibration and safe speed/safe distance settings.  \\n  - Use `ACAL-1`/`ACAL-2` modes for different safety scenarios.  \\n\\n**External Sensing:**  \\n- **Function:** Uses external devices (e.g., laser scanners, vision systems, proximity sensors) to detect collisions.  \\n- **Error Codes:**  \\n  - **SRVC-002:** External sensor failure or communication error.  \\n- **Procedures:**  \\n  - Ensure external sensors are properly calibrated and connected.  \\n  - Validate sensor coverage and integration with the robot’s control system.  \\n  - Adjust sensor parameters for dynamic environments.  \\n\\n**Key Differences:**  \\n- **Integration:** ACAL is native to the robot; external sensing requires add-on hardware.  \\n- **Flexibility:** External sensing offers broader environmental monitoring but requires maintenance.  \\n- **Speed:** ACAL operates in real-time with the robot’s motion; external sensing may have latency.  \\n\\n**Technical Terms:** Safe speed, safe distance, sensor calibration, area scanning, point detection.\\n</Output>\\n<Rubric>\\nThe response should compare at least two approaches\\n</Rubric>\"}]"
+              }
+            }
+          ]
+        },
+        "id": "f5a971e5-fdeb-4965-a3f1-f7580800a348",
+        "latencyMs": 26191,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: Compare collision detection methods: ACAL vs external sensing\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "**Collision Detection Methods: ACAL vs External Sensing**  \n\n**ACAL (Advanced Collision Avoidance Logic):**  \n- **Function:** Built-in system using sensors and algorithms to detect collisions during motion.  \n- **Error Codes:**  \n  - **SRVC-001:** ACAL activation (e.g., due to proximity sensors).  \n  - **SRVC-005:** ACAL-1 (e.g., obstacle detected in the robot's path).  \n  - **SRVC-006:** ACAL-2 (e.g., collision during high-speed motion).  \n- **Procedures:**  \n  - Check robot path and environment for obstacles.  \n  - Verify ACAL sensor calibration and safe speed/safe distance settings.  \n  - Use `ACAL-1`/`ACAL-2` modes for different safety scenarios.  \n\n**External Sensing:**  \n- **Function:** Uses external devices (e.g., laser scanners, vision systems, proximity sensors) to detect collisions.  \n- **Error Codes:**  \n  - **SRVC-002:** External sensor failure or communication error.  \n- **Procedures:**  \n  - Ensure external sensors are properly calibrated and connected.  \n  - Validate sensor coverage and integration with the robot’s control system.  \n  - Adjust sensor parameters for dynamic environments.  \n\n**Key Differences:**  \n- **Integration:** ACAL is native to the robot; external sensing requires add-on hardware.  \n- **Flexibility:** External sensing offers broader environmental monitoring but requires maintenance.  \n- **Speed:** ACAL operates in real-time with the robot’s motion; external sensing may have latency.  \n\n**Technical Terms:** Safe speed, safe distance, sensor calibration, area scanning, point detection.",
+          "tokenUsage": {
+            "prompt": 61,
+            "completion": 917,
+            "total": 978
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "Compare collision detection methods: ACAL vs external sensing"
+          },
+          "assert": [
+            {
+              "type": "contains-any",
+              "value": [
+                "collision",
+                "detection",
+                "ACAL",
+                "torque",
+                "sensor"
+              ]
+            },
+            {
+              "type": "llm-rubric",
+              "value": "The response should compare at least two approaches"
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 9,
+        "vars": {
+          "query": "Compare collision detection methods: ACAL vs external sensing"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "DCS",
+                  "safe",
+                  "position",
+                  "monitoring",
+                  "safety"
+                ]
+              }
+            }
+          ]
+        },
+        "id": "f5adaa01-4742-4216-a0ce-533e8095d3a3",
+        "latencyMs": 25557,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: What is DCS Safe Position and how does it differ from regular position?\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "**DCS Safe Position** is a predefined robot position used in **Direct Computer Control (DCS)** mode to ensure safety during operations, such as welding or cutting. It is typically a neutral, non-colliding position that the robot transitions to when entering or exiting DCS mode, or during emergency stops.  \n\n### Key Differences from Regular Position:  \n1. **Purpose**:  \n   - **DCS Safe Position**: Ensures operator and equipment safety by positioning the robot away from work zones.  \n   - **Regular Position**: A standard position used in normal robotic operations (e.g., tool paths).  \n\n2. **Configuration**:  \n   - **DCS Safe Position**: Set via the DCS interface (e.g., FANUC's **ROBOT Controller** or **PC-based software**) and stored in the DCS mode configuration.  \n   - **Regular Position**: Defined in the robot program (e.g., using `POSx` or `P` commands).  \n\n3. **Error Codes**:  \n   - **SRVO-002** (Position error) may occur if the robot cannot reach the DCS Safe Position due to mechanical or control issues.  \n   - **SRVO-003** (DCS mode error) may arise if the robot fails to transition to DCS Safe Position during mode changes.  \n\n### Procedure to Set DCS Safe Position:  \n1. Enter **DCS mode** via the robot controller or connected PC.  \n2. Use the **DCS interface** to input the desired safe position coordinates.  \n3. Save the position as a **DCS Safe Position** (e.g., using the `SAVE` function in the DCS program).  \n4. Test the transition to ensure the robot moves to the position safely.  \n\nThis ensures compliance with safety standards (e.g., ISO 10218-1) and prevents unintended movements during DCS operations.",
+          "tokenUsage": {
+            "prompt": 65,
+            "completion": 894,
+            "total": 959
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "What is DCS Safe Position and how does it differ from regular position?"
+          },
+          "assert": [
+            {
+              "type": "contains-any",
+              "value": [
+                "DCS",
+                "safe",
+                "position",
+                "monitoring",
+                "safety"
+              ]
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 10,
+        "vars": {
+          "query": "What is DCS Safe Position and how does it differ from regular position?"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains",
+                "value": "RCAL"
+              }
+            },
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "calibration",
+                  "encoder",
+                  "mastering",
+                  "battery"
+                ]
+              }
+            }
+          ]
+        },
+        "id": "d8fdd841-2f80-4454-868c-726ab98ff7c6",
+        "latencyMs": 15867,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: Explain the RCAL calibration process and when it's needed\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "**RCAL Calibration Process & Requirements**  \n**RCAL (Robot Calibration)** ensures the robot's geometric accuracy by aligning joint measurements with the controller's internal model. It is required after:  \n- Physical modifications (e.g., motor replacements, link length changes).  \n- Significant positional errors (e.g., tool tip inaccuracies, poor path tracking).  \n- System resets or controller reboots.  \n\n**Procedure**:  \n1. Access the **Calibration** menu on the FANUC controller.  \n2. Select **RCAL** and follow prompts to position the robot in predefined calibration points (e.g., home position).  \n3. Run the calibration routine, which measures joint angles and updates the robot's internal geometry parameters.  \n4. Validate results using **tool center point (TCP)** measurements or **Rapid Path Tracking**.  \n\n**Error Codes**:  \n- **C1001**: Calibration failed (e.g., incorrect robot position, hardware issues).  \n- **C1002**: Calibration data not found (e.g., corrupted data, incomplete process).  \n\n**Note**: RCAL differs from **RMAC** (Motor Calibration), which focuses on servo motor parameters. Always verify post-calibration accuracy with **Rapid Path Tracking** or **TCP measurement tests**.",
+          "tokenUsage": {
+            "prompt": 62,
+            "completion": 843,
+            "total": 905
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "Explain the RCAL calibration process and when it's needed"
+          },
+          "assert": [
+            {
+              "type": "contains",
+              "value": "RCAL"
+            },
+            {
+              "type": "contains-any",
+              "value": [
+                "calibration",
+                "encoder",
+                "mastering",
+                "battery"
+              ]
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 11,
+        "vars": {
+          "query": "Explain the RCAL calibration process and when it's needed"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains",
+                "value": "TCP"
+              }
+            },
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "tool",
+                  "calibration",
+                  "offset",
+                  "accuracy"
+                ]
+              }
+            }
+          ]
+        },
+        "id": "fed8edb8-cb5a-4f12-9deb-e61ef4494138",
+        "latencyMs": 20901,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: What is TCP calibration and why is it important?\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "**TCP Calibration** (Tool Center Point Calibration) is the process of defining the exact position and orientation of the tool's center point (TCP) relative to the robot's flange. It ensures accurate end-effector positioning and orientation for precise tasks like welding, painting, or assembly.  \n\n**Importance**:  \n- Ensures accurate path execution and collision avoidance.  \n- Critical for safety and productivity in applications requiring high precision.  \n- Improper calibration can cause errors such as **SRVO-027** (TCP offset error) or **SRVO-028** (tool data error).  \n\n**Procedure**:  \n1. Use the **FANUC Teach Pendant** to access the **Tool Data** menu.  \n2. Attach a **calibration tool** (e.g., laser tracker, 3D measuring system).  \n3. Perform a **TCP calibration sequence** via the pendant, following the manual (e.g., *FANUC R-30iB/30iA Programming Manual*).  \n4. Validate the TCP coordinates using reference points.  \n5. Save the calibrated data to the robot's system.  \n\n**Technical Terms**: TCP offset, tool data, calibration tool, flange, end-effector.  \n\n**Note**: Regular recalibration is essential after tool changes or mechanical adjustments to maintain accuracy.",
+          "tokenUsage": {
+            "prompt": 60,
+            "completion": 636,
+            "total": 696
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "What is TCP calibration and why is it important?"
+          },
+          "assert": [
+            {
+              "type": "contains",
+              "value": "TCP"
+            },
+            {
+              "type": "contains-any",
+              "value": [
+                "tool",
+                "calibration",
+                "offset",
+                "accuracy"
+              ]
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 12,
+        "vars": {
+          "query": "What is TCP calibration and why is it important?"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "servo",
+                  "gain",
+                  "SVGN",
+                  "tuning",
+                  "parameter"
+                ]
+              }
+            }
+          ]
+        },
+        "id": "c63658af-d746-4a52-ae77-0684d7a99da4",
+        "latencyMs": 26166,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: How to adjust servo gains for smoother motion in FANUC?\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "To adjust servo gains for smoother motion in FANUC robots, follow these steps:  \n\n1. **Error Codes**: Monitor for **SRV-001** (position error) or **SRV-002** (velocity error) if oscillations occur. These may indicate improper gain settings.  \n\n2. **Procedure**:  \n   - **Stop the robot** and enter **Robot Configuration Mode** via the teach pendant.  \n   - Navigate to **Servo Parameters** (e.g., parameters 3000–3010 for R-30iB/20 models).  \n   - Adjust the following gains:  \n     - **Position Proportional Gain (Kp)**: Increase gradually to reduce tracking errors; avoid overshoot.  \n     - **Velocity Proportional Gain (Kv)**: Adjust for smoother acceleration/deceleration.  \n     - **Integral Gain (Ki)**: Fine-tune for steady-state error correction (set to 0 if oscillations occur).  \n     - **Feedforward Gains (Kv1/Kv2)**: Optimize for smooth transitions during acceleration/deceleration.  \n\n3. **Testing**: Perform a **simple motion test** (e.g., straight-line path) and monitor **motor current** and **position feedback**. If oscillations persist, reduce Kp or Kv.  \n\n4. **Documentation**: Save settings and verify against the specific model’s manual (e.g., R-30iB/20 parameter lists).  \n\n**Note**: Always back up parameters before adjustments. Improper gains may trigger **SRV-011** (motor torque error) or **SRV-012** (position deviation).",
+          "tokenUsage": {
+            "prompt": 63,
+            "completion": 1163,
+            "total": 1226
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "How to adjust servo gains for smoother motion in FANUC?"
+          },
+          "assert": [
+            {
+              "type": "contains-any",
+              "value": [
+                "servo",
+                "gain",
+                "SVGN",
+                "tuning",
+                "parameter"
+              ]
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 13,
+        "vars": {
+          "query": "How to adjust servo gains for smoother motion in FANUC?"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains-any",
+                "value": [
+                  "cycle time",
+                  "speed",
+                  "acceleration",
+                  "CNT",
+                  "motion"
+                ]
+              }
+            }
+          ]
+        },
+        "id": "7c2f6650-e586-46f5-a785-ef27b8cb07de",
+        "latencyMs": 34252,
+        "namedScores": {},
+        "prompt": {
+          "raw": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: How to optimize cycle time for FANUC robot programs?\n\nAnswer:\n",
+          "label": "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+        },
+        "promptId": "a122f08934df34701a174af7a269a8b69834e7589f3220dea0a330f765c0afed",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:qwen3:8b",
+          "label": "memOS-synthesis"
+        },
+        "response": {
+          "output": "To optimize cycle time for FANUC robot programs:  \n\n1. **Motion Path Optimization**:  \n   - Use **linear (L)** or **circular (C)** moves instead of redundant joint (J) moves where applicable.  \n   - Minimize intermediate points in move commands (e.g., use `L100` directly instead of multiple `L` commands).  \n   - Replace unnecessary `W` (wait) commands with **speed scaling** (`S` command) or **acceleration parameters** (`P` in move commands).  \n\n2. **Speed and Acceleration Parameters**:  \n   - Adjust the `P` parameter in move commands to optimize acceleration/deceleration profiles (e.g., `P100` for higher acceleration).  \n   - Use the **S command** to scale speed dynamically during motion (e.g., `S100` for 100% speed).  \n\n3. **Tool Data and Coordinate Systems**:  \n   - Ensure accurate **TCP (Tool Center Point)** definitions to avoid collisions and unnecessary path adjustments.  \n   - Use the most efficient **coordinate system** (e.g., WORLD or USER) for the application.  \n\n4. **FANUC-Specific Tools**:  \n   - Leverage **Path Optimization Tool** in ROBOGUIDE or RobotStudio to simulate and analyze cycle time.  \n   - Use **Cycle Time Analysis** in the FANUC controller to identify bottlenecks.  \n\n5. **Error Code Checks**:  \n   - Monitor for **SRVO-001** (speed error) or **SRVO-002** (acceleration error) during optimization.  \n   - Validate **ROBOT-012** (path planning) errors to ensure valid motion paths.  \n\n6. **Redundant Movements**:  \n   - Eliminate overlapping or redundant moves (e.g., `L100` followed by `L100` back to start).  \n\n**Result**: Reduced cycle time through efficient path planning, parameter tuning, and tool utilization.",
+          "tokenUsage": {
+            "prompt": 62,
+            "completion": 1184,
+            "total": 1246
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "query": "How to optimize cycle time for FANUC robot programs?"
+          },
+          "assert": [
+            {
+              "type": "contains-any",
+              "value": [
+                "cycle time",
+                "speed",
+                "acceleration",
+                "CNT",
+                "motion"
+              ]
+            }
+          ],
+          "options": {
+            "provider": {
+              "id": "ollama:qwen3:8b"
+            }
+          },
+          "metadata": {}
+        },
+        "testIdx": 14,
+        "vars": {
+          "query": "How to optimize cycle time for FANUC robot programs?"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      }
+    ],
+    "stats": {
+      "successes": 14,
+      "failures": 1,
+      "errors": 0,
+      "tokenUsage": {
+        "prompt": 957,
+        "completion": 14373,
+        "cached": 0,
+        "total": 15330,
+        "numRequests": 15,
+        "completionDetails": {
+          "reasoning": 0,
+          "acceptedPrediction": 0,
+          "rejectedPrediction": 0
+        },
+        "assertions": {
+          "total": 5907,
+          "prompt": 4043,
+          "completion": 1864,
+          "cached": 0,
+          "numRequests": 0,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0
+          }
+        }
+      },
+      "durationMs": 233493
+    }
+  },
+  "config": {
+    "tags": {},
+    "description": "memOS Agentic Search RAG Quality Evaluation",
+    "prompts": [
+      "You are an expert FANUC robotics technician. Answer the following question\naccurately and concisely. Include specific error codes, procedures, and\ntechnical terminology where appropriate.\n\nQuestion: {{query}}\n\nAnswer:\n"
+    ],
+    "providers": [
+      {
+        "id": "ollama:qwen3:8b",
+        "label": "memOS-synthesis",
+        "config": {
+          "apiHost": "http://localhost:11434",
+          "temperature": 0.7,
+          "maxTokens": 2048
+        }
+      }
+    ],
+    "tests": [
+      {
+        "vars": {
+          "query": "What causes SRVO-063 BZAL alarm on FANUC robots and how do I fix it?"
+        },
+        "assert": [
+          {
+            "type": "contains",
+            "value": "SRVO-063"
+          },
+          {
+            "type": "contains-any",
+            "value": [
+              "encoder",
+              "pulsecoder",
+              "calibration",
+              "mastering"
+            ]
+          },
+          {
+            "type": "llm-rubric",
+            "value": "The response should explain encoder battery issues and calibration procedures"
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "Explain MOTN-023 error code meaning and resolution steps"
+        },
+        "assert": [
+          {
+            "type": "contains",
+            "value": "MOTN-023"
+          },
+          {
+            "type": "contains-any",
+            "value": [
+              "motion",
+              "position",
+              "acceleration"
+            ]
+          },
+          {
+            "type": "llm-rubric",
+            "value": "The response should explain motion control issues"
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "What does HOST-001 alarm indicate on FANUC controllers?"
+        },
+        "assert": [
+          {
+            "type": "contains",
+            "value": "HOST-001"
+          },
+          {
+            "type": "contains-any",
+            "value": [
+              "communication",
+              "network",
+              "ethernet",
+              "timeout"
+            ]
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "Robot arm is vibrating excessively during motion, what could be wrong?"
+        },
+        "assert": [
+          {
+            "type": "contains-any",
+            "value": [
+              "servo",
+              "motor",
+              "encoder",
+              "gain",
+              "tuning"
+            ]
+          },
+          {
+            "type": "llm-rubric",
+            "value": "The response should mention mechanical or servo tuning causes"
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "How do I troubleshoot intermittent SRVO overcurrent alarms?"
+        },
+        "assert": [
+          {
+            "type": "contains-any",
+            "value": [
+              "overcurrent",
+              "motor",
+              "amplifier",
+              "load"
+            ]
+          },
+          {
+            "type": "llm-rubric",
+            "value": "The response should provide diagnostic steps for overcurrent issues"
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "iRVision camera showing drift in calibration, how to fix?"
+        },
+        "assert": [
+          {
+            "type": "contains-any",
+            "value": [
+              "iRVision",
+              "camera",
+              "calibration",
+              "lighting",
+              "focus"
+            ]
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "Step-by-step procedure for FANUC robot mastering after encoder replacement"
+        },
+        "assert": [
+          {
+            "type": "contains-any",
+            "value": [
+              "mastering",
+              "encoder",
+              "RCAL",
+              "zero",
+              "position"
+            ]
+          },
+          {
+            "type": "llm-rubric",
+            "value": "The response should provide ordered steps for the mastering procedure"
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "How to perform backup and restore on FANUC R-30iB controller?"
+        },
+        "assert": [
+          {
+            "type": "contains-any",
+            "value": [
+              "backup",
+              "restore",
+              "USB",
+              "memory",
+              "program"
+            ]
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "Explain the zero mastering procedure for FANUC robots"
+        },
+        "assert": [
+          {
+            "type": "contains-any",
+            "value": [
+              "zero",
+              "mastering",
+              "fixture",
+              "position"
+            ]
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "Compare collision detection methods: ACAL vs external sensing"
+        },
+        "assert": [
+          {
+            "type": "contains-any",
+            "value": [
+              "collision",
+              "detection",
+              "ACAL",
+              "torque",
+              "sensor"
+            ]
+          },
+          {
+            "type": "llm-rubric",
+            "value": "The response should compare at least two approaches"
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "What is DCS Safe Position and how does it differ from regular position?"
+        },
+        "assert": [
+          {
+            "type": "contains-any",
+            "value": [
+              "DCS",
+              "safe",
+              "position",
+              "monitoring",
+              "safety"
+            ]
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "Explain the RCAL calibration process and when it's needed"
+        },
+        "assert": [
+          {
+            "type": "contains",
+            "value": "RCAL"
+          },
+          {
+            "type": "contains-any",
+            "value": [
+              "calibration",
+              "encoder",
+              "mastering",
+              "battery"
+            ]
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "What is TCP calibration and why is it important?"
+        },
+        "assert": [
+          {
+            "type": "contains",
+            "value": "TCP"
+          },
+          {
+            "type": "contains-any",
+            "value": [
+              "tool",
+              "calibration",
+              "offset",
+              "accuracy"
+            ]
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "How to adjust servo gains for smoother motion in FANUC?"
+        },
+        "assert": [
+          {
+            "type": "contains-any",
+            "value": [
+              "servo",
+              "gain",
+              "SVGN",
+              "tuning",
+              "parameter"
+            ]
+          }
+        ]
+      },
+      {
+        "vars": {
+          "query": "How to optimize cycle time for FANUC robot programs?"
+        },
+        "assert": [
+          {
+            "type": "contains-any",
+            "value": [
+              "cycle time",
+              "speed",
+              "acceleration",
+              "CNT",
+              "motion"
+            ]
+          }
+        ]
+      }
+    ],
+    "scenarios": [],
+    "env": {},
+    "defaultTest": {
+      "options": {
+        "provider": {
+          "id": "ollama:qwen3:8b"
+        }
+      },
+      "vars": {},
+      "assert": [],
+      "metadata": {}
+    },
+    "outputPath": [
+      "./promptfoo_results.json"
+    ],
+    "extensions": [],
+    "metadata": {},
+    "evaluateOptions": {
+      "maxConcurrency": 2,
+      "showProgressBar": true
+    }
+  },
+  "shareableUrl": null,
+  "metadata": {
+    "promptfooVersion": "0.120.8",
+    "nodeVersion": "v25.2.1",
+    "platform": "linux",
+    "arch": "x64",
+    "exportedAt": "2026-01-01T03:08:39.204Z",
+    "evaluationCreatedAt": "2026-01-01T03:04:45.385Z"
+  }
+}

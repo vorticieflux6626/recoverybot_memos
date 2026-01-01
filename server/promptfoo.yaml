@@ -1,0 +1,177 @@
+# promptfoo Configuration for memOS RAG Evaluation
+# G.8.4: CI/CD Quality Gates
+# Usage: npx promptfoo eval
+
+description: "memOS Agentic Search RAG Quality Evaluation"
+
+# Provider configuration - uses Ollama via HTTP API
+providers:
+  - id: ollama:qwen3:8b
+    label: memOS-synthesis
+    config:
+      apiHost: http://localhost:11434
+      temperature: 0.7
+      maxTokens: 2048
+
+# Custom provider for memOS API (for full pipeline testing)
+# Uncomment when testing full pipeline:
+# - id: webhook
+#   label: memOS-pipeline
+#   config:
+#     url: http://localhost:8001/api/v1/search/gateway
+#     method: POST
+#     headers:
+#       Content-Type: application/json
+#     body:
+#       query: "{{prompt}}"
+#       preset: balanced
+#     transformResponse: "json.data.synthesis || json.data.answer"
+
+# Prompt template for RAG synthesis
+prompts:
+  - |
+    You are an expert FANUC robotics technician. Answer the following question
+    accurately and concisely. Include specific error codes, procedures, and
+    technical terminology where appropriate.
+
+    Question: {{query}}
+
+    Answer:
+
+# Test cases from FANUC benchmark (G.1.4)
+tests:
+  # Error Code Queries
+  - vars:
+      query: "What causes SRVO-063 BZAL alarm on FANUC robots and how do I fix it?"
+    assert:
+      - type: contains
+        value: "SRVO-063"
+      - type: contains-any
+        value: ["encoder", "pulsecoder", "calibration", "mastering"]
+      - type: llm-rubric
+        value: "The response should explain encoder battery issues and calibration procedures"
+
+  - vars:
+      query: "Explain MOTN-023 error code meaning and resolution steps"
+    assert:
+      - type: contains
+        value: "MOTN-023"
+      - type: contains-any
+        value: ["motion", "position", "acceleration"]
+      - type: llm-rubric
+        value: "The response should explain motion control issues"
+
+  - vars:
+      query: "What does HOST-001 alarm indicate on FANUC controllers?"
+    assert:
+      - type: contains
+        value: "HOST-001"
+      - type: contains-any
+        value: ["communication", "network", "ethernet", "timeout"]
+
+  # Troubleshooting Queries
+  - vars:
+      query: "Robot arm is vibrating excessively during motion, what could be wrong?"
+    assert:
+      - type: contains-any
+        value: ["servo", "motor", "encoder", "gain", "tuning"]
+      - type: llm-rubric
+        value: "The response should mention mechanical or servo tuning causes"
+
+  - vars:
+      query: "How do I troubleshoot intermittent SRVO overcurrent alarms?"
+    assert:
+      - type: contains-any
+        value: ["overcurrent", "motor", "amplifier", "load"]
+      - type: llm-rubric
+        value: "The response should provide diagnostic steps for overcurrent issues"
+
+  - vars:
+      query: "iRVision camera showing drift in calibration, how to fix?"
+    assert:
+      - type: contains-any
+        value: ["iRVision", "camera", "calibration", "lighting", "focus"]
+
+  # Procedure Queries
+  - vars:
+      query: "Step-by-step procedure for FANUC robot mastering after encoder replacement"
+    assert:
+      - type: contains-any
+        value: ["mastering", "encoder", "RCAL", "zero", "position"]
+      - type: llm-rubric
+        value: "The response should provide ordered steps for the mastering procedure"
+
+  - vars:
+      query: "How to perform backup and restore on FANUC R-30iB controller?"
+    assert:
+      - type: contains-any
+        value: ["backup", "restore", "USB", "memory", "program"]
+
+  - vars:
+      query: "Explain the zero mastering procedure for FANUC robots"
+    assert:
+      - type: contains-any
+        value: ["zero", "mastering", "fixture", "position"]
+
+  # Comparison Queries
+  - vars:
+      query: "Compare collision detection methods: ACAL vs external sensing"
+    assert:
+      - type: contains-any
+        value: ["collision", "detection", "ACAL", "torque", "sensor"]
+      - type: llm-rubric
+        value: "The response should compare at least two approaches"
+
+  - vars:
+      query: "What is DCS Safe Position and how does it differ from regular position?"
+    assert:
+      - type: contains-any
+        value: ["DCS", "safe", "position", "monitoring", "safety"]
+
+  # Conceptual Queries
+  - vars:
+      query: "Explain the RCAL calibration process and when it's needed"
+    assert:
+      - type: contains
+        value: "RCAL"
+      - type: contains-any
+        value: ["calibration", "encoder", "mastering", "battery"]
+
+  - vars:
+      query: "What is TCP calibration and why is it important?"
+    assert:
+      - type: contains
+        value: "TCP"
+      - type: contains-any
+        value: ["tool", "calibration", "offset", "accuracy"]
+
+  # Parameter Queries
+  - vars:
+      query: "How to adjust servo gains for smoother motion in FANUC?"
+    assert:
+      - type: contains-any
+        value: ["servo", "gain", "SVGN", "tuning", "parameter"]
+
+  - vars:
+      query: "How to optimize cycle time for FANUC robot programs?"
+    assert:
+      - type: contains-any
+        value: ["cycle time", "speed", "acceleration", "CNT", "motion"]
+
+# Default test configuration
+defaultTest:
+  options:
+    provider:
+      id: ollama:qwen3:8b
+
+# Output configuration
+outputPath: ./promptfoo_results.json
+
+# Evaluation settings
+evaluateOptions:
+  maxConcurrency: 2
+  showProgressBar: true
+
+# Assertions threshold
+assertionSettings:
+  threshold: 0.7  # 70% of assertions must pass

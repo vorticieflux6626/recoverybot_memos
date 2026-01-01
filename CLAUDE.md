@@ -2587,6 +2587,61 @@ systemctl restart ollama  # or: pkill ollama && ollama serve
 **Future Optimizations (See KV_CACHE_IMPLEMENTATION_PLAN.md):**
 - Phase 3: vLLM migration (40-60% additional TTFT reduction) - skipped for now
 
+### SGLang Evaluation (G.8.5 - 2025-12-31)
+
+Evaluating SGLang as a high-performance alternative to Ollama for LLM inference with speculative decoding.
+
+**Installation Status:**
+- SGLang v0.5.7 installed with FlashInfer backend
+- TITAN RTX (24GB, sm75) meets hardware requirements
+- Benchmark script: `scripts/benchmark_sglang_vs_ollama.py`
+
+**Ollama Baseline Results (qwen3:8b):**
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Avg TTFT | 31.7s | Time to first token (includes prefill) |
+| P50 TTFT | 25.8s | Median latency |
+| P95 TTFT | 88.7s | Long tail for complex prompts |
+| Avg Tokens/sec | 24.2 | Generation throughput |
+| Success Rate | 100% | All requests completed |
+
+**SGLang Expected Benefits:**
+| Feature | Expected Impact |
+|---------|-----------------|
+| RadixAttention | Automatic KV cache prefix sharing (reduces TTFT) |
+| Speculative Decoding | 2-5x throughput via draft model verification |
+| FlashInfer | Optimized attention kernels for sm75+ GPUs |
+| Continuous Batching | Better GPU utilization under concurrent load |
+
+**Benchmark Usage:**
+```bash
+# Activate venv first
+source venv/bin/activate
+
+# Run Ollama-only benchmark
+python scripts/benchmark_sglang_vs_ollama.py --ollama-only --runs 3
+
+# Run SGLang-only benchmark (requires SGLang server running)
+python scripts/benchmark_sglang_vs_ollama.py --sglang-only --runs 3
+
+# Compare both
+python scripts/benchmark_sglang_vs_ollama.py --compare --runs 3 --output results.json
+```
+
+**Starting SGLang Server (requires HuggingFace model download):**
+```bash
+python -m sglang.launch_server \
+    --model-path Qwen/Qwen2.5-7B-Instruct \
+    --port 30000 \
+    --mem-fraction-static 0.85
+```
+
+**Key Files:**
+- `scripts/benchmark_sglang_vs_ollama.py` - Benchmark comparison script
+- `scripts/benchmark_results_ollama.json` - Baseline results
+
+**Status:** Baseline complete. Full SGLang comparison pending HuggingFace model download (~15GB).
+
 ### Design Rationale
 
 Current Android implementation uses a simple web search pattern:

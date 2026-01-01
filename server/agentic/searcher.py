@@ -69,15 +69,16 @@ class SearXNGSearchProvider(SearchProvider):
 
     # Engine groups for different query types
     ENGINE_GROUPS = {
-        # Primary engines: Brave (1.5 weight), Bing (1.2), Startpage (1.1), DDG (1.0)
+        # Primary engines: Brave (1.5 weight), Bing (1.2), Reddit (community)
         # Google disabled due to upstream bug #5286 - revisit Jan 2026
-        "general": "brave,bing,startpage,duckduckgo,wikipedia",
+        # DuckDuckGo/Startpage hitting CAPTCHA as of 2025-12-31 - removed temporarily
+        "general": "brave,bing,reddit,wikipedia",
         "academic": "arxiv,semantic_scholar,pubmed,crossref,wikipedia",
         "technical": "github,gitlab,stackoverflow,superuser,serverfault,pypi,npm,dockerhub,bing",
-        "news": "bing_news,duckduckgo",
-        "all": "brave,bing,startpage,duckduckgo,wikipedia,arxiv,semantic_scholar,github,stackoverflow",
+        "news": "bing_news,brave",
+        "all": "brave,bing,reddit,wikipedia,arxiv,semantic_scholar,github,stackoverflow",
         # FANUC/Industrial robotics - Reddit + Stack Exchange for troubleshooting
-        "fanuc": "reddit,brave,bing,startpage,arxiv,electronics_stackexchange,robotics_stackexchange",
+        "fanuc": "reddit,brave,bing,arxiv,electronics_stackexchange,robotics_stackexchange",
         "robotics": "reddit,brave,bing,arxiv,github,gitlab,robotics_stackexchange,electronics_stackexchange",
         # Q&A focused
         "qa": "stackoverflow,superuser,askubuntu,serverfault,unix_stackexchange,reddit",
@@ -86,9 +87,9 @@ class SearXNGSearchProvider(SearchProvider):
         # Package/library search
         "packages": "pypi,npm,crates,pkg_go_dev,dockerhub",
         # Injection Molding Machines (IMM) / Euromap
-        "imm": "reddit,brave,bing,startpage,wikipedia",
-        "euromap": "reddit,brave,bing,startpage,wikipedia",
-        "plastics": "reddit,brave,bing,startpage,wikipedia",
+        "imm": "reddit,brave,bing,wikipedia",
+        "euromap": "reddit,brave,bing,wikipedia",
+        "plastics": "reddit,brave,bing,wikipedia",
     }
 
     # Patterns to detect academic queries

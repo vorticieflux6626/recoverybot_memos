@@ -95,7 +95,9 @@ class SearXNGSearcher:
         settings = _get_settings()
         self.base_url = (base_url or settings.searxng_url).rstrip("/")
         self.timeout = timeout
-        self.default_engines = default_engines or ["google", "bing", "duckduckgo"]
+        # NOTE: Google disabled (upstream bug #5286), DuckDuckGo/Startpage hitting CAPTCHA
+        # Prioritize Brave/Bing which are consistently working
+        self.default_engines = default_engines or ["brave", "bing", "reddit", "wikipedia"]
         self.max_results_per_query = max_results_per_query
         self._client: Optional[httpx.AsyncClient] = None
         self._available = None  # Cache availability check
