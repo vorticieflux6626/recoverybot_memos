@@ -991,6 +991,21 @@ from .tsdae_adapter import (
     get_multi_domain_adapter,
 )
 
+# K.2: Docling Document Processor Integration (December 2025)
+# Based on arXiv:2408.09869 - Docling Technical Report
+# 97.9% TEDS-S table extraction accuracy
+from .docling_adapter import (
+    DoclingAdapter,
+    DoclingFormat,
+    DocumentType as DoclingDocumentType,
+    ExtractionQuality,
+    TableData,
+    ExtractedDocument,
+    DoclingStats,
+    get_docling_adapter,
+    cleanup_docling_adapter,
+)
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -1716,6 +1731,18 @@ __all__ = [
     "ROCKWELL_DOMAIN_CONFIG",
     "get_tsdae_adapter",
     "get_multi_domain_adapter",
+
+    # K.2: Docling Document Processor (December 2025)
+    # Based on arXiv:2408.09869 - 97.9% TEDS-S table extraction accuracy
+    "DoclingAdapter",
+    "DoclingFormat",
+    "DoclingDocumentType",
+    "ExtractionQuality",
+    "TableData",
+    "ExtractedDocument",
+    "DoclingStats",
+    "get_docling_adapter",
+    "cleanup_docling_adapter",
 ]
 
-__version__ = "0.75.0"  # G.7.4 TSDAE Domain Adaptation for unsupervised embedding adaptation
+__version__ = "0.76.0"  # K.2 Docling Document Processor integration

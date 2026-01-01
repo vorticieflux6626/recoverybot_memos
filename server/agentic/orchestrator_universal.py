@@ -52,7 +52,10 @@ from .events import (
     EventEmitter, EventType, SearchEvent,
     get_graph_state, reset_graph_state,
     graph_node_entered, graph_node_completed,
-    llm_call_start, llm_call_complete
+    llm_call_start, llm_call_complete,
+    # VL (Vision-Language) scraping events
+    vl_scraping_start, vl_scraping_screenshot, vl_scraping_extracting,
+    vl_scraping_complete, vl_scraping_failed
 )
 
 # Core agents (always available)
@@ -4418,15 +4421,30 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 if result.get("success") and result.get("content"):
                     content = result["content"]
                     scraped_content.append(content[:request.max_content_per_source])
-                    # Emit URL scraped event
-                    await self.emit_event(
-                        EventType.URL_SCRAPED,
-                        {"url": url, "content_length": len(content)},
-                        request_id,
-                        message=f"Scraped {len(content):,} chars from {url[:40]}...",
-                        graph_line=self._graph_state.to_line()
-                    )
-                    logger.info(f"[{request_id}] Scraped {len(content):,} chars from {url[:60]}")
+
+                    # Check if VL scraping was used (JS-heavy page detection)
+                    if result.get("content_type") == "vl_extracted":
+                        # Emit VL scraping complete event
+                        vl_model = result.get("vl_model", "unknown")
+                        extraction_type = result.get("extraction_type", "general")
+                        await self.emitter.emit(vl_scraping_complete(
+                            request_id,
+                            url,
+                            len(content),
+                            vl_model,
+                            extraction_type
+                        ))
+                        logger.info(f"[{request_id}] VL scraped {len(content):,} chars from {url[:60]} using {vl_model}")
+                    else:
+                        # Emit standard URL scraped event
+                        await self.emit_event(
+                            EventType.URL_SCRAPED,
+                            {"url": url, "content_length": len(content)},
+                            request_id,
+                            message=f"Scraped {len(content):,} chars from {url[:40]}...",
+                            graph_line=self._graph_state.to_line()
+                        )
+                        logger.info(f"[{request_id}] Scraped {len(content):,} chars from {url[:60]}")
                 else:
                     logger.debug(f"[{request_id}] Scrape returned no content for {url[:60]}: {result.get('error', 'unknown')}")
             except Exception as e:

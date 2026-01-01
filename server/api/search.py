@@ -7682,3 +7682,300 @@ async def compute_document_similarity_matrix(
     except Exception as e:
         logger.error(f"Document similarity matrix failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# K.2: Docling Document Processor Endpoints (December 2025)
+# Based on arXiv:2408.09869 - 97.9% TEDS-S table extraction accuracy
+# =============================================================================
+
+@router.get("/docling/health")
+async def check_docling_health():
+    """
+    Check if Docling service is healthy and reachable.
+
+    Returns:
+        Health status with last check timestamp
+    """
+    try:
+        from agentic.docling_adapter import get_docling_adapter
+
+        adapter = get_docling_adapter()
+        is_healthy = await adapter.health_check()
+
+        stats = adapter.get_stats()
+
+        return {
+            "success": True,
+            "data": {
+                "is_healthy": is_healthy,
+                "last_health_check": stats.get("last_health_check"),
+                "circuit_breaker_open": stats.get("circuit_breaker_open", False),
+                "consecutive_failures": stats.get("consecutive_failures", 0),
+                "base_url": adapter.base_url
+            },
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Docling health check failed: {e}")
+        return {
+            "success": False,
+            "data": {"is_healthy": False, "error": str(e)},
+            "meta": {"timestamp": datetime.now(UTC).isoformat(), "version": "1.0.0"},
+            "errors": [{"code": "DOCLING_ERROR", "message": str(e)}]
+        }
+
+
+@router.get("/docling/stats")
+async def get_docling_stats():
+    """
+    Get Docling adapter statistics.
+
+    Returns:
+        Request counts, cache stats, and performance metrics
+    """
+    try:
+        from agentic.docling_adapter import get_docling_adapter
+
+        adapter = get_docling_adapter()
+        stats = adapter.get_stats()
+
+        return {
+            "success": True,
+            "data": stats,
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Docling stats failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/docling/convert")
+async def convert_document(
+    source: str = Body(..., description="URL or file path to document"),
+    output_format: str = Body("markdown", description="Output format: markdown, json, text, html"),
+    quality: str = Body("standard", description="Extraction quality: fast, standard, accurate"),
+    extract_tables: bool = Body(True, description="Extract tables separately"),
+    use_cache: bool = Body(True, description="Use cached results if available")
+):
+    """
+    Convert a document using Docling.
+
+    Supports PDF, HTML, DOCX, PPTX, and images.
+    Uses TableFormer for 97.9% accurate table extraction.
+
+    Returns:
+        Extracted document with content, tables, sections, and metadata
+    """
+    try:
+        from agentic.docling_adapter import (
+            get_docling_adapter,
+            DoclingFormat,
+            ExtractionQuality
+        )
+
+        adapter = get_docling_adapter()
+
+        # Map string to enum
+        format_map = {
+            "markdown": DoclingFormat.MARKDOWN,
+            "json": DoclingFormat.JSON,
+            "text": DoclingFormat.TEXT,
+            "html": DoclingFormat.HTML
+        }
+        quality_map = {
+            "fast": ExtractionQuality.FAST,
+            "standard": ExtractionQuality.STANDARD,
+            "accurate": ExtractionQuality.ACCURATE
+        }
+
+        doc_format = format_map.get(output_format.lower(), DoclingFormat.MARKDOWN)
+        doc_quality = quality_map.get(quality.lower(), ExtractionQuality.STANDARD)
+
+        result = await adapter.convert(
+            source=source,
+            output_format=doc_format,
+            quality=doc_quality,
+            extract_tables=extract_tables,
+            use_cache=use_cache
+        )
+
+        if not result:
+            return {
+                "success": False,
+                "data": None,
+                "meta": {"timestamp": datetime.now(UTC).isoformat(), "version": "1.0.0"},
+                "errors": [{"code": "DOCLING_CONVERSION_FAILED", "message": "Conversion failed"}]
+            }
+
+        return {
+            "success": True,
+            "data": {
+                "document_id": result.document_id,
+                "source_url": result.source_url,
+                "document_type": result.document_type.value,
+                "title": result.title,
+                "content": result.content,
+                "tables": [
+                    {
+                        "table_id": t.table_id,
+                        "headers": t.headers,
+                        "row_count": t.row_count,
+                        "col_count": t.col_count,
+                        "has_merged_cells": t.has_merged_cells,
+                        "has_multi_level_header": t.has_multi_level_header,
+                        "confidence": t.confidence,
+                        "content": t.content
+                    }
+                    for t in result.tables
+                ],
+                "sections": result.sections,
+                "metadata": result.metadata,
+                "extraction_quality": result.extraction_quality.value,
+                "processing_time_ms": result.processing_time_ms
+            },
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Docling conversion failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/docling/extract-tables")
+async def extract_tables(
+    source: str = Body(..., description="URL or file path to document"),
+    quality: str = Body("accurate", description="Extraction quality: fast, standard, accurate")
+):
+    """
+    Extract only tables from a document with maximum accuracy.
+
+    Uses TableFormer for complex table structure recognition.
+    Handles merged cells, multi-level headers, and nested tables.
+
+    Returns:
+        List of extracted tables with structure metadata
+    """
+    try:
+        from agentic.docling_adapter import get_docling_adapter, ExtractionQuality
+
+        adapter = get_docling_adapter()
+
+        quality_map = {
+            "fast": ExtractionQuality.FAST,
+            "standard": ExtractionQuality.STANDARD,
+            "accurate": ExtractionQuality.ACCURATE
+        }
+        doc_quality = quality_map.get(quality.lower(), ExtractionQuality.ACCURATE)
+
+        tables = await adapter.extract_tables(source=source, quality=doc_quality)
+
+        return {
+            "success": True,
+            "data": {
+                "table_count": len(tables),
+                "tables": [
+                    {
+                        "table_id": t.table_id,
+                        "headers": t.headers,
+                        "content": t.content,
+                        "row_count": t.row_count,
+                        "col_count": t.col_count,
+                        "has_merged_cells": t.has_merged_cells,
+                        "has_multi_level_header": t.has_multi_level_header,
+                        "confidence": t.confidence,
+                        "source_page": t.source_page
+                    }
+                    for t in tables
+                ]
+            },
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Docling table extraction failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/docling/is-complex")
+async def check_document_complexity(
+    source: str = Body(..., description="URL or file path to document")
+):
+    """
+    Check if a document has complex structure requiring Docling.
+
+    Detects:
+    - Multi-level headers
+    - Merged cells
+    - Complex layouts
+    - Nested tables
+
+    Returns:
+        Whether document needs Docling (vs simpler tools like BeautifulSoup)
+    """
+    try:
+        from agentic.docling_adapter import get_docling_adapter
+
+        adapter = get_docling_adapter()
+        is_complex = await adapter.is_complex_document(source=source)
+
+        return {
+            "success": True,
+            "data": {
+                "is_complex": is_complex,
+                "recommendation": "docling" if is_complex else "simple_extraction"
+            },
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Docling complexity check failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/docling/cache")
+async def clear_docling_cache():
+    """
+    Clear the Docling adapter cache.
+
+    Returns:
+        Number of items cleared
+    """
+    try:
+        from agentic.docling_adapter import get_docling_adapter
+
+        adapter = get_docling_adapter()
+        cleared_count = adapter.clear_cache()
+
+        return {
+            "success": True,
+            "data": {
+                "cleared_count": cleared_count,
+                "message": f"Cleared {cleared_count} cached items"
+            },
+            "meta": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "version": "1.0.0"
+            },
+            "errors": []
+        }
+    except Exception as e:
+        logger.error(f"Docling cache clear failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

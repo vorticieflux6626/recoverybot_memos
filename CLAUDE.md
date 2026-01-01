@@ -1,6 +1,6 @@
 # memOS Server
 
-> **Updated**: 2026-01-01 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.75.0
+> **Updated**: 2026-01-01 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.76.0
 
 ## Quick Reference
 
@@ -50,6 +50,7 @@ memOS is the authoritative source for:
 | SearXNG | 8888 | No | Metasearch (fallback to DDG) |
 | Redis | 6379 | No | Session caching |
 | PDF Tools API | 8002 | No | FANUC document retrieval |
+| Docling | 8003 | No | Document processing (97.9% table accuracy) |
 
 ## Testing
 
@@ -163,6 +164,7 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Part G.7.2** | Hyperbolic Embeddings for Hierarchical Documents | ✅ **COMPLETE** |
 | **Part G.7.3** | Optimal Transport for Dense-Sparse Fusion | ✅ **COMPLETE** |
 | **Part G.7.4** | TSDAE Domain Adaptation | ✅ **COMPLETE** |
+| **Part K.2** | Docling Document Processor | ✅ **COMPLETE** |
 
 #### ✅ Part G.7.2: Hyperbolic Embeddings (Completed 2025-12-31)
 
@@ -317,6 +319,75 @@ embeddings = await adapter.encode(
 **Test Results:** 34/34 tests passing
 
 **Module Version**: `agentic/__init__.py` → v0.75.0
+
+#### ✅ Part K.2: Docling Document Processor Integration (Completed 2026-01-01)
+
+Based on arXiv:2408.09869 - Docling Technical Report with 97.9% TEDS-S table extraction accuracy.
+
+**Implementation Files:**
+- `agentic/docling_adapter.py` (~525 lines): Core Docling adapter with circuit breaker
+- `api/search.py`: 6 new API endpoints
+
+**Key Components:**
+| Component | Description |
+|-----------|-------------|
+| `DoclingAdapter` | Async HTTP client with circuit breaker pattern |
+| `DoclingFormat` | Output formats: markdown, json, text, html |
+| `ExtractionQuality` | Quality levels: fast, standard, accurate |
+| `TableData` | Extracted table with structure metadata |
+| `ExtractedDocument` | Full document with content, tables, sections |
+
+**Key Features:**
+| Feature | Description |
+|---------|-------------|
+| Table Extraction | 97.9% TEDS-S accuracy via TableFormer |
+| Multi-Format | PDF, HTML, DOCX, PPTX, images |
+| Circuit Breaker | Auto-open after 5 failures, 60s timeout |
+| LRU Cache | 100-item document cache |
+| Complex Detection | Auto-detect multi-level headers, merged cells |
+
+**API Endpoints:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/docling/health` | GET | Health check with circuit breaker status |
+| `/docling/stats` | GET | Adapter statistics and cache metrics |
+| `/docling/convert` | POST | Convert document to markdown/json/text/html |
+| `/docling/extract-tables` | POST | Extract tables with TableFormer |
+| `/docling/is-complex` | POST | Check if document needs Docling |
+| `/docling/cache` | DELETE | Clear adapter cache |
+
+**Usage:**
+```python
+from agentic import DoclingAdapter, DoclingFormat, ExtractionQuality, get_docling_adapter
+
+adapter = get_docling_adapter()
+
+# Convert document
+result = await adapter.convert(
+    source="https://example.com/manual.pdf",
+    output_format=DoclingFormat.MARKDOWN,
+    quality=ExtractionQuality.ACCURATE,
+    extract_tables=True
+)
+
+# Extract only tables
+tables = await adapter.extract_tables(source="manual.pdf")
+
+# Check complexity
+is_complex = await adapter.is_complex_document(source="document.html")
+```
+
+**Docker Configuration:**
+```bash
+# Start Docling service (optional profile)
+docker compose --profile docling up -d
+```
+
+**Research Reference:**
+- arXiv: https://arxiv.org/abs/2408.09869
+- TableFormer for complex table structure recognition
+
+**Module Version**: `agentic/__init__.py` → v0.76.0
 
 #### ✅ Part G.2: Hierarchical Retrieval Optimization (Completed 2025-12-30)
 

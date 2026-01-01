@@ -48,6 +48,13 @@ class EventType(str, Enum):
     ANALYZING_IMAGE = "analyzing_image"
     IMAGE_ANALYZED = "image_analyzed"
 
+    # VL (Vision-Language) Scraping - for JS-heavy pages
+    VL_SCRAPING_START = "vl_scraping_start"
+    VL_SCRAPING_SCREENSHOT = "vl_scraping_screenshot"
+    VL_SCRAPING_EXTRACTING = "vl_scraping_extracting"
+    VL_SCRAPING_COMPLETE = "vl_scraping_complete"
+    VL_SCRAPING_FAILED = "vl_scraping_failed"
+
     # Verification
     VERIFYING_CLAIMS = "verifying_claims"
     CLAIMS_VERIFIED = "claims_verified"
@@ -613,6 +620,112 @@ def analyzing_image(request_id: str, image_index: int, total_images: int) -> Sea
         request_id=request_id,
         message=f"Analyzing image {image_index}/{total_images} with vision model...",
         progress_percent=70 + int((image_index / total_images) * 5)  # 70-75%
+    )
+
+
+# VL (Vision-Language) Scraping Events - for JS-heavy pages
+def vl_scraping_start(request_id: str, url: str, reason: str) -> SearchEvent:
+    """
+    Emitted when VL scraper is invoked for a JS-heavy page.
+
+    Args:
+        request_id: Request identifier
+        url: URL being scraped
+        reason: Why VL scraper was chosen (e.g., "js_heavy_domain", "minimal_content")
+    """
+    return SearchEvent(
+        event_type=EventType.VL_SCRAPING_START,
+        request_id=request_id,
+        message=f"Starting VL scrape ({reason}): {url[:60]}...",
+        url=url,
+        progress_percent=62,
+        data={"reason": reason}
+    )
+
+
+def vl_scraping_screenshot(request_id: str, url: str, screenshot_count: int) -> SearchEvent:
+    """
+    Emitted when screenshot capture is in progress.
+
+    Args:
+        request_id: Request identifier
+        url: URL being captured
+        screenshot_count: Number of screenshots taken (for scroll-and-capture)
+    """
+    return SearchEvent(
+        event_type=EventType.VL_SCRAPING_SCREENSHOT,
+        request_id=request_id,
+        message=f"Captured {screenshot_count} screenshot(s)",
+        url=url,
+        progress_percent=64,
+        data={"screenshot_count": screenshot_count}
+    )
+
+
+def vl_scraping_extracting(request_id: str, url: str, model_name: str) -> SearchEvent:
+    """
+    Emitted when VL model is extracting content from screenshots.
+
+    Args:
+        request_id: Request identifier
+        url: URL being processed
+        model_name: VL model being used (e.g., "qwen3-vl", "llama3.2-vision")
+    """
+    return SearchEvent(
+        event_type=EventType.VL_SCRAPING_EXTRACTING,
+        request_id=request_id,
+        message=f"Extracting with {model_name}...",
+        url=url,
+        model_name=model_name,
+        progress_percent=66
+    )
+
+
+def vl_scraping_complete(
+    request_id: str,
+    url: str,
+    content_length: int,
+    model_used: str,
+    extraction_type: str
+) -> SearchEvent:
+    """
+    Emitted when VL scraping completes successfully.
+
+    Args:
+        request_id: Request identifier
+        url: URL that was scraped
+        content_length: Length of extracted content in characters
+        model_used: VL model that performed extraction
+        extraction_type: Type of extraction (e.g., "GENERAL_INFO", "CONTACT_INFO")
+    """
+    return SearchEvent(
+        event_type=EventType.VL_SCRAPING_COMPLETE,
+        request_id=request_id,
+        message=f"VL extracted {content_length:,} chars",
+        url=url,
+        content_length=content_length,
+        model_name=model_used,
+        progress_percent=68,
+        data={"extraction_type": extraction_type}
+    )
+
+
+def vl_scraping_failed(request_id: str, url: str, error: str) -> SearchEvent:
+    """
+    Emitted when VL scraping fails.
+
+    Args:
+        request_id: Request identifier
+        url: URL that failed
+        error: Error message
+    """
+    return SearchEvent(
+        event_type=EventType.VL_SCRAPING_FAILED,
+        request_id=request_id,
+        message=f"VL scrape failed: {error[:80]}",
+        url=url,
+        progress_percent=68,
+        data={"error": error}
     )
 
 

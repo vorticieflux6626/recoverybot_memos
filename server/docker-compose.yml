@@ -104,6 +104,38 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # Docling Document Processor (for PDF/HTML table extraction)
+  docling:
+    image: ghcr.io/docling-project/docling-serve:latest
+    container_name: memos-docling
+    environment:
+      - DOCLING_HOST=0.0.0.0
+      - DOCLING_PORT=8003
+      - DOCLING_WORKERS=4
+      - DOCLING_LOG_LEVEL=INFO
+    ports:
+      - "8003:8003"
+    volumes:
+      - docling_data:/data
+      - ./data/docling/cache:/cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - memos-network
+    # GPU acceleration for TableFormer (optional - uncomment if GPU available)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    profiles: ["docling"]
+
   # Prometheus for monitoring (optional)
   prometheus:
     image: prom/prometheus:latest
@@ -148,6 +180,8 @@ volumes:
   redis_data:
     driver: local
   chroma_data:
+    driver: local
+  docling_data:
     driver: local
   prometheus_data:
     driver: local

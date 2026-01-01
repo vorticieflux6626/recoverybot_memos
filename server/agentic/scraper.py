@@ -29,6 +29,37 @@ from .metrics import get_performance_metrics
 from .context_limits import get_model_context_window
 from .search_metrics import get_search_metrics
 
+# VL Scraper for JS-heavy pages (lazy import to avoid circular dependencies)
+_vl_scraper_instance = None
+
+def get_vl_scraper():
+    """Get or create VLScraper instance (lazy loaded)."""
+    global _vl_scraper_instance
+    if _vl_scraper_instance is None:
+        try:
+            from services.vl_scraper import VLScraper
+            _vl_scraper_instance = VLScraper()
+            logger.info("VLScraper initialized for JS-heavy page extraction")
+        except ImportError as e:
+            logger.warning(f"VLScraper not available: {e}")
+            _vl_scraper_instance = False  # Mark as unavailable
+    return _vl_scraper_instance if _vl_scraper_instance else None
+
+
+# Domains known to require JavaScript rendering
+JS_HEAVY_DOMAINS = {
+    # Single-page applications
+    "angular.io", "react.dev", "vuejs.org",
+    # Dynamic content sites
+    "twitter.com", "x.com", "linkedin.com", "facebook.com",
+    # E-commerce with heavy JS
+    "amazon.com", "ebay.com", "alibaba.com",
+    # Industrial manufacturer portals (often use React/Angular)
+    "rockwellautomation.com", "siemens.com", "fanucamerica.com",
+    # Forums with infinite scroll
+    "reddit.com", "quora.com",
+}
+
 # Optional image handling imports
 try:
     from PIL import Image
@@ -59,8 +90,104 @@ class ContentScraper:
     # User agent for requests
     USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-    def __init__(self):
+    # JS detection patterns in HTML content
+    JS_FRAMEWORK_PATTERNS = [
+        r'<script[^>]*\bsrc=["\'][^"\']*(?:react|angular|vue|next|nuxt)',
+        r'<script[^>]*>.*(?:React\.createElement|angular\.module|Vue\.createApp)',
+        r'id=["\'](?:root|app|__next)["\']',  # Common SPA mount points
+        r'<noscript>.*(?:JavaScript|enable|required)',  # Noscript warnings
+    ]
+
+    def __init__(self, enable_vl_scraper: bool = True):
+        """
+        Initialize ContentScraper.
+
+        Args:
+            enable_vl_scraper: Whether to use VL scraper for JS-heavy pages (default True)
+        """
         self.session: Optional[httpx.AsyncClient] = None
+        self.enable_vl_scraper = enable_vl_scraper
+        self._vl_scraper = None  # Lazy loaded
+
+    def _get_vl_scraper_instance(self):
+        """Get VL scraper instance (lazy loaded)."""
+        if self._vl_scraper is None and self.enable_vl_scraper:
+            self._vl_scraper = get_vl_scraper()
+        return self._vl_scraper
+
+    def _is_js_heavy_page(self, url: str, html: Optional[str] = None) -> bool:
+        """
+        Detect if a page requires JavaScript rendering for proper extraction.
+
+        Args:
+            url: The URL being scraped
+            html: Optional HTML content to analyze
+
+        Returns:
+            True if the page likely requires JS rendering
+        """
+        domain = urlparse(url).netloc.lower().replace("www.", "")
+
+        # Check known JS-heavy domains
+        for js_domain in JS_HEAVY_DOMAINS:
+            if js_domain in domain:
+                logger.debug(f"Domain {domain} is in JS_HEAVY_DOMAINS")
+                return True
+
+        # If we have HTML content, analyze it for JS frameworks
+        if html:
+            # Check for minimal content (possible JS-rendered page)
+            visible_text = re.sub(r'<[^>]+>', '', html)
+            visible_text = re.sub(r'\s+', ' ', visible_text).strip()
+
+            # Very little visible text suggests JS-rendered content
+            if len(visible_text) < 500 and len(html) > 5000:
+                logger.debug(f"Minimal visible text ({len(visible_text)} chars) suggests JS rendering")
+                return True
+
+            # Check for JS framework patterns
+            for pattern in self.JS_FRAMEWORK_PATTERNS:
+                if re.search(pattern, html, re.IGNORECASE | re.DOTALL):
+                    logger.debug(f"JS framework pattern detected in HTML")
+                    return True
+
+        return False
+
+    async def _scrape_with_vl(self, url: str) -> Dict[str, Any]:
+        """
+        Scrape a URL using the VL (Vision-Language) scraper.
+
+        Uses Playwright to capture screenshots and VL models to extract content.
+        """
+        vl_scraper = self._get_vl_scraper_instance()
+        if not vl_scraper:
+            logger.warning("VL scraper not available, falling back to standard extraction")
+            return None
+
+        try:
+            logger.info(f"Using VL scraper for JS-heavy page: {url[:60]}...")
+
+            # Use the VL scraper's scrape method
+            result = await vl_scraper.scrape(url)
+
+            if result and result.success:
+                return {
+                    "url": url,
+                    "title": result.title or "",
+                    "content": result.content or "",
+                    "content_type": "vl_extracted",
+                    "success": True,
+                    "error": None,
+                    "extraction_type": result.extraction_type.value if result.extraction_type else "general",
+                    "vl_model": result.model_used
+                }
+            else:
+                logger.warning(f"VL scraper failed for {url}: {result.error if result else 'No result'}")
+                return None
+
+        except Exception as e:
+            logger.error(f"VL scraper error for {url}: {e}")
+            return None
 
     async def _get_session(self) -> httpx.AsyncClient:
         """Get or create HTTP session"""
@@ -151,6 +278,32 @@ class ContentScraper:
                 logger.info(f"Cache hit for {url[:60]}...")
                 return cached
 
+        # Phase K.1: Check if domain is known to be JS-heavy (VL scraper first)
+        if self.enable_vl_scraper and self._is_js_heavy_page(url):
+            vl_result = await self._scrape_with_vl(url)
+            if vl_result:
+                # Record metrics and cache
+                duration_ms = (time.time() - start_time) * 1000
+                content_length = len(vl_result.get("content", ""))
+                metrics.record_scrape(
+                    domain=domain,
+                    success=True,
+                    content_length=content_length,
+                    duration_ms=duration_ms
+                )
+                if use_cache:
+                    cache = get_content_cache()
+                    cache.set_content(
+                        url=url,
+                        title=vl_result.get("title", ""),
+                        content=vl_result.get("content", ""),
+                        content_type=vl_result.get("content_type", "vl_extracted"),
+                        success=True,
+                        error=None
+                    )
+                return vl_result
+            # If VL scraper failed, fall through to standard extraction
+
         try:
             session = await self._get_session()
 
@@ -170,7 +323,19 @@ class ContentScraper:
             if "pdf" in actual_content_type or url.lower().endswith(".pdf"):
                 result = await self._extract_pdf(url, response.content)
             else:
-                result = self._extract_html(url, response.text)
+                html_text = response.text
+                result = self._extract_html(url, html_text)
+
+                # Phase K.1: Check if minimal content suggests JS rendering
+                if self.enable_vl_scraper and result.get("success"):
+                    content = result.get("content", "")
+                    # If very little content extracted, try VL scraper as fallback
+                    if len(content) < 500 and self._is_js_heavy_page(url, html_text):
+                        logger.info(f"Minimal content ({len(content)} chars), trying VL scraper as fallback")
+                        vl_result = await self._scrape_with_vl(url)
+                        if vl_result and len(vl_result.get("content", "")) > len(content):
+                            logger.info(f"VL scraper extracted more content: {len(vl_result.get('content', ''))} chars")
+                            result = vl_result
 
             # Record metrics
             duration_ms = (time.time() - start_time) * 1000
