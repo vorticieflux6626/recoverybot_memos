@@ -16,7 +16,7 @@ Endpoints:
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from typing import Optional, List, Dict, Any
 
 from config.settings import get_settings
