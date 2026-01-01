@@ -1,6 +1,6 @@
 # memOS Server
 
-> **Updated**: 2026-01-01 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.76.0
+> **Updated**: 2026-01-01 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.78.0
 
 ## Quick Reference
 
@@ -165,6 +165,7 @@ Comprehensive research into cutting-edge agentic AI frameworks has produced a de
 | **Part G.7.3** | Optimal Transport for Dense-Sparse Fusion | ✅ **COMPLETE** |
 | **Part G.7.4** | TSDAE Domain Adaptation | ✅ **COMPLETE** |
 | **Part K.2** | Docling Document Processor | ✅ **COMPLETE** |
+| **Part K.3** | Table Complexity Routing | ✅ **COMPLETE** |
 
 #### ✅ Part G.7.2: Hyperbolic Embeddings (Completed 2025-12-31)
 
@@ -388,6 +389,86 @@ docker compose --profile docling up -d
 - TableFormer for complex table structure recognition
 
 **Module Version**: `agentic/__init__.py` → v0.76.0
+
+#### ✅ Part K.3: Table Complexity Routing (Completed 2026-01-01)
+
+Routes complex tables to Docling for high-accuracy extraction (97.9% TEDS-S) based on structural complexity scoring.
+
+**Implementation Files:**
+- `agentic/table_complexity.py` (~400 lines): TableComplexityScorer with weighted scoring
+- `agentic/scraper.py` (lines 438-443): Integration after VL scraper fallback
+
+**Key Components:**
+| Component | Description |
+|-----------|-------------|
+| `TableComplexityScorer` | Analyzes HTML for table complexity indicators |
+| `TableComplexity` | Enum: SIMPLE, MODERATE, COMPLEX, VERY_COMPLEX |
+| `ComplexityResult` | Analysis result with score and reasons |
+| `TableInfo` | Per-table details (rows, cols, merged cells, etc.) |
+
+**Complexity Scoring Weights:**
+| Indicator | Weight | Cap |
+|-----------|--------|-----|
+| Merged cells (colspan/rowspan) | +0.25 per occurrence | 1.0 |
+| Multi-level headers | +0.40 | - |
+| Nested tables | +0.50 | - |
+| Large tables (>20 rows) | +0.20 | - |
+| Very large tables (>50 rows) | +0.30 | - |
+| Wide tables (>10 columns) | +0.20 | - |
+| High empty cell ratio (>30%) | +0.15 | - |
+| Technical patterns (FANUC codes) | +0.02 per match | 0.20 |
+
+**Complexity Thresholds:**
+| Score | Level | Docling? |
+|-------|-------|----------|
+| < 0.3 | SIMPLE | No |
+| 0.3-0.5 | MODERATE | Optional |
+| 0.5-0.7 | COMPLEX | Recommended |
+| ≥ 0.7 | VERY_COMPLEX | Required |
+
+**Technical Patterns Detected:**
+- Error codes: `SRVO-063`, `MOTN-023`
+- Parameters: `$PARAM_GROUP.$ITEM`
+- Axes: `J1`, `J2`, `A1`
+- Part numbers: `A06B-6079-H101`
+- Measurements: `10.5mm`, `45°`
+
+**Integration Flow:**
+```
+HTML Scraped → Check enable_docling flag
+    ↓
+[TableComplexityScorer.analyze_html()]
+    ↓
+score ≥ 0.5? → [DoclingAdapter.convert()]
+    ↓             ↓
+No             Yes: Re-extract with TableFormer
+    ↓             ↓
+Use original   Use Docling result (97.9% accuracy)
+```
+
+**Usage:**
+```python
+from agentic import TableComplexityScorer, get_table_complexity_scorer
+
+scorer = get_table_complexity_scorer()
+should_use, result = scorer.should_use_docling(html_content, "html")
+
+if should_use:
+    print(f"Complex tables detected (score: {result.overall_score:.2f})")
+    print(f"Reasons: {result.reasons}")
+```
+
+**Test Results:**
+- Simple tables: NOT routed to Docling ✅
+- Complex FANUC tables (merged + multi-header): Routed with score 1.00 ✅
+- Large tables only: NOT routed (score 0.20 < threshold) ✅
+
+**Research Basis:**
+- arXiv:2408.09869 - Docling Technical Report
+- TableFormer for multi-level header recognition
+- TEDS-S benchmark for table structure accuracy
+
+**Module Version**: `agentic/__init__.py` → v0.78.0
 
 #### ✅ Part G.2: Hierarchical Retrieval Optimization (Completed 2025-12-30)
 

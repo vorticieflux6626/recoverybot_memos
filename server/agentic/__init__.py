@@ -1745,4 +1745,4 @@ __all__ = [
     "cleanup_docling_adapter",
 ]
 
-__version__ = "0.77.0"  # K.1 VL Scraper SSE Integration
+__version__ = "0.78.0"  # K.3 Table Complexity Routing to Docling

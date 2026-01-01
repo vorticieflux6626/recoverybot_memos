@@ -29,6 +29,39 @@ from .metrics import get_performance_metrics
 from .context_limits import get_model_context_window
 from .search_metrics import get_search_metrics
 
+# Phase K.3: Table complexity scoring and Docling routing
+_table_scorer_instance = None
+_docling_adapter_instance = None
+
+
+def get_table_scorer():
+    """Get or create TableComplexityScorer instance (lazy loaded)."""
+    global _table_scorer_instance
+    if _table_scorer_instance is None:
+        try:
+            from .table_complexity import get_table_complexity_scorer
+            _table_scorer_instance = get_table_complexity_scorer()
+            logger.info("TableComplexityScorer initialized for complex table detection")
+        except ImportError as e:
+            logger.warning(f"TableComplexityScorer not available: {e}")
+            _table_scorer_instance = False  # Mark as unavailable
+    return _table_scorer_instance if _table_scorer_instance else None
+
+
+def get_docling():
+    """Get or create DoclingAdapter instance (lazy loaded)."""
+    global _docling_adapter_instance
+    if _docling_adapter_instance is None:
+        try:
+            from .docling_adapter import get_docling_adapter
+            _docling_adapter_instance = get_docling_adapter()
+            logger.info("DoclingAdapter initialized for complex table extraction")
+        except ImportError as e:
+            logger.warning(f"DoclingAdapter not available: {e}")
+            _docling_adapter_instance = False  # Mark as unavailable
+    return _docling_adapter_instance if _docling_adapter_instance else None
+
+
 # VL Scraper for JS-heavy pages (lazy import to avoid circular dependencies)
 _vl_scraper_instance = None
 
@@ -98,15 +131,24 @@ class ContentScraper:
         r'<noscript>.*(?:JavaScript|enable|required)',  # Noscript warnings
     ]
 
-    def __init__(self, enable_vl_scraper: bool = True):
+    def __init__(
+        self,
+        enable_vl_scraper: bool = True,
+        enable_docling: bool = True,
+        docling_threshold: float = 0.5,
+    ):
         """
         Initialize ContentScraper.
 
         Args:
             enable_vl_scraper: Whether to use VL scraper for JS-heavy pages (default True)
+            enable_docling: Whether to use Docling for complex table extraction (default True)
+            docling_threshold: Minimum complexity score to trigger Docling (default 0.5)
         """
         self.session: Optional[httpx.AsyncClient] = None
         self.enable_vl_scraper = enable_vl_scraper
+        self.enable_docling = enable_docling
+        self.docling_threshold = docling_threshold
         self._vl_scraper = None  # Lazy loaded
 
     def _get_vl_scraper_instance(self):
@@ -392,6 +434,13 @@ class ContentScraper:
                         if vl_result and len(vl_result.get("content", "")) > len(content):
                             logger.info(f"VL scraper extracted more content: {len(vl_result.get('content', ''))} chars")
                             result = vl_result
+
+                # Phase K.3: Check for complex tables and use Docling if needed
+                if self.enable_docling and result.get("success"):
+                    should_use_docling, complexity_result = self._check_table_complexity(html_text)
+                    if should_use_docling:
+                        logger.info(f"Routing to Docling for complex table extraction: {url[:50]}")
+                        result = await self._extract_with_docling(url, result, complexity_result)
 
             # Record metrics
             duration_ms = (time.time() - start_time) * 1000
@@ -700,6 +749,145 @@ class ContentScraper:
                 "success": False,
                 "error": str(e)
             }
+
+    def _check_table_complexity(self, html: str) -> Tuple[bool, Optional[Any]]:
+        """
+        Check if HTML contains complex tables that should be processed by Docling.
+
+        Phase K.3: Table complexity scoring for routing decisions.
+
+        Args:
+            html: Raw HTML content
+
+        Returns:
+            Tuple of (should_use_docling, complexity_result)
+        """
+        if not self.enable_docling:
+            return False, None
+
+        scorer = get_table_scorer()
+        if scorer is None:
+            return False, None
+
+        try:
+            should_use, result = scorer.should_use_docling(
+                content=html,
+                content_type="html"
+            )
+            if should_use:
+                logger.info(
+                    f"Table complexity detected: score={result.overall_score:.2f}, "
+                    f"tables={result.table_count}, max_complexity={result.max_complexity.value}"
+                )
+            return should_use, result
+        except Exception as e:
+            logger.warning(f"Table complexity check failed: {e}")
+            return False, None
+
+    async def _extract_with_docling(
+        self,
+        url: str,
+        original_result: Dict[str, Any],
+        complexity_result: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Re-extract content using Docling for complex table handling.
+
+        Phase K.3: High-accuracy table extraction (97.9% TEDS-S).
+
+        Args:
+            url: URL to extract from
+            original_result: Original extraction result (for fallback)
+            complexity_result: Table complexity analysis result
+
+        Returns:
+            Enhanced extraction result with better table handling
+        """
+        docling = get_docling()
+        if docling is None:
+            logger.warning("Docling not available, using original extraction")
+            return original_result
+
+        try:
+            # Use Docling to convert the document
+            from .docling_adapter import DoclingFormat, ExtractionQuality
+
+            doc = await docling.convert(
+                source=url,
+                output_format=DoclingFormat.MARKDOWN,
+                quality=ExtractionQuality.ACCURATE,
+                extract_tables=True
+            )
+
+            if doc is None:
+                logger.warning(f"Docling extraction failed for {url}, using original")
+                return original_result
+
+            # Build enhanced content from Docling output
+            content_parts = []
+
+            # Add main content
+            if doc.content:
+                content_parts.append(doc.content)
+
+            # Add extracted tables as formatted sections
+            if doc.tables:
+                for table in doc.tables:
+                    table_text = self._format_table_for_text(table)
+                    if table_text:
+                        content_parts.append(f"\n[Table {table.table_id}]\n{table_text}")
+
+            content = "\n\n".join(content_parts)
+
+            # Truncate if needed
+            if len(content) > self.MAX_CONTENT_LENGTH:
+                content = content[:self.MAX_CONTENT_LENGTH] + "... [truncated]"
+
+            logger.info(
+                f"Docling extracted {len(content)} chars, "
+                f"{len(doc.tables)} tables from {url[:50]}"
+            )
+
+            return {
+                "url": url,
+                "title": doc.title or original_result.get("title", ""),
+                "content": content,
+                "content_type": "docling_enhanced",
+                "success": True,
+                "error": None,
+                "docling_metadata": {
+                    "table_count": len(doc.tables),
+                    "processing_time_ms": doc.processing_time_ms,
+                    "complexity_score": complexity_result.overall_score if complexity_result else None
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Docling extraction error for {url}: {e}")
+            # Fall back to original result
+            return original_result
+
+    def _format_table_for_text(self, table) -> str:
+        """Format a Docling TableData for plain text representation."""
+        try:
+            if not table.content:
+                return ""
+
+            lines = []
+
+            # Add headers
+            if table.headers:
+                lines.append(" | ".join(table.headers))
+                lines.append("-" * (sum(len(h) for h in table.headers) + 3 * len(table.headers)))
+
+            # Add rows
+            for row in table.content:
+                lines.append(" | ".join(str(cell) for cell in row))
+
+            return "\n".join(lines)
+        except Exception as e:
+            logger.warning(f"Table formatting failed: {e}")
+            return ""
 
     async def scrape_image(self, url: str) -> Dict[str, Any]:
         """
