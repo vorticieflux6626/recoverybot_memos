@@ -1745,4 +1745,4 @@ __all__ = [
     "cleanup_docling_adapter",
 ]
 
-__version__ = "0.76.0"  # K.2 Docling Document Processor integration
+__version__ = "0.77.0"  # K.1 VL Scraper SSE Integration

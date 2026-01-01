@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, Dict, Any, List, Set
+from urllib.parse import urlparse
 import uuid
 
 from .base_pipeline import BaseSearchPipeline
@@ -139,7 +140,7 @@ from .contrastive_retriever import (
     RetrievalStrategy,
     get_contrastive_retriever
 )
-from .scraper import VisionAnalyzer, DeepReader
+from .scraper import VisionAnalyzer, DeepReader, JS_HEAVY_DOMAINS
 
 # PDF Extraction Tools integration
 from core.document_graph_service import (
@@ -4406,12 +4407,30 @@ class UniversalOrchestrator(BaseSearchPipeline):
         ttl_manager = get_ttl_cache_manager()
 
         for i, url in enumerate(urls_to_scrape):
+            # Detect if this URL is from a JS-heavy domain that may need VL scraping
+            try:
+                parsed = urlparse(url)
+                domain = parsed.netloc.lower().replace("www.", "")
+            except Exception:
+                domain = ""
+
+            is_js_heavy = any(js_domain in domain for js_domain in JS_HEAVY_DOMAINS)
+
+            # Emit VL scraping start event if JS-heavy domain detected
+            if is_js_heavy:
+                await self.emitter.emit(vl_scraping_start(
+                    request_id,
+                    url,
+                    f"JS-heavy domain detected: {domain}"
+                ))
+                logger.info(f"[{request_id}] VL scraping started for JS-heavy domain: {domain}")
+
             # Emit scraping URL event
             await self.emit_event(
                 EventType.SCRAPING_URL,
-                {"url": url, "url_index": i + 1, "url_total": len(urls_to_scrape)},
+                {"url": url, "url_index": i + 1, "url_total": len(urls_to_scrape), "is_js_heavy": is_js_heavy},
                 request_id,
-                message=f"Scraping {i + 1}/{len(urls_to_scrape)}...",
+                message=f"Scraping {i + 1}/{len(urls_to_scrape)}{'  (VL)' if is_js_heavy else ''}...",
                 graph_line=self._graph_state.to_line()
             )
             try:
@@ -4446,9 +4465,26 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         )
                         logger.info(f"[{request_id}] Scraped {len(content):,} chars from {url[:60]}")
                 else:
-                    logger.debug(f"[{request_id}] Scrape returned no content for {url[:60]}: {result.get('error', 'unknown')}")
+                    error_msg = result.get('error', 'No content returned')
+                    logger.debug(f"[{request_id}] Scrape returned no content for {url[:60]}: {error_msg}")
+                    # Emit VL scraping failed if we expected VL scraping
+                    if is_js_heavy:
+                        await self.emitter.emit(vl_scraping_failed(
+                            request_id,
+                            url,
+                            error_msg
+                        ))
+                        logger.warning(f"[{request_id}] VL scraping failed for {url[:60]}: {error_msg}")
             except Exception as e:
                 logger.warning(f"[{request_id}] Failed to scrape {url[:60]}: {e}")
+                # Emit VL scraping failed if we expected VL scraping
+                if is_js_heavy:
+                    await self.emitter.emit(vl_scraping_failed(
+                        request_id,
+                        url,
+                        str(e)
+                    ))
+                    logger.warning(f"[{request_id}] VL scraping failed for {url[:60]}: {e}")
 
         scrape_duration_ms = int((time.time() - start) * 1000)
         search_trace.append({

@@ -158,7 +158,12 @@ class ContentScraper:
         Scrape a URL using the VL (Vision-Language) scraper.
 
         Uses Playwright to capture screenshots and VL models to extract content.
+
+        Returns dict with: url, title, content, content_type, success, error,
+        extraction_type, vl_model - or None if VL scraper unavailable/failed.
         """
+        import json
+
         vl_scraper = self._get_vl_scraper_instance()
         if not vl_scraper:
             logger.warning("VL scraper not available, falling back to standard extraction")
@@ -167,19 +172,70 @@ class ContentScraper:
         try:
             logger.info(f"Using VL scraper for JS-heavy page: {url[:60]}...")
 
+            # Ensure VL scraper is started
+            if not vl_scraper._started:
+                await vl_scraper.start()
+
             # Use the VL scraper's scrape method
+            # Returns ScrapingResult with .extraction (ExtractionResult) and .screenshot (ScreenshotResult)
             result = await vl_scraper.scrape(url)
 
             if result and result.success:
+                # Get title from screenshot metadata
+                title = ""
+                if result.screenshot:
+                    title = result.screenshot.page_title or ""
+
+                # Get content from extraction data or raw response
+                content = ""
+                extraction_type = "general"
+                model_used = None
+
+                if result.extraction:
+                    # Format extracted data as readable content
+                    if result.extraction.data:
+                        # Convert JSON data to readable text format
+                        data = result.extraction.data
+                        if isinstance(data, dict):
+                            # Format dict keys/values as readable text
+                            content_parts = []
+                            for key, value in data.items():
+                                if value and value != "null":
+                                    if isinstance(value, list):
+                                        value = ", ".join(str(v) for v in value)
+                                    content_parts.append(f"{key}: {value}")
+                            content = "\n".join(content_parts)
+                        else:
+                            content = json.dumps(data, indent=2)
+                    elif result.extraction.raw_response:
+                        content = result.extraction.raw_response
+
+                    extraction_type = (
+                        result.extraction.extraction_type.value
+                        if result.extraction.extraction_type
+                        else "general"
+                    )
+                    model_used = result.extraction.model_used
+
+                logger.info(
+                    f"VL extraction successful: {len(content)} chars, "
+                    f"model={model_used}, type={extraction_type}"
+                )
+
                 return {
                     "url": url,
-                    "title": result.title or "",
-                    "content": result.content or "",
+                    "title": title,
+                    "content": content,
                     "content_type": "vl_extracted",
                     "success": True,
                     "error": None,
-                    "extraction_type": result.extraction_type.value if result.extraction_type else "general",
-                    "vl_model": result.model_used
+                    "extraction_type": extraction_type,
+                    "vl_model": model_used,
+                    "relevance_score": (
+                        result.extraction.relevance_score
+                        if result.extraction
+                        else 0.0
+                    ),
                 }
             else:
                 logger.warning(f"VL scraper failed for {url}: {result.error if result else 'No result'}")
