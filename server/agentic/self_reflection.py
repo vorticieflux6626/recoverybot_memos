@@ -23,6 +23,7 @@ import httpx
 
 from .metrics import get_performance_metrics
 from .context_limits import get_model_context_window
+from .gateway_client import get_gateway_client, LogicalModel, GatewayResponse
 
 logger = logging.getLogger("agentic.self_reflection")
 
@@ -163,7 +164,9 @@ class SelfReflectionAgent:
         query: str,
         synthesis: str,
         sources: List[Dict[str, Any]],
-        scraped_content: Optional[List[str]] = None
+        scraped_content: Optional[List[str]] = None,
+        request_id: str = "",
+        use_gateway: bool = False
     ) -> ReflectionResult:
         """
         Perform Self-RAG reflection on synthesized response.
@@ -173,13 +176,17 @@ class SelfReflectionAgent:
             synthesis: The synthesized response
             sources: List of sources with title, snippet, url
             scraped_content: Optional full scraped content for deeper analysis
+            request_id: Request ID for tracking
+            use_gateway: If True, route through LLM Gateway service
 
         Returns:
             ReflectionResult with scores and issues
         """
+        logger.info(f"Self-RAG reflection (gateway={use_gateway}): {query[:50]}...")
+
         # Run reflection checks in parallel where possible
-        relevance_task = self._check_relevance(query, synthesis)
-        support_task = self._check_support(synthesis, sources, scraped_content)
+        relevance_task = self._check_relevance(query, synthesis, request_id, use_gateway)
+        support_task = self._check_support(synthesis, sources, scraped_content, request_id, use_gateway)
         temporal_task = self._check_temporal_consistency(synthesis, sources)
 
         relevance_score, support_result, temporal_conflicts = await asyncio.gather(
@@ -189,7 +196,7 @@ class SelfReflectionAgent:
         support_level, unsupported_claims = support_result
 
         # Calculate usefulness (how well does synthesis answer the query?)
-        usefulness_score = await self._check_usefulness(query, synthesis)
+        usefulness_score = await self._check_usefulness(query, synthesis, request_id, use_gateway)
 
         # Determine if refinement is needed
         needs_refinement = (
@@ -228,7 +235,13 @@ class SelfReflectionAgent:
             overall_confidence=confidence
         )
 
-    async def _check_relevance(self, query: str, synthesis: str) -> float:
+    async def _check_relevance(
+        self,
+        query: str,
+        synthesis: str,
+        request_id: str = "",
+        use_gateway: bool = False
+    ) -> float:
         """ISREL: Check if synthesis is relevant to the query"""
         prompt = f"""Rate how relevant this answer is to the question on a scale of 0-10.
 
@@ -240,7 +253,10 @@ Output ONLY a JSON object:
 {{"score": <0-10>, "reasoning": "brief explanation"}}"""
 
         try:
-            result = await self._call_llm(prompt, max_tokens=128)
+            if use_gateway:
+                result = await self._call_via_gateway(prompt, max_tokens=128, request_id=request_id)
+            else:
+                result = await self._call_llm(prompt, max_tokens=128, request_id=request_id)
             json_str = extract_json_object(result)
             if json_str:
                 data = json.loads(json_str)
@@ -254,7 +270,9 @@ Output ONLY a JSON object:
         self,
         synthesis: str,
         sources: List[Dict[str, Any]],
-        scraped_content: Optional[List[str]] = None
+        scraped_content: Optional[List[str]] = None,
+        request_id: str = "",
+        use_gateway: bool = False
     ) -> Tuple[SupportLevel, List[str]]:
         """ISSUP: Check if synthesis claims are supported by sources"""
 
@@ -298,7 +316,10 @@ Output JSON:
 
         unsupported = []
         try:
-            result = await self._call_llm(prompt, max_tokens=512)
+            if use_gateway:
+                result = await self._call_via_gateway(prompt, max_tokens=512, request_id=request_id)
+            else:
+                result = await self._call_llm(prompt, max_tokens=512, request_id=request_id)
             json_str = extract_json_object(result)
             if json_str:
                 data = json.loads(json_str)
@@ -477,7 +498,13 @@ Output JSON:
 
         return False
 
-    async def _check_usefulness(self, query: str, synthesis: str) -> float:
+    async def _check_usefulness(
+        self,
+        query: str,
+        synthesis: str,
+        request_id: str = "",
+        use_gateway: bool = False
+    ) -> float:
         """ISUSE: Check if response actually answers the question"""
         prompt = f"""Rate how well this answer addresses the question on a scale of 0-10.
 Consider: Does it directly answer what was asked? Is it complete? Is it actionable?
@@ -490,7 +517,10 @@ Output ONLY a JSON object:
 {{"score": <0-10>, "missing_aspects": ["list any unanswered parts"]}}"""
 
         try:
-            result = await self._call_llm(prompt, max_tokens=128)
+            if use_gateway:
+                result = await self._call_via_gateway(prompt, max_tokens=128, request_id=request_id)
+            else:
+                result = await self._call_llm(prompt, max_tokens=128, request_id=request_id)
             json_str = extract_json_object(result)
             if json_str:
                 data = json.loads(json_str)
@@ -537,7 +567,9 @@ Output ONLY a JSON object:
         self,
         original_synthesis: str,
         reflection: ReflectionResult,
-        sources: List[Dict[str, Any]]
+        sources: List[Dict[str, Any]],
+        request_id: str = "",
+        use_gateway: bool = False
     ) -> str:
         """Refine synthesis based on reflection results"""
 
@@ -571,7 +603,10 @@ Write a corrected version that fixes the identified issues. Be accurate with dat
 Keep the same structure but correct any errors."""
 
         try:
-            refined = await self._call_llm(prompt, max_tokens=2048)
+            if use_gateway:
+                refined = await self._call_via_gateway(prompt, max_tokens=2048, request_id=request_id)
+            else:
+                refined = await self._call_llm(prompt, max_tokens=2048, request_id=request_id)
             if refined and len(refined) > 200:
                 return refined
         except Exception as e:
@@ -614,6 +649,59 @@ Keep the same structure but correct any errors."""
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
         return ""
+
+    async def _call_via_gateway(
+        self,
+        prompt: str,
+        max_tokens: int = 256,
+        request_id: str = ""
+    ) -> str:
+        """
+        Call LLM via Gateway service with automatic fallback.
+
+        Args:
+            prompt: The prompt to send to the LLM
+            max_tokens: Maximum tokens to generate
+            request_id: Request ID for tracking context utilization
+
+        Returns:
+            LLM response text
+        """
+        try:
+            gateway = get_gateway_client()
+
+            response: GatewayResponse = await gateway.generate(
+                prompt=prompt,
+                model=LogicalModel.REFLECTOR,
+                timeout=30.0,
+                options={
+                    "temperature": 0.2,
+                    "num_predict": max_tokens,
+                }
+            )
+
+            result = response.content
+
+            # Track context utilization
+            if request_id and result:
+                metrics = get_performance_metrics()
+                metrics.record_context_utilization(
+                    request_id=request_id,
+                    agent_name="self_reflection",
+                    model_name=response.model,
+                    input_text=prompt,
+                    output_text=result,
+                    context_window=get_model_context_window(response.model)
+                )
+
+            if response.fallback_used:
+                logger.info(f"Gateway self_reflection used fallback to direct Ollama (model: {response.model})")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Gateway self_reflection call failed: {e}, falling back to direct Ollama")
+            return await self._call_llm(prompt, max_tokens, request_id)
 
 
 # Factory function

@@ -1,0 +1,5 @@
+Collecting hnswlib
+  Using cached hnswlib-0.8.0-cp313-cp313-linux_x86_64.whl
+Requirement already satisfied: numpy in /home/sparkone/sdd/PDF_Extraction_Tools/venv/lib/python3.13/site-packages (from hnswlib) (2.2.6)
+Installing collected packages: hnswlib
+Successfully installed hnswlib-0.8.0

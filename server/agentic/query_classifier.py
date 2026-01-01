@@ -16,6 +16,7 @@ from enum import Enum
 
 from .metrics import get_performance_metrics
 from .context_limits import get_model_context_window
+from .gateway_client import get_gateway_client, LogicalModel, GatewayResponse
 
 logger = logging.getLogger("agentic.query_classifier")
 
@@ -196,32 +197,81 @@ class QueryClassifier:
         logger.warning(f"No preferred classifier model found, using default: {self.model}")
         return self.model
 
-    async def classify(
+    async def _classify_via_gateway(
         self,
+        prompt: str,
         query: str,
-        context: Optional[Dict[str, Any]] = None
+        request_id: str = ""
     ) -> QueryClassification:
         """
-        Classify a user query to determine processing approach.
+        Classify query via LLM Gateway service with automatic fallback.
 
         Args:
-            query: The user's query text
-            context: Optional context (conversation history, user preferences)
+            prompt: The formatted classification prompt
+            query: Original user query (for metrics and fallback)
+            request_id: Request ID for tracking
 
         Returns:
-            QueryClassification with category, capabilities, and pipeline recommendation
+            QueryClassification result
         """
-        # Build the classification prompt
-        context_str = json.dumps(context) if context else "None"
-        prompt = QUERY_CLASSIFIER_PROMPT.format(
-            query=query,
-            context=context_str
-        )
+        try:
+            gateway = get_gateway_client()
 
-        # Select model
+            # Use CLASSIFIER logical model
+            response: GatewayResponse = await gateway.generate(
+                prompt=prompt,
+                model=LogicalModel.CLASSIFIER,
+                timeout=60.0,
+                options={
+                    "temperature": CLASSIFIER_PARAMS["temperature"],
+                    "top_p": CLASSIFIER_PARAMS["top_p"],
+                    "num_predict": CLASSIFIER_PARAMS["num_predict"],
+                }
+            )
+
+            response_text = response.content
+
+            # Track context utilization
+            if request_id and response_text:
+                metrics = get_performance_metrics()
+                metrics.record_context_utilization(
+                    request_id=request_id,
+                    agent_name="query_classifier",
+                    model_name=response.model,
+                    input_text=prompt,
+                    output_text=response_text,
+                    context_window=get_model_context_window(response.model)
+                )
+
+            if response.fallback_used:
+                logger.info(f"Gateway classification used fallback to direct Ollama (model: {response.model})")
+
+            # Parse the JSON response
+            return self._parse_classification(response_text, query)
+
+        except Exception as e:
+            logger.error(f"Gateway classification failed: {e}, falling back to direct Ollama")
+            return await self._classify_via_ollama(prompt, query, request_id)
+
+    async def _classify_via_ollama(
+        self,
+        prompt: str,
+        query: str,
+        request_id: str = ""
+    ) -> QueryClassification:
+        """
+        Classify query via direct Ollama API call.
+
+        Args:
+            prompt: The formatted classification prompt
+            query: Original user query (for metrics and fallback)
+            request_id: Request ID for tracking
+
+        Returns:
+            QueryClassification result
+        """
         model = await self._select_classifier_model()
-
-        logger.info(f"Classifying query with {model}: {query[:50]}...")
+        logger.info(f"Classifying query with {model} via direct Ollama: {query[:50]}...")
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -243,18 +293,63 @@ class QueryClassifier:
                     response_text = data.get("response", "")
 
                     # Track context utilization
-                    metrics = get_performance_metrics()
-                    metrics.record_context_utilization(
-                        request_id=f"classify_{hash(query) % 10000}",
-                        agent_name="query_classifier",
-                        model_name=model,
-                        input_text=prompt,
-                        output_text=response_text,
-                        context_window=get_model_context_window(model)
-                    )
+                    if request_id:
+                        metrics = get_performance_metrics()
+                        metrics.record_context_utilization(
+                            request_id=request_id,
+                            agent_name="query_classifier",
+                            model_name=model,
+                            input_text=prompt,
+                            output_text=response_text,
+                            context_window=get_model_context_window(model)
+                        )
 
                     # Parse the JSON response
                     return self._parse_classification(response_text, query)
+
+        except Exception as e:
+            logger.error(f"Direct Ollama classification failed: {e}")
+            return self._default_classification(query)
+
+    async def classify(
+        self,
+        query: str,
+        context: Optional[Dict[str, Any]] = None,
+        request_id: str = "",
+        use_gateway: bool = False
+    ) -> QueryClassification:
+        """
+        Classify a user query to determine processing approach.
+
+        Args:
+            query: The user's query text
+            context: Optional context (conversation history, user preferences)
+            request_id: Request ID for tracking
+            use_gateway: If True, route through LLM Gateway service
+
+        Returns:
+            QueryClassification with category, capabilities, and pipeline recommendation
+        """
+        # Build the classification prompt
+        context_str = json.dumps(context) if context else "None"
+        prompt = QUERY_CLASSIFIER_PROMPT.format(
+            query=query,
+            context=context_str
+        )
+
+        # Generate request_id if not provided
+        if not request_id:
+            request_id = f"classify_{hash(query) % 10000}"
+
+        logger.info(f"Classifying query (gateway={use_gateway}): {query[:50]}...")
+
+        try:
+            if use_gateway:
+                # Route through LLM Gateway for unified routing and VRAM management
+                return await self._classify_via_gateway(prompt, query, request_id)
+            else:
+                # Direct Ollama API call
+                return await self._classify_via_ollama(prompt, query, request_id)
 
         except Exception as e:
             logger.error(f"Classification failed: {e}")
@@ -369,7 +464,9 @@ def get_query_classifier(
 async def classify_query(
     query: str,
     context: Optional[Dict[str, Any]] = None,
-    ollama_url: str = "http://localhost:11434"
+    ollama_url: str = "http://localhost:11434",
+    request_id: str = "",
+    use_gateway: bool = False
 ) -> QueryClassification:
     """
     Quick utility function to classify a query.
@@ -378,9 +475,11 @@ async def classify_query(
         query: The user's query
         context: Optional context dictionary
         ollama_url: Ollama API URL
+        request_id: Request ID for tracking
+        use_gateway: If True, route through LLM Gateway service
 
     Returns:
         QueryClassification result
     """
     classifier = get_query_classifier(ollama_url)
-    return await classifier.classify(query, context)
+    return await classifier.classify(query, context, request_id, use_gateway)

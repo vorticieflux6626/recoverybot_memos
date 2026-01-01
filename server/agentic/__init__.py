@@ -1006,6 +1006,29 @@ from .docling_adapter import (
     cleanup_docling_adapter,
 )
 
+# LLM Gateway Client (January 2026)
+# Routes LLM calls through unified gateway service with fallback
+from .gateway_client import (
+    GatewayClient,
+    GatewayResponse,
+    EmbeddingResponse,
+    LogicalModel,
+    get_gateway_client,
+    close_gateway_client,
+)
+
+# Part L.5: Constraint Verification Gate (January 2026)
+# Validates output against active constraints before returning results
+from .constraint_verification import (
+    ConstraintVerificationGate,
+    ConstraintType,
+    ViolationSeverity,
+    Constraint,
+    ConstraintViolation,
+    VerificationResult as ConstraintVerificationResult,
+    get_constraint_verification_gate,
+)
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -1743,6 +1766,25 @@ __all__ = [
     "DoclingStats",
     "get_docling_adapter",
     "cleanup_docling_adapter",
+
+    # LLM Gateway Client (January 2026)
+    # Routes LLM calls through unified gateway service
+    "GatewayClient",
+    "GatewayResponse",
+    "EmbeddingResponse",
+    "LogicalModel",
+    "get_gateway_client",
+    "close_gateway_client",
+
+    # Part L.5: Constraint Verification Gate (January 2026)
+    # Validates output against active constraints before returning results
+    "ConstraintVerificationGate",
+    "ConstraintType",
+    "ViolationSeverity",
+    "Constraint",
+    "ConstraintViolation",
+    "ConstraintVerificationResult",
+    "get_constraint_verification_gate",
 ]
 
-__version__ = "0.78.0"  # K.3 Table Complexity Routing to Docling
+__version__ = "0.81.0"  # Part L.5: Constraint Verification Gate Integration

@@ -99,6 +99,11 @@ from .enhanced_reasoning import (
     StuckStateMetrics,
     ContradictionInfo
 )
+from .constraint_verification import (
+    ConstraintVerificationGate,
+    get_constraint_verification_gate,
+    VerificationResult as ConstraintVerificationResult
+)
 
 # Dynamic planning (from DynamicOrchestrator)
 from .dynamic_planner import DynamicPlanner, TaskNode, TaskStatus, PlannerOutput
@@ -141,6 +146,7 @@ from .contrastive_retriever import (
     get_contrastive_retriever
 )
 from .scraper import VisionAnalyzer, DeepReader, JS_HEAVY_DOMAINS
+from .synthesizer import DEFAULT_THINKING_MODEL
 
 # PDF Extraction Tools integration
 from core.document_graph_service import (
@@ -340,6 +346,7 @@ class FeatureConfig:
     enable_crag_evaluation: bool = True     # CRAG pre-synthesis
     enable_sufficient_context: bool = True  # Context sufficiency check
     enable_positional_optimization: bool = True  # Lost-in-the-middle mitigation
+    enable_constraint_verification: bool = False  # Constraint verification gate (Part L.5)
 
     # Learning (Layer 1)
     enable_experience_distillation: bool = True
@@ -401,6 +408,9 @@ class FeatureConfig:
     # Technical Documentation (Layer 3) - PDF Extraction Tools integration
     enable_technical_docs: bool = False    # FANUC manual RAG via PDF API
     enable_hsea_context: bool = False      # HSEA three-stratum FANUC knowledge
+
+    # LLM Gateway (Layer 3) - Unified LLM routing
+    enable_gateway_routing: bool = False   # Route LLM calls through gateway service
 
     # Enhanced patterns (Layer 3)
     enable_pre_act_planning: bool = False  # Multi-step planning
@@ -541,7 +551,9 @@ PRESET_CONFIGS = {
         enable_information_bottleneck=True,
         ib_filtering_level="moderate",  # Balanced compression
         # G.6.5: Contrastive Retriever Training (R3)
-        enable_contrastive_learning=True  # Trial-and-feedback retrieval learning
+        enable_contrastive_learning=True,  # Trial-and-feedback retrieval learning
+        # Part L.5: Constraint Verification Gate
+        enable_constraint_verification=True  # Validate output against active directives
     ),
     OrchestratorPreset.FULL: FeatureConfig(
         # ALL features enabled
@@ -607,7 +619,9 @@ PRESET_CONFIGS = {
         enable_information_bottleneck=True,
         ib_filtering_level="aggressive",  # Maximum compression for full preset
         # G.6.5: Contrastive Retriever Training (R3)
-        enable_contrastive_learning=True  # Trial-and-feedback retrieval learning
+        enable_contrastive_learning=True,  # Trial-and-feedback retrieval learning
+        # Part L.5: Constraint Verification Gate
+        enable_constraint_verification=True  # Validate output against active directives
     )
 }
 
@@ -835,6 +849,27 @@ class UniversalOrchestrator(BaseSearchPipeline):
             return 8192  # 8K for llama models
         else:
             return 16384  # Default 16K
+
+    def _get_iteration_limit(self, complexity: str) -> int:
+        """
+        GAP-4 fix: Adjust iteration limits based on query complexity.
+
+        Args:
+            complexity: Estimated complexity from analyzer (simple, moderate, complex, expert)
+
+        Returns:
+            Maximum iterations for the search loop
+        """
+        limits = {
+            "simple": 1,
+            "low": 1,
+            "moderate": 2,
+            "medium": 2,
+            "complex": 3,
+            "high": 3,
+            "expert": 4,
+        }
+        return limits.get(complexity.lower(), 2)
 
     async def _emit_llm_start(
         self,
@@ -2034,13 +2069,21 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 await emitter.emit(events.scratchpad_initialized(request_id, decomposed_qs))
 
             # PHASE 3: Search Execution (ReAct Loop)
-            for iteration in range(request.max_iterations):
+            # GAP-4 fix: Adjust iteration limit based on query complexity
+            effective_max_iterations = request.max_iterations
+            if state.query_analysis and state.query_analysis.estimated_complexity:
+                complexity_limit = self._get_iteration_limit(state.query_analysis.estimated_complexity)
+                # Use the smaller of complexity-based and user-requested limits
+                effective_max_iterations = min(complexity_limit, request.max_iterations)
+                logger.info(f"[{request_id}] Complexity-based iteration limit: {complexity_limit} (complexity={state.query_analysis.estimated_complexity}, effective={effective_max_iterations})")
+
+            for iteration in range(effective_max_iterations):
                 state.iteration = iteration + 1
 
                 await emitter.emit(events.iteration_start_detailed(
                     request_id,
                     state.iteration,
-                    request.max_iterations,
+                    effective_max_iterations,
                     len(state.pending_queries),
                     state.sources_consulted
                 ))
@@ -2052,7 +2095,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 await emitter.emit(graph_node_entered(request_id, "search", graph))
                 queries_to_execute = state.pending_queries[:3]
                 await emitter.emit(events.searching(
-                    request_id, queries_to_execute, state.iteration, request.max_iterations
+                    request_id, queries_to_execute, state.iteration, effective_max_iterations
                 ))
 
                 search_start = time.time()
@@ -2591,7 +2634,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         synthesis=synthesis,
                         context=scraped_content,
                         iteration=state.iteration,
-                        max_iterations=request.max_iterations,
+                        max_iterations=effective_max_iterations,  # GAP-4 fix: use complexity-based limit
                         session_id=request_id
                     )
 
@@ -2891,6 +2934,50 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         logger.debug(f"[{request_id}] Bandit outcome recorded: action={bandit_decision.action.value}, reward={reward:.2f}")
                     except Exception as e:
                         logger.warning(f"[{request_id}] Failed to record bandit outcome: {e}")
+
+            # ═══════════════════════════════════════════════════════════════════════════
+            # PHASE 12: CONSTRAINT VERIFICATION GATE
+            # Part L.5 of Directive Propagation Enhancement
+            # Validates output against active constraints before returning results
+            # ═══════════════════════════════════════════════════════════════════════════
+            constraint_verification_result = None
+            if self.config.enable_constraint_verification and synthesis:
+                try:
+                    verification_gate = get_constraint_verification_gate()
+                    constraint_verification_result = await verification_gate.verify(
+                        output=synthesis,
+                        constraints=state.active_constraints,
+                        sources=self._get_sources(state),
+                        key_topics=state.key_topics,
+                        priority_domains=state.priority_domains
+                    )
+
+                    # Log verification result
+                    if not constraint_verification_result.passed:
+                        logger.warning(
+                            f"[{request_id}] Constraint verification: {len(constraint_verification_result.violations)} violations, "
+                            f"satisfaction rate: {constraint_verification_result.satisfaction_rate:.1%}"
+                        )
+                        for violation in constraint_verification_result.violations:
+                            logger.debug(
+                                f"[{request_id}] Violation: {violation.constraint.constraint_type.value}='{violation.constraint.value}' - {violation.reason}"
+                            )
+                    else:
+                        logger.info(
+                            f"[{request_id}] Constraint verification passed: {constraint_verification_result.satisfaction_rate:.1%} satisfaction"
+                        )
+
+                    # Add to search trace
+                    search_trace.append({
+                        "phase": "constraint_verification",
+                        "passed": constraint_verification_result.passed,
+                        "satisfaction_rate": constraint_verification_result.satisfaction_rate,
+                        "violations_count": len(constraint_verification_result.violations),
+                        "checked_constraints": constraint_verification_result.checked_constraints,
+                        "verification_time_ms": constraint_verification_result.verification_time_ms
+                    })
+                except Exception as e:
+                    logger.warning(f"[{request_id}] Constraint verification failed: {e}")
 
             # Build final response
             execution_time_ms = int((time.time() - start_time) * 1000)
@@ -3820,6 +3907,23 @@ class UniversalOrchestrator(BaseSearchPipeline):
             )
             state.query_analysis = analysis
 
+            # GAP-3 fix: Propagate directives to top-level state fields
+            if analysis:
+                state.key_topics = analysis.key_topics if analysis.key_topics else []
+                state.priority_domains = analysis.priority_domains if analysis.priority_domains else []
+                state.directive_source = "analyzer"
+                # Convert priority_domains to active_constraints format
+                state.active_constraints = [
+                    {"type": "domain", "value": domain, "source": "analyzer"}
+                    for domain in state.priority_domains
+                ]
+                if analysis.key_topics:
+                    state.active_constraints.extend([
+                        {"type": "topic", "value": topic, "source": "analyzer"}
+                        for topic in analysis.key_topics
+                    ])
+                logger.info(f"[{request_id}] Directive propagation: {len(state.key_topics)} topics, {len(state.priority_domains)} domains, {len(state.active_constraints)} constraints")
+
             search_trace.append({
                 "step": "analyze",
                 "requires_search": analysis.requires_search,
@@ -3960,6 +4064,12 @@ class UniversalOrchestrator(BaseSearchPipeline):
         # Determine queries to execute - always try analyzer for query decomposition
         queries = []
 
+        # GAP-2 fix: Extract query_type from analysis for engine selection
+        query_type = None
+        if state.query_analysis and state.query_analysis.query_type:
+            query_type = state.query_analysis.query_type
+            logger.info(f"[{request_id}] Using directive query_type for engine selection: {query_type}")
+
         # First, try analyzer for search plan decomposition
         if state.query_analysis:
             try:
@@ -4095,7 +4205,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
             # Parallel execution with TTL cache pinning
             async def search_with_pin(q: str):
                 async with ToolCallContext(request_id, ToolType.WEB_SEARCH, manager=ttl_manager):
-                    return await self.searcher.search([q], max_results_per_query=max_results_per_query)
+                    return await self.searcher.search([q], max_results_per_query=max_results_per_query, query_type=query_type)
 
             tasks = [search_with_pin(q) for q in queries_to_search]
             results_list = await asyncio.gather(*tasks, return_exceptions=True)
@@ -4109,7 +4219,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
             # Sequential execution with TTL cache pinning
             for query in queries_to_search:
                 async with ToolCallContext(request_id, ToolType.WEB_SEARCH, manager=ttl_manager):
-                    results = await self.searcher.search([query], max_results_per_query=max_results_per_query)
+                    results = await self.searcher.search([query], max_results_per_query=max_results_per_query, query_type=query_type)
                 state.add_results(results)
                 state.mark_query_executed(query)
 
@@ -4645,6 +4755,17 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 "content": content[:request.max_content_per_source]
             })
 
+        # Determine if thinking model is needed based on directive propagation (GAP-1 fix)
+        # See DIRECTIVE_PROPAGATION_AUDIT.md for rationale
+        model_override = None
+        if state.query_analysis and state.query_analysis.requires_thinking_model:
+            model_override = DEFAULT_THINKING_MODEL
+            logger.info(f"[{request_id}] Using thinking model for complex query: {model_override}")
+        elif state.query_analysis and state.query_analysis.reasoning_complexity in ["complex", "expert"]:
+            # Also use thinking model for high complexity even if not explicitly flagged
+            model_override = DEFAULT_THINKING_MODEL
+            logger.info(f"[{request_id}] Using thinking model for {state.query_analysis.reasoning_complexity} complexity")
+
         # Use synthesize_with_content for full content synthesis
         synthesis = await self.synthesizer.synthesize_with_content(
             query=request.query,
@@ -4652,6 +4773,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
             scraped_content=scraped_content_dicts,
             verifications=None,  # Verifications handled separately if enabled
             context={"additional_context": additional_context} if additional_context else None,
+            model_override=model_override,  # Directive propagation: use thinking model when needed
             request_id=request_id
         )
 
@@ -4690,13 +4812,14 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         "url": url,
                         "content": content
                     })
-                # Re-synthesize with augmented context
+                # Re-synthesize with augmented context (use same model_override for consistency)
                 synthesis = await self.synthesizer.synthesize_with_content(
                     query=request.query,
                     search_results=search_results,
                     scraped_content=scraped_content_dicts,
                     verifications=None,
                     context={"additional_context": additional_context} if additional_context else None,
+                    model_override=model_override,  # Directive propagation: use same thinking model
                     request_id=request_id
                 )
                 logger.info(f"[{request_id}] FLARE-augmented synthesis complete")
@@ -4890,6 +5013,15 @@ class UniversalOrchestrator(BaseSearchPipeline):
         start_time: float
     ) -> SearchResponse:
         """Handle queries that don't need search."""
+        # Determine if thinking model is needed based on directive propagation (GAP-1 fix)
+        model_override = None
+        if analysis.requires_thinking_model:
+            model_override = DEFAULT_THINKING_MODEL
+            logger.info(f"[{request_id}] Direct answer using thinking model: {model_override}")
+        elif analysis.reasoning_complexity in ["complex", "expert"]:
+            model_override = DEFAULT_THINKING_MODEL
+            logger.info(f"[{request_id}] Direct answer using thinking model for {analysis.reasoning_complexity} complexity")
+
         # For no-search queries, use the basic synthesize with empty results
         # Just create a simple response without web search
         synthesis = await self.synthesizer.synthesize(
@@ -4900,7 +5032,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 "query_type": analysis.query_type,
                 "reasoning": analysis.search_reasoning
             },
-            request_id=request_id
+            request_id=request_id,
+            model_override=model_override  # Directive propagation: use thinking model when needed
         )
         return self.build_response(
             synthesis=synthesis,

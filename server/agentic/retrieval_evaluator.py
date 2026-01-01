@@ -29,6 +29,7 @@ import httpx
 
 from .metrics import get_performance_metrics
 from .context_limits import get_model_context_window
+from .gateway_client import get_gateway_client, LogicalModel, GatewayResponse
 
 logger = logging.getLogger("agentic.retrieval_evaluator")
 
@@ -137,7 +138,9 @@ class RetrievalEvaluator:
         self,
         query: str,
         search_results: List[Dict[str, Any]],
-        decomposed_questions: Optional[List[str]] = None
+        decomposed_questions: Optional[List[str]] = None,
+        request_id: str = "",
+        use_gateway: bool = False
     ) -> RetrievalEvaluation:
         """
         Evaluate retrieval quality and recommend corrective action.
@@ -146,6 +149,8 @@ class RetrievalEvaluator:
             query: Original user query
             search_results: List of search results with title, snippet, url
             decomposed_questions: Optional sub-questions for coverage assessment
+            request_id: Request ID for tracking context utilization
+            use_gateway: If True, route LLM calls through gateway
 
         Returns:
             RetrievalEvaluation with quality level and recommended action
@@ -162,7 +167,9 @@ class RetrievalEvaluator:
             )
 
         # Score each document
-        document_scores = await self._score_documents(query, search_results, decomposed_questions)
+        document_scores = await self._score_documents(
+            query, search_results, decomposed_questions, request_id, use_gateway
+        )
 
         # Calculate aggregate metrics
         overall_relevance = self._calculate_overall_relevance(document_scores)
@@ -173,7 +180,8 @@ class RetrievalEvaluator:
 
         # Determine corrective action
         action, reasoning, refined_queries, decomposed = await self._determine_action(
-            quality, query, document_scores, overall_relevance, query_coverage, decomposed_questions
+            quality, query, document_scores, overall_relevance, query_coverage,
+            decomposed_questions, request_id, use_gateway
         )
 
         return RetrievalEvaluation(
@@ -191,7 +199,9 @@ class RetrievalEvaluator:
         self,
         query: str,
         search_results: List[Dict[str, Any]],
-        decomposed_questions: Optional[List[str]] = None
+        decomposed_questions: Optional[List[str]] = None,
+        request_id: str = "",
+        use_gateway: bool = False
     ) -> List[DocumentScore]:
         """Score each document for relevance, quality, and coverage"""
         scores = []
@@ -222,7 +232,10 @@ Output JSON array:
 ]"""
 
         try:
-            result = await self._call_llm(prompt, max_tokens=512)
+            if use_gateway:
+                result = await self._call_via_gateway(prompt, max_tokens=512, request_id=request_id)
+            else:
+                result = await self._call_llm(prompt, max_tokens=512, request_id=request_id)
             # Extract JSON array
             json_match = re.search(r'\[[\s\S]*\]', result)
             if json_match:
@@ -375,7 +388,9 @@ Output JSON array:
         document_scores: List[DocumentScore],
         overall_relevance: float,
         query_coverage: float,
-        decomposed_questions: Optional[List[str]]
+        decomposed_questions: Optional[List[str]],
+        request_id: str = "",
+        use_gateway: bool = False
     ) -> Tuple[CorrectiveAction, str, List[str], List[str]]:
         """Determine corrective action based on quality assessment"""
 
@@ -389,7 +404,7 @@ Output JSON array:
 
         elif quality == RetrievalQuality.AMBIGUOUS:
             # Generate refined queries
-            refined = await self._generate_refined_queries(query, document_scores)
+            refined = await self._generate_refined_queries(query, document_scores, request_id, use_gateway)
             return (
                 CorrectiveAction.REFINE_QUERY,
                 f"Retrieval is ambiguous (relevance={overall_relevance:.2f}). Refining queries...",
@@ -400,7 +415,7 @@ Output JSON array:
         else:  # INCORRECT
             # Check if decomposition might help
             if len(query.split()) > 10 or "and" in query.lower():
-                decomposed = await self._decompose_query(query)
+                decomposed = await self._decompose_query(query, request_id, use_gateway)
                 return (
                     CorrectiveAction.DECOMPOSE,
                     f"Retrieval is poor. Decomposing complex query into sub-questions...",
@@ -409,7 +424,7 @@ Output JSON array:
                 )
             else:
                 # Web fallback with different terms
-                refined = await self._generate_fallback_queries(query)
+                refined = await self._generate_fallback_queries(query, request_id, use_gateway)
                 return (
                     CorrectiveAction.WEB_FALLBACK,
                     f"Retrieval is poor (relevance={overall_relevance:.2f}). Trying web search fallback...",
@@ -420,7 +435,9 @@ Output JSON array:
     async def _generate_refined_queries(
         self,
         query: str,
-        document_scores: List[DocumentScore]
+        document_scores: List[DocumentScore],
+        request_id: str = "",
+        use_gateway: bool = False
     ) -> List[str]:
         """Generate refined queries based on what's missing"""
         # Get topics from relevant docs
@@ -439,7 +456,10 @@ Output JSON array of queries:
 ["query1", "query2", "query3"]"""
 
         try:
-            result = await self._call_llm(prompt, max_tokens=256)
+            if use_gateway:
+                result = await self._call_via_gateway(prompt, max_tokens=256, request_id=request_id)
+            else:
+                result = await self._call_llm(prompt, max_tokens=256, request_id=request_id)
             json_match = re.search(r'\[[\s\S]*\]', result)
             if json_match:
                 return json.loads(json_match.group())[:3]
@@ -449,7 +469,12 @@ Output JSON array of queries:
         # Fallback
         return [f"{query} explained", f"{query} guide", f"what is {query}"]
 
-    async def _generate_fallback_queries(self, query: str) -> List[str]:
+    async def _generate_fallback_queries(
+        self,
+        query: str,
+        request_id: str = "",
+        use_gateway: bool = False
+    ) -> List[str]:
         """Generate alternative queries for web fallback"""
         prompt = f"""The search for "{query}" returned poor results.
 
@@ -462,7 +487,10 @@ Output JSON array:
 ["query1", "query2", "query3"]"""
 
         try:
-            result = await self._call_llm(prompt, max_tokens=256)
+            if use_gateway:
+                result = await self._call_via_gateway(prompt, max_tokens=256, request_id=request_id)
+            else:
+                result = await self._call_llm(prompt, max_tokens=256, request_id=request_id)
             json_match = re.search(r'\[[\s\S]*\]', result)
             if json_match:
                 return json.loads(json_match.group())[:3]
@@ -471,7 +499,12 @@ Output JSON array:
 
         return [f'"{query}"', f"what is {query}", f"{query} definition"]
 
-    async def _decompose_query(self, query: str) -> List[str]:
+    async def _decompose_query(
+        self,
+        query: str,
+        request_id: str = "",
+        use_gateway: bool = False
+    ) -> List[str]:
         """Decompose complex query into simpler sub-questions"""
         prompt = f"""Break this complex query into 2-4 simpler sub-questions:
 
@@ -481,7 +514,10 @@ Output JSON array of sub-questions:
 ["question1", "question2", ...]"""
 
         try:
-            result = await self._call_llm(prompt, max_tokens=256)
+            if use_gateway:
+                result = await self._call_via_gateway(prompt, max_tokens=256, request_id=request_id)
+            else:
+                result = await self._call_llm(prompt, max_tokens=256, request_id=request_id)
             json_match = re.search(r'\[[\s\S]*\]', result)
             if json_match:
                 return json.loads(json_match.group())[:4]
@@ -525,6 +561,50 @@ Output JSON array of sub-questions:
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
         return ""
+
+    async def _call_via_gateway(
+        self,
+        prompt: str,
+        max_tokens: int = 256,
+        request_id: str = ""
+    ) -> str:
+        """Call LLM via Gateway service with automatic fallback to direct Ollama."""
+        try:
+            gateway = get_gateway_client()
+
+            # Use VERIFIER logical model for CRAG evaluation
+            response: GatewayResponse = await gateway.generate(
+                prompt=prompt,
+                model=LogicalModel.VERIFIER,
+                timeout=30.0,
+                options={
+                    "temperature": 0.3,
+                    "num_predict": max_tokens
+                }
+            )
+
+            result = response.content
+
+            # Track context utilization
+            if request_id and result:
+                metrics = get_performance_metrics()
+                metrics.record_context_utilization(
+                    request_id=request_id,
+                    agent_name="crag_evaluator",
+                    model_name=response.model,
+                    input_text=prompt,
+                    output_text=result,
+                    context_window=get_model_context_window(response.model)
+                )
+
+            if response.fallback_used:
+                logger.info(f"CRAG evaluation used fallback to direct Ollama (model: {response.model})")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Gateway CRAG call failed: {e}, falling back to direct Ollama")
+            return await self._call_llm(prompt, max_tokens, request_id)
 
 
 # Factory functions

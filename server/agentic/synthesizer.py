@@ -25,6 +25,7 @@ from .context_limits import (
     THINKING_SYNTHESIZER_LIMITS,
 )
 from .metrics import get_performance_metrics
+from .gateway_client import get_gateway_client, LogicalModel, GatewayResponse
 
 # Lazy settings import to avoid circular dependencies
 _settings = None
@@ -115,7 +116,9 @@ class SynthesizerAgent:
         search_results: List[WebSearchResult],
         verifications: Optional[List[VerificationResult]] = None,
         context: Optional[Dict[str, Any]] = None,
-        request_id: str = ""
+        request_id: str = "",
+        use_gateway: bool = False,
+        model_override: Optional[str] = None
     ) -> str:
         """
         Synthesize search results into a coherent answer.
@@ -125,6 +128,9 @@ class SynthesizerAgent:
             search_results: Web search results
             verifications: Optional verification results
             context: Optional conversation context
+            request_id: Request ID for metrics tracking
+            use_gateway: If True, route LLM calls through gateway service
+            model_override: Optional model to use instead of default (for thinking model selection)
 
         Returns:
             Synthesized answer text
@@ -171,10 +177,13 @@ Instructions:
 Your synthesized answer:"""
 
         try:
-            if self.mcp_available:
+            if use_gateway:
+                # Route through LLM Gateway for unified routing and VRAM management
+                synthesis = await self._synthesize_via_gateway(prompt, request_id)
+            elif self.mcp_available:
                 synthesis = await self._synthesize_via_mcp(prompt)
             else:
-                synthesis = await self._synthesize_via_ollama(prompt, request_id)
+                synthesis = await self._synthesize_via_ollama(prompt, request_id, model_override=model_override)
 
             return synthesis or self._fallback_synthesis(query, search_results)
 
@@ -182,20 +191,40 @@ Your synthesized answer:"""
             logger.error(f"Synthesis failed: {e}")
             return self._fallback_synthesis(query, search_results)
 
-    async def _synthesize_via_ollama(self, prompt: str, request_id: str = "") -> str:
-        """Execute synthesis via direct Ollama API"""
+    async def _synthesize_via_ollama(
+        self,
+        prompt: str,
+        request_id: str = "",
+        model_override: Optional[str] = None
+    ) -> str:
+        """Execute synthesis via direct Ollama API
+
+        Args:
+            prompt: The synthesis prompt
+            request_id: Request ID for metrics tracking
+            model_override: Optional model to use instead of default (for thinking model selection)
+        """
+        # Use override model if provided, otherwise use default
+        model_to_use = model_override or self.model
+
+        # Get model-specific options if using a thinking model
+        options = {"temperature": 0.5, "num_predict": 1024}
+        if model_override and model_override in THINKING_MODELS:
+            model_config = THINKING_MODELS[model_override]
+            options["temperature"] = model_config.get("temperature", 0.6)
+            options["num_predict"] = model_config.get("num_predict", 4096)
+            options["top_p"] = model_config.get("top_p", 0.95)
+            logger.info(f"[{request_id}] Using thinking model config for {model_override}")
+
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.post(
                     f"{self.ollama_url}/api/generate",
                     json={
-                        "model": self.model,
+                        "model": model_to_use,
                         "prompt": prompt,
                         "stream": False,
-                        "options": {
-                            "temperature": 0.5,
-                            "num_predict": 1024
-                        }
+                        "options": options
                     }
                 )
 
@@ -203,16 +232,16 @@ Your synthesized answer:"""
                     data = response.json()
                     synthesis = data.get("response", "")
 
-                    # Track context utilization
+                    # Track context utilization with the actual model used
                     if request_id and synthesis:
                         metrics = get_performance_metrics()
                         metrics.record_context_utilization(
                             request_id=request_id,
                             agent_name="synthesizer",
-                            model_name=self.model,
+                            model_name=model_to_use,
                             input_text=prompt,
                             output_text=synthesis,
-                            context_window=get_model_context_window(self.model)
+                            context_window=get_model_context_window(model_to_use)
                         )
 
                     return synthesis
@@ -221,6 +250,87 @@ Your synthesized answer:"""
             logger.error(f"Ollama synthesis failed: {e}")
 
         return ""
+
+    async def _synthesize_via_gateway(
+        self,
+        prompt: str,
+        request_id: str = "",
+        is_thinking_model: bool = False,
+        model_config: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Execute synthesis via LLM Gateway service with automatic fallback.
+
+        The gateway provides unified routing, priority queuing, and VRAM management.
+        Falls back to direct Ollama if gateway is unavailable.
+
+        Args:
+            prompt: The synthesis prompt
+            request_id: Request ID for metrics tracking
+            is_thinking_model: Whether to use a thinking model (DeepSeek R1)
+            model_config: Optional model configuration overrides
+
+        Returns:
+            Synthesized text response
+        """
+        try:
+            gateway = get_gateway_client()
+
+            # Select logical model based on context
+            if is_thinking_model:
+                logical_model = LogicalModel.THINKING
+            else:
+                logical_model = LogicalModel.SYNTHESIZER
+
+            # Build generation options
+            options = {}
+            if model_config:
+                options["temperature"] = model_config.get("temperature", 0.4)
+                options["top_p"] = model_config.get("top_p", 0.95)
+                options["num_predict"] = model_config.get("max_tokens", 2048)
+                options["num_ctx"] = model_config.get("context_window", 32768)
+            else:
+                options = {
+                    "temperature": 0.5,
+                    "num_predict": 1024
+                }
+
+            # Request timeout depends on model type
+            timeout = 600.0 if is_thinking_model else 180.0
+
+            # Call gateway
+            response: GatewayResponse = await gateway.generate(
+                prompt=prompt,
+                model=logical_model,
+                timeout=timeout,
+                options=options
+            )
+
+            synthesis = response.content
+
+            # Track context utilization if we have metrics
+            if request_id and synthesis:
+                metrics = get_performance_metrics()
+                context_window = options.get("num_ctx", 32768) if model_config else get_model_context_window(self.model)
+                agent_name = "synthesizer_gateway_thinking" if is_thinking_model else "synthesizer_gateway"
+                metrics.record_context_utilization(
+                    request_id=request_id,
+                    agent_name=agent_name,
+                    model_name=response.model,
+                    input_text=prompt,
+                    output_text=synthesis,
+                    context_window=context_window
+                )
+
+            # Log if fallback was used
+            if response.fallback_used:
+                logger.info(f"Gateway synthesis used fallback to direct Ollama (model: {response.model})")
+
+            return synthesis
+
+        except Exception as e:
+            logger.error(f"Gateway synthesis failed: {e}, falling back to direct Ollama")
+            # Fallback to direct Ollama on gateway failure
+            return await self._synthesize_via_ollama(prompt, request_id)
 
     async def _synthesize_via_mcp(self, prompt: str) -> str:
         """Execute synthesis via MCP Node Editor pipeline"""
@@ -331,7 +441,8 @@ Please try rephrasing your question or providing more context."""
         verifications: Optional[List[VerificationResult]] = None,
         context: Optional[Dict[str, Any]] = None,
         model_override: Optional[str] = None,
-        request_id: str = ""
+        request_id: str = "",
+        use_gateway: bool = False
     ) -> str:
         """
         Synthesize an answer using full scraped content from web pages.
@@ -346,6 +457,8 @@ Please try rephrasing your question or providing more context."""
             verifications: Optional verification results
             context: Optional conversation context
             model_override: Optional model to use instead of default (e.g., thinking model)
+            request_id: Request ID for metrics tracking
+            use_gateway: If True, route LLM calls through gateway service
 
         Returns:
             Synthesized answer text that directly addresses the question
@@ -372,7 +485,7 @@ Please try rephrasing your question or providing more context."""
         # If no scraped content, fall back to regular synthesis
         if not scraped_content:
             logger.warning("No scraped content available, falling back to snippet-based synthesis")
-            return await self.synthesize(query, search_results, verifications, context)
+            return await self.synthesize(query, search_results, verifications, context, request_id, use_gateway)
 
         # Format scraped content for the prompt
         # Use all sources that have meaningful content, prioritize by content length
@@ -477,63 +590,76 @@ YOUR DETAILED ANSWER (with citations):"""
             # DeepSeek R1 can take 5-10+ minutes for complex reasoning
             request_timeout = 600.0 if is_thinking_model else 180.0
 
-            # Use a larger context window for synthesis with content
-            # OPTIMIZATION: keep_alive=5m keeps thinking model in VRAM for 5 min (faster subsequent calls)
-            # OPTIMIZATION: top_p=0.95 validated for DeepSeek R1 reasoning quality
-            async with httpx.AsyncClient(timeout=request_timeout) as client:
-                response = await client.post(
-                    f"{self.ollama_url}/api/generate",
-                    json={
-                        "model": synthesis_model,
-                        "prompt": prompt,
-                        "stream": False,
-                        "keep_alive": "30m" if is_thinking_model else "5m",  # Keep model loaded (matches OLLAMA_KEEP_ALIVE)
-                        "options": {
-                            "temperature": model_config.get("temperature", 0.4),
-                            "top_p": model_config.get("top_p", 0.95),  # OPTIMIZATION: Validated for R1
-                            "num_predict": model_config.get("max_tokens", 2048),
-                            "num_ctx": model_config.get("context_window", 32768)
-                        }
-                    }
+            synthesis = ""
+
+            if use_gateway:
+                # Route through LLM Gateway for unified routing and VRAM management
+                logger.info("Using LLM Gateway for synthesis_with_content")
+                synthesis = await self._synthesize_via_gateway(
+                    prompt=prompt,
+                    request_id=request_id,
+                    is_thinking_model=is_thinking_model,
+                    model_config=model_config
                 )
+                logger.info(f"Gateway synthesis response: {len(synthesis)} chars")
+            else:
+                # Use a larger context window for synthesis with content
+                # OPTIMIZATION: keep_alive=5m keeps thinking model in VRAM for 5 min (faster subsequent calls)
+                # OPTIMIZATION: top_p=0.95 validated for DeepSeek R1 reasoning quality
+                async with httpx.AsyncClient(timeout=request_timeout) as client:
+                    response = await client.post(
+                        f"{self.ollama_url}/api/generate",
+                        json={
+                            "model": synthesis_model,
+                            "prompt": prompt,
+                            "stream": False,
+                            "keep_alive": "30m" if is_thinking_model else "5m",  # Keep model loaded (matches OLLAMA_KEEP_ALIVE)
+                            "options": {
+                                "temperature": model_config.get("temperature", 0.4),
+                                "top_p": model_config.get("top_p", 0.95),  # OPTIMIZATION: Validated for R1
+                                "num_predict": model_config.get("max_tokens", 2048),
+                                "num_ctx": model_config.get("context_window", 32768)
+                            }
+                        }
+                    )
 
-                if response.status_code == 200:
-                    data = response.json()
-                    synthesis = data.get("response", "")
-                    logger.info(f"Ollama synthesis response: {len(synthesis)} chars")
+                    if response.status_code == 200:
+                        data = response.json()
+                        synthesis = data.get("response", "")
+                        logger.info(f"Ollama synthesis response: {len(synthesis)} chars")
 
-                    # Track context utilization for synthesizer (critical - highest context usage)
-                    if request_id and synthesis:
-                        metrics = get_performance_metrics()
-                        context_window = model_config.get("context_window", 32768)
-                        metrics.record_context_utilization(
-                            request_id=request_id,
-                            agent_name="synthesizer_content",
-                            model_name=synthesis_model,
-                            input_text=prompt,
-                            output_text=synthesis,
-                            context_window=context_window
-                        )
-
-                    if synthesis:
-                        # Add source references at the end matching the [Source X] citations
-                        sources_list = "\n".join([
-                            f"- **[Source {i+1}]**: [{c.get('title', 'Source')}]({c.get('url', '')})"
-                            for i, c in enumerate(valid_sources[:num_sources])
-                        ])
-                        final_result = f"{synthesis}\n\n**Sources consulted:**\n{sources_list}"
-                        logger.info(f"Final synthesis with sources: {len(final_result)} chars")
-                        return final_result
+                        # Track context utilization for synthesizer (critical - highest context usage)
+                        if request_id and synthesis:
+                            metrics = get_performance_metrics()
+                            context_window = model_config.get("context_window", 32768)
+                            metrics.record_context_utilization(
+                                request_id=request_id,
+                                agent_name="synthesizer_content",
+                                model_name=synthesis_model,
+                                input_text=prompt,
+                                output_text=synthesis,
+                                context_window=context_window
+                            )
                     else:
-                        logger.warning("Ollama returned empty synthesis, falling back")
-                else:
-                    logger.warning(f"Ollama returned status {response.status_code}")
+                        logger.warning(f"Ollama returned status {response.status_code}")
+
+            # Add source references if synthesis was successful
+            if synthesis:
+                sources_list = "\n".join([
+                    f"- **[Source {i+1}]**: [{c.get('title', 'Source')}]({c.get('url', '')})"
+                    for i, c in enumerate(valid_sources[:num_sources])
+                ])
+                final_result = f"{synthesis}\n\n**Sources consulted:**\n{sources_list}"
+                logger.info(f"Final synthesis with sources: {len(final_result)} chars")
+                return final_result
+            else:
+                logger.warning("Synthesis returned empty, falling back")
 
         except Exception as e:
             logger.error(f"Content synthesis failed: {e}")
 
         # Fallback to regular synthesis
-        return await self.synthesize(query, search_results, verifications, context, request_id)
+        return await self.synthesize(query, search_results, verifications, context, request_id, use_gateway)
 
     def determine_confidence_level(
         self,

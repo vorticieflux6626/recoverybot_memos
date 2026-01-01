@@ -11,6 +11,11 @@ Phase 2 Enhancement (GSW Entity Tracking):
 - Extracts entities from scraped content using EntityTracker
 - Maintains entity-centric memory for 51% token reduction
 - Generates query-relevant entity summaries
+
+B.10 Enhancement (LLM Gateway Integration):
+- Optionally routes LLM calls through Gateway service (port 8100)
+- Automatic fallback to direct Ollama when gateway unavailable
+- Unified routing with VRAM management
 """
 
 import json
@@ -24,6 +29,7 @@ from .models import QueryAnalysis, SearchPlan
 from .context_limits import get_analyzer_limits, ANALYZER_LIMITS, get_model_context_window
 from .metrics import get_performance_metrics
 from .acronym_dictionary import expand_acronyms, get_acronym_info, get_related_terms
+from .gateway_client import get_gateway_client, LogicalModel, GatewayResponse
 
 
 def extract_json_object(text: str) -> Optional[str]:
@@ -126,10 +132,17 @@ class QueryAnalyzer:
         self,
         query: str,
         context: Optional[Dict[str, Any]] = None,
-        request_id: str = ""
+        request_id: str = "",
+        use_gateway: bool = False
     ) -> QueryAnalysis:
         """
         Analyze the user query to determine if web search is beneficial.
+
+        Args:
+            query: The user's query text
+            context: Optional context (conversation history, user preferences)
+            request_id: Request ID for tracking
+            use_gateway: If True, route through LLM Gateway service
 
         Returns QueryAnalysis with:
         - requires_search: bool
@@ -139,7 +152,7 @@ class QueryAnalyzer:
         - suggested_queries: initial search queries
         - estimated_complexity: low, medium, high
         """
-        logger.info(f"Analyzing query: {query[:100]}...")
+        logger.info(f"Analyzing query (gateway={use_gateway}): {query[:100]}...")
 
         # Expand industrial acronyms for better understanding
         expanded_query, related_terms = self._expand_query_acronyms(query)
@@ -150,7 +163,10 @@ class QueryAnalyzer:
         prompt = self._build_analysis_prompt(expanded_query, context)
 
         try:
-            result = await self._call_ollama(prompt, request_id)
+            if use_gateway:
+                result = await self._call_via_gateway(prompt, request_id)
+            else:
+                result = await self._call_ollama(prompt, request_id)
             analysis = self._parse_analysis(result, query)  # Use original for response
 
             # Add related terms from acronym expansion to key_topics
@@ -178,10 +194,18 @@ class QueryAnalyzer:
         query: str,
         analysis: QueryAnalysis,
         context: Optional[Dict[str, Any]] = None,
-        request_id: str = ""
+        request_id: str = "",
+        use_gateway: bool = False
     ) -> SearchPlan:
         """
         Create a comprehensive search plan based on query analysis.
+
+        Args:
+            query: The original query
+            analysis: QueryAnalysis from analyze()
+            context: Optional context dictionary
+            request_id: Request ID for tracking
+            use_gateway: If True, route through LLM Gateway service
 
         The plan includes:
         - Decomposed questions to answer
@@ -189,12 +213,15 @@ class QueryAnalyzer:
         - Priority order for queries
         - Fallback strategies
         """
-        logger.info(f"Creating search plan for: {query[:100]}...")
+        logger.info(f"Creating search plan (gateway={use_gateway}) for: {query[:100]}...")
 
         prompt = self._build_plan_prompt(query, analysis, context)
 
         try:
-            result = await self._call_ollama(prompt, request_id)
+            if use_gateway:
+                result = await self._call_via_gateway(prompt, request_id)
+            else:
+                result = await self._call_ollama(prompt, request_id)
             plan = self._parse_plan(result, query, analysis)
             logger.info(f"Search plan created: {len(plan.decomposed_questions)} questions, "
                        f"{len(plan.search_phases)} phases")
@@ -354,6 +381,53 @@ Return ONLY the JSON object, no other text."""
                 )
 
             return result
+
+    async def _call_via_gateway(self, prompt: str, request_id: str = "") -> str:
+        """
+        Call LLM via Gateway service with automatic fallback.
+
+        Args:
+            prompt: The prompt to send to the LLM
+            request_id: Request ID for tracking context utilization
+
+        Returns:
+            LLM response text
+        """
+        try:
+            gateway = get_gateway_client()
+
+            response: GatewayResponse = await gateway.generate(
+                prompt=prompt,
+                model=LogicalModel.ANALYZER,
+                timeout=self.timeout,
+                options={
+                    "temperature": 0.3,
+                    "num_predict": 512,
+                }
+            )
+
+            result = response.content
+
+            # Track context utilization
+            if request_id and result:
+                metrics = get_performance_metrics()
+                metrics.record_context_utilization(
+                    request_id=request_id,
+                    agent_name="analyzer",
+                    model_name=response.model,
+                    input_text=prompt,
+                    output_text=result,
+                    context_window=get_model_context_window(response.model)
+                )
+
+            if response.fallback_used:
+                logger.info(f"Gateway analyzer used fallback to direct Ollama (model: {response.model})")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Gateway analyzer call failed: {e}, falling back to direct Ollama")
+            return await self._call_ollama(prompt, request_id)
 
     def _parse_analysis(self, response: str, query: str) -> QueryAnalysis:
         """Parse LLM response into QueryAnalysis"""

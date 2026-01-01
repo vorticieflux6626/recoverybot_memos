@@ -223,6 +223,12 @@ class SearchState(BaseModel):
     query_analysis: Optional[QueryAnalysis] = None
     search_plan: Optional[SearchPlan] = None
 
+    # GAP-3 fix: Directive propagation fields (propagated from query_analysis)
+    key_topics: List[str] = Field(default_factory=list, description="Key topics from analyzer for downstream use")
+    priority_domains: List[str] = Field(default_factory=list, description="Priority domains from analyzer for source validation")
+    active_constraints: List[Dict[str, Any]] = Field(default_factory=list, description="Active constraints for verification gate")
+    directive_source: str = Field(default="", description="Source of directives (e.g., 'analyzer')")
+
     # Tracking for adaptive search
     sources_consulted: int = 0
     unique_domains: List[str] = Field(default_factory=list)
