@@ -28,6 +28,26 @@
    source venv/bin/activate  # REQUIRED before pytest, python, pip
    ```
 
+## Feature Registry
+
+**Before adding new features, check the registry:** `grep -i "feature" ../../.memOS/FEATURE_REGISTRY.yaml`
+
+memOS owns the majority of features in the registry (50+ agentic search flags). Key categories:
+
+| Category | Feature Count | Examples |
+|----------|---------------|----------|
+| `agentic_search` | 20+ | query_analysis, crag_evaluation, self_reflection |
+| `retrieval` | 7 | hyde, hybrid_reranking, cross_encoder, flare |
+| `caching` | 8 | semantic_cache, ttl_pinning, graph_cache |
+| `reasoning` | 7 | meta_buffer, reasoning_dag, entity_tracking |
+| `tts` | 4 (server-side) | melotts, openvoice, emotivoice |
+
+**When adding new features:**
+1. Add to `../.memOS/FEATURE_REGISTRY.yaml` with `status: "planned"`
+2. Add flag to `FeatureConfig` in `agentic/orchestrator_universal.py`
+3. Update preset configurations in `PRESET_CONFIGS`
+4. Validate: `python ../../scripts/validate_feature_registry.py`
+
 ## SSOT Responsibilities
 
 memOS is the authoritative source for:

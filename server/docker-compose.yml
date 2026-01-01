@@ -1,9 +1,11 @@
 version: '3.8'
 
 services:
-  # PostgreSQL with pgvector extension
+  # PostgreSQL with pgvector + pgvectorscale (DiskANN) extensions
+  # Migration from pgvector/pgvector:pg16 to TimescaleDB for 28x latency reduction
+  # See plan G.8.1: https://github.com/timescale/pgvectorscale
   postgres:
-    image: pgvector/pgvector:pg16
+    image: timescale/timescaledb-ha:pg16
     container_name: memos-postgres
     environment:
       POSTGRES_DB: memos_recovery_bot
