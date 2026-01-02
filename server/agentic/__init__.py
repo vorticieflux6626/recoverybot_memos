@@ -1029,6 +1029,25 @@ from .constraint_verification import (
     get_constraint_verification_gate,
 )
 
+# P0 Observability: Decision Logger (January 2026)
+from .decision_logger import (
+    DecisionLogger,
+    AgentDecision,
+    DecisionType,
+    AgentName,
+    get_decision_logger,
+)
+
+# P0 Observability: Context Tracker (January 2026)
+from .context_tracker import (
+    ContextFlowTracker,
+    ContextTransfer,
+    ContextSnapshot,
+    ContextType,
+    PipelineStage,
+    get_context_tracker,
+)
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -1785,6 +1804,23 @@ __all__ = [
     "ConstraintViolation",
     "ConstraintVerificationResult",
     "get_constraint_verification_gate",
+
+    # P0 Observability: Decision Logger (January 2026)
+    # Centralized agent decision tracking for debugging
+    "DecisionLogger",
+    "AgentDecision",
+    "DecisionType",
+    "AgentName",
+    "get_decision_logger",
+
+    # P0 Observability: Context Tracker (January 2026)
+    # Monitor context flow between pipeline stages
+    "ContextFlowTracker",
+    "ContextTransfer",
+    "ContextSnapshot",
+    "ContextType",
+    "PipelineStage",
+    "get_context_tracker",
 ]
 
-__version__ = "0.81.0"  # Part L.5: Constraint Verification Gate Integration
+__version__ = "0.82.0"  # P0 Observability: Decision Logger + Context Tracker

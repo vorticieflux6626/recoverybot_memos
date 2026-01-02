@@ -165,6 +165,7 @@ class EventType(str, Enum):
     # Decision Points (for debugging)
     DECISION_POINT = "decision_point"  # Generic decision logging
     PIPELINE_ROUTED = "pipeline_routed"  # Which pipeline was chosen
+    CONTEXT_TRANSFER = "context_transfer"  # Context flow between pipeline stages
 
     # ========== NEW: BGE-M3 Hybrid Retrieval Events ==========
     HYBRID_SEARCH_START = "hybrid_search_start"
