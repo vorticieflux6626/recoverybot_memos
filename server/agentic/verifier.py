@@ -31,7 +31,7 @@ class VerifierAgent:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        model: str = "gemma3:4b"
+        model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better verification quality
     ):
         self.ollama_url = ollama_url
         self.model = model

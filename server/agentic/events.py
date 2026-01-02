@@ -758,13 +758,27 @@ def model_selected(request_id: str, model_name: str, task: str) -> SearchEvent:
     )
 
 
-def synthesizing(request_id: str, sources_count: int) -> SearchEvent:
+def synthesizing(request_id: str, sources_count: int, model: str = "") -> SearchEvent:
+    """
+    Synthesizing answer event.
+
+    Args:
+        request_id: Unique request identifier
+        sources_count: Number of sources being synthesized
+        model: Model name being used for synthesis (e.g., "qwen3:8b", "deepseek-r1:14b")
+    """
+    message = f"Synthesizing answer from {sources_count} sources..."
+    if model:
+        message = f"Synthesizing answer from {sources_count} sources using {model}..."
+
     return SearchEvent(
         event_type=EventType.SYNTHESIZING,
         request_id=request_id,
-        message=f"Synthesizing answer from {sources_count} sources...",
+        message=message,
         sources_count=sources_count,
-        progress_percent=85
+        progress_percent=85,
+        model_name=model if model else None,
+        data={"model": model} if model else {}
     )
 
 

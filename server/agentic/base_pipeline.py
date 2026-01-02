@@ -347,13 +347,48 @@ class BaseSearchPipeline(ABC):
         source_score = min(source_count / max_sources, 1.0) * 0.30
 
         # Domain diversity and trust (0-0.25)
+        # Comprehensive list aligned with FANUC_TRUSTED_DOMAINS in searcher.py
         trusted_domains = {
-            'robot-forum.com', 'fanucamerica.com', 'fanuc.co.jp',
+            # FANUC / Robotics (Premium)
+            'robot-forum.com', 'fanucamerica.com', 'fanuc.co.jp', 'fanuc.eu',
+            'techtransfer.fanucamerica.com', 'crc2.frc.com', 'fanuc-academy.uk',
+            '2rirobotics.com', 'aerobotix.net', 'robotworx.com', 'robotics.org',
+            'therobotreport.com', 'manualslib.com', 'pdfcoffee.com',
+            'everythingaboutrobots.com',
+
+            # Allen-Bradley / Rockwell (Premium)
+            'rockwellautomation.com', 'literature.rockwellautomation.com',
+            'plctalk.net', 'automationdirect.com',
+
+            # Siemens (Premium)
+            'support.industry.siemens.com', 'siemens.com',
+
+            # Industrial Forums (Trusted)
+            'practicalmachinist.com', 'eng-tips.com', 'cnczone.com',
+            'emastercam.com', 'controlsdiscussion.com',
+
+            # Injection Molding / Hot Runners (Premium for IMM)
+            'moldmasters.com', 'husky.co', 'incoe.com', 'mold-masters.com',
+            'kraussmaffei.com', 'milacron.com', 'engel.at', 'arburg.com',
+            'ptonline.com', 'plasticstechnology.com', 'rjginc.com',
+
+            # Industrial Sensors (Premium)
+            'bannerengineering.com', 'turck.us', 'ifm.com', 'sick.com',
+            'omron.com', 'balluff.com', 'keyence.com',
+
+            # TCU / Chillers / Dryers
+            'advantage-engineering.com', 'conairgroup.com', 'mokon.com',
+            'novatec.com', 'wittmann-group.com',
+
+            # General Tech/Programming
             'stackoverflow.com', 'github.com', 'arxiv.org', 'reddit.com',
             'wikipedia.org', 'docs.python.org', 'developer.mozilla.org',
             'learn.microsoft.com', 'cloud.google.com', 'aws.amazon.com',
             'huggingface.co', 'pytorch.org', 'tensorflow.org',
-            'medium.com', 'towardsdatascience.com', 'ieee.org'
+            'medium.com', 'towardsdatascience.com', 'ieee.org',
+
+            # Academic/Standards
+            'researchgate.net', 'semanticscholar.org', 'springer.com'
         }
 
         domains = set()

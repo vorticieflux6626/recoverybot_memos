@@ -99,7 +99,7 @@ class ExperienceDistiller:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        model: str = "gemma3:4b",
+        model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better distillation quality
         thought_library: Optional[ThoughtLibrary] = None
     ):
         self.ollama_url = ollama_url
@@ -491,7 +491,7 @@ Output ONLY the JSON, no other text:"""
 # Factory function
 def create_experience_distiller(
     ollama_url: str = "http://localhost:11434",
-    model: str = "gemma3:4b"
+    model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better distillation quality
 ) -> ExperienceDistiller:
     """Create a new ExperienceDistiller instance"""
     return ExperienceDistiller(

@@ -87,7 +87,7 @@ class QueryAnalyzer:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        model: str = "gemma3:4b",
+        model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better analysis quality
         entity_tracker: Optional["EntityTracker"] = None,
         enable_acronym_expansion: bool = True
     ):
@@ -281,23 +281,32 @@ Guidelines:
 
 THINKING MODEL CLASSIFICATION:
 - requires_thinking_model=TRUE for queries involving:
-  * Technical troubleshooting (fixing systems, debugging issues)
-  * Multi-step problem solving (complex procedures, workflows)
-  * Comparative analysis (evaluating options, trade-offs)
-  * Expert domain knowledge (industrial equipment, medical procedures, engineering)
-  * Root cause analysis (why something isn't working)
-  * System architecture or configuration questions
+  * Diagnosing WHY something isn't working (root cause analysis)
+  * Intermittent or conditional failures (e.g., "only happens when warm")
+  * Multi-step problem solving requiring reasoning chains
+  * Comparative analysis between multiple options
+  * Complex procedures requiring judgment and sequencing
   * Questions requiring synthesis across multiple technical domains
 
 - requires_thinking_model=FALSE for:
-  * Simple fact lookup (what, when, where)
-  * Basic definitions
-  * Local service finding
+  * Simple fact lookup (what is X, what does Y mean)
+  * Error code MEANING/DEFINITION lookup (e.g., "What does SRVO-063 mean?")
+  * Part number lookup or identification
+  * Parameter definitions or settings lookup
+  * Basic definitions and terminology
   * Current events/news
-  * Straightforward how-to questions
+  * Straightforward how-to questions with known steps
+
+EXAMPLES:
+  - "What does FANUC SRVO-063 alarm mean?" → FALSE (just looking up definition)
+  - "FANUC R-30iB J1 motor part number" → FALSE (just looking up part number)
+  - "What is $PARAM_GROUP[1].$PAYLOAD?" → FALSE (parameter definition)
+  - "Robot intermittently loses encoder position after warm-up, what's causing this?" → TRUE (diagnosis)
+  - "Compare R-2000iC vs M-900iB for spot welding" → TRUE (comparative analysis)
+  - "Why does my robot drift after warm restart but not cold start?" → TRUE (root cause)
 
 - reasoning_complexity levels:
-  * simple: direct fact retrieval, definitions
+  * simple: direct fact retrieval, definitions, error code meanings, part numbers
   * moderate: synthesis of multiple sources, basic summarization
   * complex: multi-step reasoning, comparing alternatives, weighing trade-offs
   * expert: technical troubleshooting, debugging, domain-specific analysis
@@ -725,9 +734,9 @@ Return ONLY the JSON array, no other text."""
         content_text = "\n\n---\n\n".join(content_summary)
         questions_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(decomposed_questions)])
 
-        # OPTIMIZATION: Use gemma3:4b for faster coverage evaluation (4B vs 8B params)
-        # Task is simple classification - doesn't need full reasoning power
-        analysis_model = "gemma3:4b"
+        # Use qwen3:8b for coverage evaluation - it's already loaded for other tasks
+        # so no extra VRAM cost, and provides better analysis quality
+        analysis_model = "qwen3:8b"
 
         prompt = f"""Analyze if the scraped content adequately answers the user's questions.
 

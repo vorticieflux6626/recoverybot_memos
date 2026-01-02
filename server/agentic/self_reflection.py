@@ -154,7 +154,7 @@ class SelfReflectionAgent:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        model: str = "gemma3:4b"  # Fast model for reflection
+        model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better reflection quality
     ):
         self.ollama_url = ollama_url
         self.model = model
@@ -707,7 +707,7 @@ Keep the same structure but correct any errors."""
 # Factory function
 def create_self_reflection_agent(
     ollama_url: str = "http://localhost:11434",
-    model: str = "gemma3:4b"
+    model: str = "qwen3:8b"  # Upgraded from gemma3:4b
 ) -> SelfReflectionAgent:
     """Create a SelfReflectionAgent instance"""
     return SelfReflectionAgent(ollama_url=ollama_url, model=model)

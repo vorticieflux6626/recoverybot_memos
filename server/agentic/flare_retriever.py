@@ -95,7 +95,7 @@ class FLARERetriever:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        model: str = "gemma3:4b",
+        model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better uncertainty detection
         confidence_threshold: float = 0.6,
         check_interval: int = 50,          # Check every N tokens
         max_retrievals: int = 5,           # Max retrievals per generation

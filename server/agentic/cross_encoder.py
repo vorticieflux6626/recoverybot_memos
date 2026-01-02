@@ -81,7 +81,7 @@ Do not explain your reasoning. Just output the scores array."""
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        model: str = "gemma3:4b",
+        model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better reranking quality
         batch_size: int = 5,
         timeout: float = 30.0
     ):
@@ -296,7 +296,7 @@ _cross_encoder: Optional[CrossEncoderReranker] = None
 
 def get_cross_encoder(
     ollama_url: str = "http://localhost:11434",
-    model: str = "gemma3:4b"
+    model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better reranking quality
 ) -> CrossEncoderReranker:
     """Get or create the global cross-encoder instance."""
     global _cross_encoder

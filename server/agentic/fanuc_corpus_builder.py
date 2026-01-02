@@ -313,7 +313,7 @@ class FANUCCorpusBuilder:
         self,
         corpus: Optional[DomainCorpus] = None,
         ollama_url: str = "http://localhost:11434",
-        extraction_model: str = "gemma3:4b"  # Fast model for extraction
+        extraction_model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better extraction quality
     ):
         # Initialize corpus if not provided
         if corpus is None:

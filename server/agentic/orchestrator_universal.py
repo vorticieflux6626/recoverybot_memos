@@ -2018,7 +2018,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
             # Handle direct answer if no search needed
             if query_analysis and not query_analysis.requires_search:
-                await emitter.emit(events.synthesizing(request_id, 0))
+                # Direct answer uses default synthesizer model
+                await emitter.emit(events.synthesizing(request_id, 0, model=DEFAULT_PIPELINE_CONFIG.synthesizer_model))
                 return await self._handle_direct_answer(
                     request, query_analysis, request_id, start_time
                 )
@@ -2188,10 +2189,12 @@ class UniversalOrchestrator(BaseSearchPipeline):
                             if self.config.enable_query_tree:
                                 logger.debug(f"[{request_id}] Expanding CRAG queries with Query Tree")
                                 expanded_queries = []
+                                # GAP-2 FIX: Capture query_type for lambda
+                                _query_type = state.query_analysis.query_type if state.query_analysis else None
                                 for rq in crag_result.refined_queries[:3]:
                                     tree_expanded = await self._expand_queries_with_tree(
                                         rq,
-                                        retrieval_func=lambda q: self.searcher.search([q])
+                                        retrieval_func=lambda q, qt=_query_type: self.searcher.search([q], query_type=qt)
                                     )
                                     expanded_queries.extend(tree_expanded)
                                 # Dedupe
@@ -2403,7 +2406,18 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
             # PHASE 6: Synthesis
             await emitter.emit(graph_node_entered(request_id, "synthesize", graph))
-            await emitter.emit(events.synthesizing(request_id, len(scraped_content)))
+
+            # Determine synthesis model before emitting event (for SSE tracking)
+            # Priority: force_thinking_model > query_analysis.requires_thinking_model > complexity
+            synthesis_model = DEFAULT_PIPELINE_CONFIG.synthesizer_model
+            if request.force_thinking_model:
+                synthesis_model = DEFAULT_THINKING_MODEL
+            elif state.query_analysis and state.query_analysis.requires_thinking_model:
+                synthesis_model = DEFAULT_THINKING_MODEL
+            elif state.query_analysis and state.query_analysis.reasoning_complexity in ["complex", "expert"]:
+                synthesis_model = DEFAULT_THINKING_MODEL
+
+            await emitter.emit(events.synthesizing(request_id, len(scraped_content), model=synthesis_model))
 
             synthesis_start = time.time()
 
@@ -3337,7 +3351,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 enhancement_metadata["features_used"].append("stuck_detection")
                 # Apply recovery if stuck
                 if recovery_action == "broaden":
-                    expanded_results = await self.searcher.search([f"general {request.query}"])
+                    # GAP-2 FIX: Pass query_type for engine selection
+                    _query_type = state.query_analysis.query_type if state.query_analysis else None
+                    expanded_results = await self.searcher.search([f"general {request.query}"], query_type=_query_type)
                     state.add_results(expanded_results)
 
         # PHASE 7.8: Context Curation (DIG-based filtering and deduplication)
@@ -4345,10 +4361,12 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 if self.config.enable_query_tree and refined_queries:
                     logger.debug(f"[{request_id}] Expanding {len(refined_queries)} CRAG refined queries with Query Tree")
                     expanded_queries = []
+                    # GAP-2 FIX: Capture query_type for lambda
+                    _query_type = state.query_analysis.query_type if state.query_analysis else None
                     for rq in refined_queries:
                         tree_expanded = await self._expand_queries_with_tree(
                             rq,
-                            retrieval_func=lambda q: self.searcher.search([q])
+                            retrieval_func=lambda q, qt=_query_type: self.searcher.search([q], query_type=qt)
                         )
                         expanded_queries.extend(tree_expanded)
                     # Dedupe while preserving order
@@ -4364,7 +4382,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     state.add_pending_queries(refined_queries)
             elif evaluation.recommended_action == CorrectiveAction.WEB_FALLBACK:
                 # Trigger additional web search - searcher.search() expects a list
-                fallback_results = await self.searcher.search([f"detailed {request.query}"])
+                # GAP-2 FIX: Pass query_type for engine selection
+                _query_type = state.query_analysis.query_type if state.query_analysis else None
+                fallback_results = await self.searcher.search([f"detailed {request.query}"], query_type=_query_type)
                 state.add_results(fallback_results)
 
             self._record_timing("crag", time.time() - start)
@@ -4724,12 +4744,35 @@ class UniversalOrchestrator(BaseSearchPipeline):
         self._graph_state.complete("V")
         self._graph_state.enter("Σ")
 
-        # Emit synthesizing event
+        # Determine if thinking model is needed based on directive propagation (GAP-1 fix)
+        # See DIRECTIVE_PROPAGATION_AUDIT.md for rationale
+        # Priority: force_thinking_model > query_analysis.requires_thinking_model > complexity
+        model_override = None
+        if request.force_thinking_model:
+            # Gateway classification determined thinking model is needed
+            model_override = DEFAULT_THINKING_MODEL
+            logger.info(f"[{request_id}] Using thinking model (forced by gateway): {model_override}")
+        elif state.query_analysis and state.query_analysis.requires_thinking_model:
+            model_override = DEFAULT_THINKING_MODEL
+            logger.info(f"[{request_id}] Using thinking model for complex query: {model_override}")
+        elif state.query_analysis and state.query_analysis.reasoning_complexity in ["complex", "expert"]:
+            # Also use thinking model for high complexity even if not explicitly flagged
+            model_override = DEFAULT_THINKING_MODEL
+            logger.info(f"[{request_id}] Using thinking model for {state.query_analysis.reasoning_complexity} complexity")
+
+        # Determine which model will be used for synthesis
+        synthesis_model = model_override if model_override else DEFAULT_PIPELINE_CONFIG.synthesizer_model
+
+        # Emit synthesizing event with model name for SSE tracking
         await self.emit_event(
             EventType.SYNTHESIZING,
-            {"sources_count": len(scraped_content), "results_count": len(state.raw_results)},
+            {
+                "sources_count": len(scraped_content),
+                "results_count": len(state.raw_results),
+                "model": synthesis_model
+            },
             request_id,
-            message=f"Synthesizing from {len(scraped_content)} sources...",
+            message=f"Synthesizing from {len(scraped_content)} sources using {synthesis_model}...",
             graph_line=self._graph_state.to_line()
         )
 
@@ -4755,18 +4798,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 "content": content[:request.max_content_per_source]
             })
 
-        # Determine if thinking model is needed based on directive propagation (GAP-1 fix)
-        # See DIRECTIVE_PROPAGATION_AUDIT.md for rationale
-        model_override = None
-        if state.query_analysis and state.query_analysis.requires_thinking_model:
-            model_override = DEFAULT_THINKING_MODEL
-            logger.info(f"[{request_id}] Using thinking model for complex query: {model_override}")
-        elif state.query_analysis and state.query_analysis.reasoning_complexity in ["complex", "expert"]:
-            # Also use thinking model for high complexity even if not explicitly flagged
-            model_override = DEFAULT_THINKING_MODEL
-            logger.info(f"[{request_id}] Using thinking model for {state.query_analysis.reasoning_complexity} complexity")
-
         # Use synthesize_with_content for full content synthesis
+        # NOTE: model_override was determined earlier, before emitting synthesizing event
         synthesis = await self.synthesizer.synthesize_with_content(
             query=request.query,
             search_results=search_results,
@@ -4780,11 +4813,13 @@ class UniversalOrchestrator(BaseSearchPipeline):
         # FLARE integration: Check for uncertainty and retrieve more if needed
         if self.config.enable_flare_retrieval and synthesis:
             context_strs = [sc.get("content", "")[:1000] for sc in scraped_content_dicts]
+            # GAP-2 FIX: Capture query_type for lambda
+            _query_type = state.query_analysis.query_type if state.query_analysis else None
             additional_docs = await self._flare_enhanced_retrieval(
                 query=request.query,
                 partial_synthesis=synthesis,
                 context=context_strs,
-                retrieval_func=lambda q: self.searcher.search([q])
+                retrieval_func=lambda q, qt=_query_type: self.searcher.search([q], query_type=qt)
             )
             if additional_docs:
                 logger.info(f"[{request_id}] FLARE triggered: {len(additional_docs)} additional docs retrieved")
@@ -5141,10 +5176,13 @@ class UniversalOrchestrator(BaseSearchPipeline):
             # Execute specialized searches in parallel (limit to 3 perspectives)
             specialized_queries = specialized_queries[:3]
 
+            # GAP-2 FIX: Capture query_type for perspective searches
+            _query_type = state.query_analysis.query_type if state.query_analysis else None
+
             async def search_perspective(query: str):
                 """Execute a single perspective search."""
                 try:
-                    return await self.searcher.search([query], max_results_per_query=3)
+                    return await self.searcher.search([query], max_results_per_query=3, query_type=_query_type)
                 except Exception as e:
                     logger.debug(f"Perspective search failed: {e}")
                     return []

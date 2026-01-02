@@ -5020,6 +5020,12 @@ async def _execute_chat_gateway(
             pipeline = "agentic_search"
             logger.info(f"[{request_id}] Force agentic override applied")
 
+        # Upgrade to agentic_search if thinking model is required
+        # (complex queries need full pipeline even if classified as web_search)
+        if classification.use_thinking_model and pipeline == "web_search":
+            pipeline = "agentic_search"
+            logger.info(f"[{request_id}] Upgrading web_search → agentic_search (thinking model required)")
+
         # Emit pipeline routing decision
         await emitter.emit(events.pipeline_routed(
             request_id=request_id,
@@ -5239,6 +5245,11 @@ async def _execute_agentic_pipeline(
     ))
 
     # Create SearchRequest for the UniversalOrchestrator
+    # Propagate thinking model requirement from classification
+    force_thinking = classification.use_thinking_model if classification else False
+    if force_thinking:
+        logger.info(f"[{request_id}] Classification requires thinking model - propagating to orchestrator")
+
     search_request = SearchRequest(
         query=request.query,
         user_id=request.user_id,
@@ -5248,7 +5259,8 @@ async def _execute_agentic_pipeline(
         min_sources=5,
         max_sources=25,
         verification_level=VerificationLevel.STANDARD,
-        cache_results=True
+        cache_results=True,
+        force_thinking_model=force_thinking
     )
 
     # Update graph state

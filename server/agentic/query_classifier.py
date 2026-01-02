@@ -69,7 +69,7 @@ Think step by step, but only keep a minimum draft for each thinking step.
 
 Query Categories:
 - research: Information gathering, learning about topics, exploring concepts
-- problem_solving: Debugging, troubleshooting, finding solutions to issues
+- problem_solving: Debugging, troubleshooting, finding solutions to issues (includes industrial error codes)
 - factual: Direct questions with verifiable answers
 - creative: Open-ended brainstorming, ideation, creative writing
 - technical: Code, engineering, scientific analysis
@@ -87,12 +87,18 @@ Complexity Indicators:
 - simple: Single fact or straightforward answer
 - moderate: Requires some explanation or multiple facts
 - complex: Multi-faceted question requiring synthesis
-- expert: Requires deep domain knowledge
+- expert: Requires deep domain knowledge (FANUC/PLC/industrial troubleshooting, robotics)
+
+IMPORTANT - Industrial Troubleshooting Rules:
+- Error codes (SRVO-xxx, MOTN-xxx, SYST-xxx, INTP-xxx, HOST-xxx) = problem_solving + expert + agentic_search + use_thinking_model=true
+- Diagnostic queries (intermittent issues, encoder problems, servo alarms) = problem_solving + expert + agentic_search + use_thinking_model=true
+- Procedural queries (mastering, calibration, backup) = how_to + complex + agentic_search
+- Robot comparisons and technical evaluations = comparative + expert + agentic_search + use_thinking_model=true
 
 Pipeline Selection:
 - direct_answer: For conversational, simple factual, or when answer is in model knowledge
 - web_search: For current events, specific facts, or verifiable information
-- agentic_search: For complex research requiring multiple sources and verification
+- agentic_search: For complex research, troubleshooting, comparisons, or when multiple sources needed
 - code_assistant: For programming, debugging, or technical implementation
 
 User Query: {query}

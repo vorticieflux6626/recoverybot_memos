@@ -93,7 +93,7 @@ class AdaptiveRefinementEngine:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        evaluation_model: str = "gemma3:4b",
+        evaluation_model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better evaluation quality
         min_confidence_threshold: float = 0.5,
         max_refinement_attempts: int = 3
     ):

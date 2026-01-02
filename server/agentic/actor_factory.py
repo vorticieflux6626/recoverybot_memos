@@ -276,7 +276,7 @@ class ActorFactory:
         ModelCapability.VISION: ["qwen3-vl", "llama3.2-vision", "gemma3:4b-it-vision"],
         ModelCapability.CODE: ["qwen3:8b", "deepseek-r1:14b", "codellama:7b"],
         ModelCapability.EMBEDDING: ["mxbai-embed-large", "nomic-embed-text"],
-        ModelCapability.FAST: ["gemma3:4b", "llama3.2:3b", "qwen3:4b"]
+        ModelCapability.FAST: ["qwen3:8b", "llama3.2:3b"]  # Upgraded: qwen3:8b is now the fast model
     }
 
     def __init__(

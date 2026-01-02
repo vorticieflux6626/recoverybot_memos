@@ -122,14 +122,15 @@ class GatewayClient:
         self._client: Optional[httpx.AsyncClient] = None
 
         # Model mapping for direct Ollama fallback
+        # Note: Using qwen3:8b for multiple roles since it's already loaded (no extra VRAM)
         self._model_mapping = {
             LogicalModel.SYNTHESIZER: "qwen3:8b",
             LogicalModel.SYNTHESIZER_FAST: "qwen3:8b",
-            LogicalModel.ANALYZER: "gemma3:4b",
+            LogicalModel.ANALYZER: "qwen3:8b",  # Upgraded from gemma3:4b for better analysis
             LogicalModel.CLASSIFIER: "deepseek-r1:14b-qwen-distill-q8_0",
             LogicalModel.THINKING: "deepseek-r1:14b-qwen-distill-q8_0",
-            LogicalModel.VERIFIER: "gemma3:4b",
-            LogicalModel.REFLECTOR: "gemma3:4b",
+            LogicalModel.VERIFIER: "qwen3:8b",  # Upgraded from gemma3:4b for better verification
+            LogicalModel.REFLECTOR: "qwen3:8b",  # Upgraded from gemma3:4b for better reflection
             LogicalModel.VISION: "qwen3-vl:7b",
             LogicalModel.EMBEDDINGS: "mxbai-embed-large",
             LogicalModel.EMBEDDINGS_SEMANTIC: "nomic-embed-text",
@@ -138,7 +139,9 @@ class GatewayClient:
         # Fallback chains for direct Ollama
         self._fallback_chains = {
             LogicalModel.SYNTHESIZER: ["qwen3:8b", "qwen3:30b-a3b", "llama3.2:3b"],
-            LogicalModel.ANALYZER: ["gemma3:4b", "qwen3:8b"],
+            LogicalModel.ANALYZER: ["qwen3:8b", "gemma3:12b", "llama3.2:3b"],
+            LogicalModel.VERIFIER: ["qwen3:8b", "gemma3:12b", "llama3.2:3b"],
+            LogicalModel.REFLECTOR: ["qwen3:8b", "gemma3:12b", "llama3.2:3b"],
             LogicalModel.THINKING: ["deepseek-r1:14b-qwen-distill-q8_0", "qwen3:8b"],
             LogicalModel.EMBEDDINGS: ["mxbai-embed-large", "nomic-embed-text"],
         }

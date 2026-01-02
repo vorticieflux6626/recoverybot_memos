@@ -106,6 +106,10 @@ class SearchRequest(BaseModel):
         le=1.0,
         description="Minimum confidence score required to consider corpus sufficient"
     )
+    force_thinking_model: bool = Field(
+        default=False,
+        description="Force use of thinking model (DeepSeek R1) for synthesis regardless of query analysis"
+    )
     max_scrape_refinements: int = Field(
         default=3,  # Allow multiple refinement cycles
         ge=0,

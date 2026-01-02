@@ -88,7 +88,7 @@ class EntropyMonitor:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        model: str = "gemma3:4b",  # Fast model for entropy estimation
+        model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better entropy estimation
         high_confidence_threshold: float = 0.2,
         low_confidence_threshold: float = 0.5,
         convergence_threshold: float = 0.05,  # Entropy change < 5% = converged

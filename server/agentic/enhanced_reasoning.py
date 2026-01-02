@@ -108,8 +108,8 @@ class EnhancedReasoningEngine:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        planning_model: str = "gemma3:4b",
-        reflection_model: str = "gemma3:4b",
+        planning_model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better planning quality
+        reflection_model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better reflection quality
         max_reflection_iterations: int = 2,
         stuck_threshold_iterations: int = 3,
         similarity_threshold: float = 0.85

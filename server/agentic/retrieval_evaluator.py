@@ -129,7 +129,7 @@ class RetrievalEvaluator:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        model: str = "gemma3:4b"  # Fast model for evaluation
+        model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better evaluation quality
     ):
         self.ollama_url = ollama_url
         self.model = model
@@ -610,7 +610,7 @@ Output JSON array of sub-questions:
 # Factory functions
 def create_retrieval_evaluator(
     ollama_url: str = "http://localhost:11434",
-    model: str = "gemma3:4b"
+    model: str = "qwen3:8b"  # Upgraded from gemma3:4b
 ) -> RetrievalEvaluator:
     """Create a RetrievalEvaluator instance"""
     return RetrievalEvaluator(ollama_url=ollama_url, model=model)

@@ -68,7 +68,7 @@ class PipelineContextConfig:
     thinking_context: int = 64000  # 64K tokens (128K available, leave room for output)
 
     # Fast evaluation model
-    evaluator_model: str = "gemma3:4b"
+    evaluator_model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better evaluation quality
     evaluator_context: int = 131072  # 128K tokens
 
     # Verification model

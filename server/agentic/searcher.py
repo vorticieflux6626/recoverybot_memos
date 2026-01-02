@@ -92,6 +92,30 @@ class SearXNGSearchProvider(SearchProvider):
         "plastics": "reddit,brave,bing,wikipedia",
     }
 
+    # GAP-2 FIX: Map analyzer query_types to ENGINE_GROUPS keys
+    # The analyzer returns types like "troubleshooting", "technical_research", etc.
+    # but ENGINE_GROUPS uses "fanuc", "technical", etc.
+    ANALYZER_QUERY_TYPE_MAPPING = {
+        # Types that should use pattern detection for FANUC/IMM
+        "troubleshooting": None,  # None = run detect_query_type() for FANUC/IMM detection
+        "debugging": None,
+        "problem_solving": None,
+
+        # Direct mappings
+        "technical_research": "technical",
+        "comparative_analysis": "technical",
+        "how_to": "qa",
+        "academic": "academic",
+        "factual": "general",
+        "definition": "general",
+        "current_events": "general",
+        "opinion": "general",
+        "creative": "general",
+        "personal": "general",
+        "local_service": "general",
+        "crisis": "general",
+    }
+
     # Patterns to detect academic queries
     ACADEMIC_PATTERNS = [
         r"\bpaper\b", r"\bresearch\b", r"\bstudy\b", r"\bjournal\b",
@@ -237,15 +261,32 @@ class SearXNGSearchProvider(SearchProvider):
 
         Args:
             query: The search query
-            query_type: Optional override ('academic', 'technical', 'general', 'all')
+            query_type: Optional query type from analyzer or override
+                       ('academic', 'technical', 'general', 'troubleshooting', etc.)
 
         Returns:
             Comma-separated engine list (rate-limited engines excluded)
         """
-        if query_type is None:
-            query_type = self.detect_query_type(query)
+        effective_type = query_type
 
-        base_engines = self.ENGINE_GROUPS.get(query_type, self.ENGINE_GROUPS["general"])
+        if query_type is not None and query_type in self.ANALYZER_QUERY_TYPE_MAPPING:
+            # GAP-2 FIX: Map analyzer query_type to ENGINE_GROUPS key
+            mapped_type = self.ANALYZER_QUERY_TYPE_MAPPING[query_type]
+            if mapped_type is None:
+                # For troubleshooting/debugging/problem_solving, run pattern detection
+                # to check for FANUC, IMM, or other domain-specific patterns
+                effective_type = self.detect_query_type(query)
+                logger.info(
+                    f"Analyzer type '{query_type}' → pattern detection → '{effective_type}'"
+                )
+            else:
+                effective_type = mapped_type
+                logger.info(f"Analyzer type '{query_type}' → mapped to '{effective_type}'")
+        elif query_type is None:
+            effective_type = self.detect_query_type(query)
+        # else: query_type is already an ENGINE_GROUPS key (fanuc, technical, etc.)
+
+        base_engines = self.ENGINE_GROUPS.get(effective_type, self.ENGINE_GROUPS["general"])
         engine_list = [e.strip() for e in base_engines.split(",")]
 
         # Filter out engines in backoff using metrics
