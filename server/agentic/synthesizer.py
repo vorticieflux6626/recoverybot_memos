@@ -155,7 +155,7 @@ class SynthesizerAgent:
                 )
                 verification_text += f"\nPotential conflicts: {conflict_notes}"
 
-        # Build synthesis prompt
+        # Build synthesis prompt with mandatory citation requirements
         prompt = f"""You are a research synthesizer providing accurate, well-structured answers.
 Based on the search results provided, create a comprehensive answer to the user's question.
 
@@ -165,16 +165,21 @@ Search Results:
 {results_text}
 {verification_text}
 
-Instructions:
-1. Provide accurate, technically correct information from the sources
-2. Structure your answer with clear sections if appropriate
-3. Be direct and solution-focused
-4. Include specific details, examples, and references when relevant
-5. If information is limited, acknowledge what's known and unknown
-6. Focus on practical, actionable guidance
-7. Use [Source N] citations for key facts and claims
+CRITICAL REQUIREMENTS (you MUST follow these):
+1. **MANDATORY CITATIONS**: Every factual claim MUST have a [Source N] citation. Answers without citations are INCOMPLETE.
+2. **TERM COVERAGE**: Use the key technical terms from the question in your answer (e.g., error codes, component names, procedures).
+3. Be direct and solution-focused with specific details, examples, and references.
+4. Structure your answer with clear sections if the topic is complex.
+5. If information is limited, acknowledge what's known and what remains unclear.
+6. If sources conflict, note the discrepancy: "Source 1 says X, but Source 2 says Y."
 
-Your synthesized answer:"""
+CITATION FORMAT EXAMPLES:
+- "SRVO-063 indicates overcurrent [Source 1]."
+- "The calibration procedure requires mastering all axes [Source 2]."
+
+WARNING: Responses without [Source N] citations will be considered incomplete and may be rejected.
+
+Your synthesized answer (with citations):"""
 
         try:
             if use_gateway:
@@ -568,17 +573,21 @@ I have provided {num_sources} sources for you to analyze:
 {full_content}
 {verification_text}
 
-INSTRUCTIONS:
-1. Read ALL source content carefully
-2. Extract information that directly answers the question
-3. **ALWAYS cite sources** using [Source 1], [Source 2], etc. after each fact
-4. Be specific - include names, dates, times, addresses, phone numbers, and other details
-5. If sources disagree, note the discrepancy with citations
-6. If the sources don't contain enough information, clearly state what is known and what remains unclear
-7. Use a clear, organized format with headings if the answer is complex
+CRITICAL REQUIREMENTS (you MUST follow these):
+1. **MANDATORY CITATIONS**: Every factual claim MUST have a [Source X] citation. Answers without citations are INCOMPLETE.
+2. **TERM COVERAGE**: Use the key technical terms from the question in your answer (e.g., error codes, component names, procedures, part numbers).
+3. Read ALL source content carefully and extract information that directly answers the question.
+4. Be specific - include names, dates, times, addresses, phone numbers, part numbers, and other details.
+5. If sources disagree, note the discrepancy: "Source 1 says X [Source 1], but Source 2 says Y [Source 2]."
+6. If the sources don't contain enough information, clearly state what is known and what remains unclear.
+7. Use a clear, organized format with headings if the answer is complex.
 
-Example citation format:
-"AA meetings are held on Mondays at 6:00 PM at the Community Center [Source 1]. The Wednesday meeting is at 7:00 PM [Source 2]."
+CITATION FORMAT EXAMPLES:
+- "SRVO-063 indicates overcurrent in the servo amplifier [Source 1]."
+- "The calibration procedure requires mastering all axes before operation [Source 2]."
+- "AA meetings are held on Mondays at 6:00 PM at the Community Center [Source 1]."
+
+WARNING: Responses without [Source X] citations will be considered incomplete and may be rejected.
 
 YOUR DETAILED ANSWER (with citations):"""
 

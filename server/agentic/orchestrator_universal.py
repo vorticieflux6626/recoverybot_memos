@@ -1322,6 +1322,52 @@ class UniversalOrchestrator(BaseSearchPipeline):
         except Exception as e:
             logger.warning(f"Failed to add to semantic memory: {e}")
 
+    async def _retrieve_from_semantic_memory(
+        self,
+        query: str,
+        top_k: int = 3,
+        memory_type: MemoryType = None,
+        request_id: str = ""
+    ) -> List[str]:
+        """
+        P1.1: Retrieve relevant past memories for the query.
+
+        Uses A-MEM's find_similar_with_decay to get contextually relevant
+        past findings, with recency weighting to prefer recent memories.
+        """
+        if not self.config.enable_semantic_memory:
+            return []
+
+        try:
+            memory = self._get_semantic_memory()
+            # Use decay-adjusted search to prefer recent memories
+            results = await memory.find_similar_with_decay(
+                query=query,
+                top_k=top_k,
+                memory_type=memory_type,
+                recency_weight=0.3  # Slight preference for recent
+            )
+
+            if results:
+                memories = []
+                for mem, similarity, decayed_score in results:
+                    if decayed_score >= 0.5:  # Only include relevant memories
+                        memories.append(f"[Past Finding] {mem.content[:500]}")
+                        logger.debug(
+                            f"[{request_id}] A-MEM retrieval: score={decayed_score:.2f}, "
+                            f"type={mem.memory_type.value if mem.memory_type else 'unknown'}"
+                        )
+
+                if memories:
+                    logger.info(
+                        f"[{request_id}] Retrieved {len(memories)} relevant memories from A-MEM"
+                    )
+                return memories
+        except Exception as e:
+            logger.warning(f"[{request_id}] A-MEM retrieval failed: {e}")
+
+        return []
+
     def _record_observation(
         self,
         request_id: str,
@@ -1940,8 +1986,17 @@ class UniversalOrchestrator(BaseSearchPipeline):
                                     rel.get('relation_type', 'related_to')
                                 ))
 
+                        # P0.5: Write entities to public space for synthesizer context enrichment (streaming)
+                        entity_dicts = [e.to_dict() for e in entities]
+                        scratchpad.write_public(
+                            agent_id="entity_tracker",
+                            key="extracted_entities",
+                            value=entity_dicts,
+                            ttl_minutes=60
+                        )
+
                         entity_ms = int((time.time() - entity_start) * 1000)
-                        logger.info(f"[{request_id}] Extracted {len(entities)} entities in {entity_ms}ms")
+                        logger.info(f"[{request_id}] Extracted {len(entities)} entities in {entity_ms}ms, published to public space")
                 except Exception as e:
                     logger.debug(f"[{request_id}] Entity extraction failed: {e}")
 
@@ -2344,6 +2399,30 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
                 await emitter.emit(graph_node_completed(request_id, "verify", True, graph, verify_ms))
 
+                # P0.4: Agent notes communication - verifier → synthesizer (streaming path)
+                if verification_result and hasattr(verification_result, 'results'):
+                    verified_count = getattr(verification_result, 'verified_count', 0)
+                    total_claims = getattr(verification_result, 'total_claims', 0)
+                    avg_confidence = getattr(verification_result, 'confidence', 0)
+
+                    # Determine recommendation based on verification outcome
+                    if avg_confidence >= 0.8:
+                        recommendation = "High confidence sources - synthesize with strong assertions"
+                    elif avg_confidence >= 0.6:
+                        recommendation = "Moderate confidence - cite sources carefully and note uncertainties"
+                    else:
+                        recommendation = "Low confidence - emphasize uncertainty, use hedging language"
+
+                    # Add note for synthesizer
+                    scratchpad._add_agent_note(
+                        agent="verifier",
+                        action_taken=f"Verified {verified_count}/{total_claims} claims",
+                        observation=f"Average confidence: {avg_confidence:.2f}",
+                        recommendation=recommendation,
+                        for_agent="synthesizer"
+                    )
+                    logger.info(f"[{request_id}] Verifier added note for synthesizer: {recommendation}")
+
             # PHASE 5.9: Information Bottleneck Filtering (G.6.4)
             # Applies IB theory to reduce noise while preserving task-relevant info
             ib_result = None
@@ -2380,9 +2459,19 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         decomposed_questions=decomposed_questions
                     )
 
-                    # Replace scraped_content with filtered content
-                    if ib_result and ib_result.compressed_content:
-                        scraped_content = [ib_result.compressed_content]
+                    # Context Flow Issue #1 FIX: Use filtered_passages instead of single compressed_content
+                    # This preserves individual sources for proper [Source N] citations
+                    if ib_result and ib_result.filtered_passages:
+                        # Reconstruct scraped_content from filtered passages with key sentences
+                        scraped_content = []
+                        for p in ib_result.filtered_passages:
+                            key_sentences = p.get("key_sentences", [])
+                            if key_sentences:
+                                # Use key sentences for this source
+                                scraped_content.append(" ".join(key_sentences))
+                            else:
+                                # Fallback to original content
+                                scraped_content.append(p.get("content", ""))
 
                         ib_ms = int((time.time() - ib_start) * 1000)
 
@@ -2445,6 +2534,50 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
                 if template_parts:
                     thought_context = "\n".join(template_parts)
+
+            # P1.1: Retrieve relevant past memories from A-MEM (streaming path)
+            amem_context = None
+            if self.config.enable_semantic_memory:
+                past_memories = await self._retrieve_from_semantic_memory(
+                    query=request.query,
+                    top_k=3,
+                    request_id=request_id
+                )
+                if past_memories:
+                    amem_context = "\n".join(past_memories)
+
+            # P0.4: Read agent notes for synthesizer guidance (streaming path)
+            verifier_notes = scratchpad.get_notes_for_agent("synthesizer")
+            verifier_guidance = None
+            if verifier_notes:
+                latest_note = verifier_notes[-1]  # Most recent note
+                if latest_note.recommendation:
+                    verifier_guidance = f"[Verifier Guidance: {latest_note.recommendation}]"
+                    logger.info(f"[{request_id}] Synthesizer received guidance: {latest_note.recommendation}")
+
+            # P0.5: Read entities from public space for context enrichment (streaming path)
+            entity_context = None
+            extracted_entities = scratchpad.read_public("extracted_entities")
+            if extracted_entities:
+                entity_names = [e.get("name", "") for e in extracted_entities if e.get("name")]
+                if entity_names:
+                    entity_context = f"[Key Entities: {', '.join(entity_names[:5])}]"
+                    logger.info(f"[{request_id}] Synthesizer received {len(entity_names)} entities from public space")
+
+            # Incorporate verifier guidance, entity context, and A-MEM memories into thought context
+            context_parts = []
+            if verifier_guidance:
+                context_parts.append(verifier_guidance)
+            if entity_context:
+                context_parts.append(entity_context)
+            if amem_context:
+                context_parts.append(f"[Relevant Past Knowledge]\n{amem_context}")
+            if context_parts:
+                context_prefix = "\n".join(context_parts)
+                if thought_context:
+                    thought_context = f"{context_prefix}\n\n{thought_context}"
+                else:
+                    thought_context = context_prefix
 
             # LLM Debug: Track synthesis call (reasoning model)
             synthesis_prompt = f"Query: {request.query}\nSources: {len(scraped_content)}"
@@ -3431,10 +3564,20 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     decomposed_questions=decomposed
                 )
 
-                # Replace scraped_content with filtered content
-                if ib_result and ib_result.compressed_content:
-                    # Use the compressed key sentences for synthesis
-                    scraped_content = [ib_result.compressed_content]
+                # Context Flow Issue #1 FIX: Use filtered_passages instead of single compressed_content
+                # This preserves individual sources for proper [Source N] citations
+                if ib_result and ib_result.filtered_passages:
+                    # Reconstruct scraped_content from filtered passages with key sentences
+                    scraped_content = []
+                    for p in ib_result.filtered_passages:
+                        key_sentences = p.get("key_sentences", [])
+                        if key_sentences:
+                            # Use key sentences for this source
+                            scraped_content.append(" ".join(key_sentences))
+                        else:
+                            # Fallback to original content
+                            scraped_content.append(p.get("content", ""))
+
                     enhancement_metadata["features_used"].append("information_bottleneck")
                     enhancement_metadata["ib_filtering"] = {
                         "original_passages": ib_result.original_count,
@@ -3473,6 +3616,31 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 state, scraped_content, search_trace, request_id
             )
 
+            # P0.4: Agent notes communication - verifier → synthesizer
+            # Add recommendations based on verification results
+            if verification_result and hasattr(verification_result, 'results'):
+                verified_count = getattr(verification_result, 'verified_count', 0)
+                total_claims = getattr(verification_result, 'total_claims', 0)
+                avg_confidence = getattr(verification_result, 'confidence', 0)
+
+                # Determine recommendation based on verification outcome
+                if avg_confidence >= 0.8:
+                    recommendation = "High confidence sources - synthesize with strong assertions"
+                elif avg_confidence >= 0.6:
+                    recommendation = "Moderate confidence - cite sources carefully and note uncertainties"
+                else:
+                    recommendation = "Low confidence - emphasize uncertainty, use hedging language"
+
+                # Add note for synthesizer
+                scratchpad._add_agent_note(
+                    agent="verifier",
+                    action_taken=f"Verified {verified_count}/{total_claims} claims",
+                    observation=f"Average confidence: {avg_confidence:.2f}",
+                    recommendation=recommendation,
+                    for_agent="synthesizer"
+                )
+                logger.info(f"[{request_id}] Verifier added note for synthesizer: {recommendation}")
+
         # PHASE 8.5: Positional Optimization (lost-in-the-middle mitigation)
         if self.config.enable_positional_optimization and scraped_content:
             scraped_content = await self._phase_positional_optimization(
@@ -3481,9 +3649,53 @@ class UniversalOrchestrator(BaseSearchPipeline):
             enhancement_metadata["features_used"].append("positional_optimization")
 
         # PHASE 9: Synthesis
+        # P1.1: Retrieve relevant past memories from A-MEM
+        amem_context = None
+        if self.config.enable_semantic_memory:
+            past_memories = await self._retrieve_from_semantic_memory(
+                query=request.query,
+                top_k=3,
+                request_id=request_id
+            )
+            if past_memories:
+                amem_context = "\n".join(past_memories)
+                enhancement_metadata["features_used"].append("amem_retrieval")
+
+        # P0.4: Read agent notes for synthesizer guidance
+        verifier_notes = scratchpad.get_notes_for_agent("synthesizer")
+        verifier_guidance = None
+        if verifier_notes:
+            latest_note = verifier_notes[-1]  # Most recent note
+            if latest_note.recommendation:
+                verifier_guidance = f"[Verifier Guidance: {latest_note.recommendation}]"
+                logger.info(f"[{request_id}] Synthesizer received guidance: {latest_note.recommendation}")
+
+        # P0.5: Read entities from public space for context enrichment
+        entity_context = None
+        extracted_entities = scratchpad.read_public("extracted_entities")
+        if extracted_entities:
+            entity_names = [e.get("name", "") for e in extracted_entities if e.get("name")]
+            entity_types = [e.get("type", "") for e in extracted_entities if e.get("type")]
+            if entity_names:
+                entity_context = f"[Key Entities: {', '.join(entity_names[:5])}]"
+                logger.info(f"[{request_id}] Synthesizer received {len(entity_names)} entities from public space")
+
+        # Incorporate verifier guidance, entity context, and A-MEM memories into thought context
+        enhanced_thought_context = thought_context or ""
+        context_parts = []
+        if verifier_guidance:
+            context_parts.append(verifier_guidance)
+        if entity_context:
+            context_parts.append(entity_context)
+        if amem_context:
+            context_parts.append(f"[Relevant Past Knowledge]\n{amem_context}")
+        if context_parts:
+            enhanced_thought_context = "\n".join(context_parts) + ("\n\n" + enhanced_thought_context if enhanced_thought_context else "")
+            enhanced_thought_context = enhanced_thought_context.strip()
+
         synthesis = await self._phase_synthesis(
             request, state, scraped_content, search_trace, request_id,
-            thought_context=thought_context,
+            thought_context=enhanced_thought_context if enhanced_thought_context else None,
             domain_context=domain_context
         )
 
@@ -3969,6 +4181,17 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 # add_entity() expects Dict, EntityState.to_dict() provides that
                 for entity in entities:
                     scratchpad.add_entity(entity.to_dict())
+
+                # P0.5: Write entities to public space for synthesizer context enrichment
+                entity_dicts = [e.to_dict() for e in entities]
+                scratchpad.write_public(
+                    agent_id="entity_tracker",
+                    key="extracted_entities",
+                    value=entity_dicts,
+                    ttl_minutes=60
+                )
+                logger.info(f"[{request_id}] Published {len(entities)} entities to public space")
+
             self._record_timing("entity_tracking", time.time() - start)
         except Exception as e:
             logger.warning(f"[{request_id}] Entity extraction failed: {e}")
@@ -5007,6 +5230,20 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 query_type=state.query_analysis.query_type if state.query_analysis else "research",
                 decomposed_questions=state.search_plan.decomposed_questions if state.search_plan else []
             )
+
+            # P1.1: Store high-confidence findings to A-MEM for future queries
+            if confidence >= 0.75 and self.config.enable_semantic_memory:
+                await self._add_to_semantic_memory(
+                    content=f"Query: {request.query}\nSynthesis: {synthesis[:1000]}",
+                    memory_type=MemoryType.FINDING,
+                    attributes={
+                        "query": request.query,
+                        "confidence": confidence,
+                        "query_type": state.query_analysis.query_type if state.query_analysis else "research"
+                    }
+                )
+                logger.info(f"[{request_id}] Stored high-confidence finding to A-MEM (confidence={confidence:.2f})")
+
         except Exception as e:
             logger.debug(f"Experience capture failed: {e}")
 
