@@ -23,6 +23,7 @@ from config.settings import get_settings
 
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, Body
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import ValidationError as PydanticValidationError
 
 # Phase 7: Unified exception handling
 from core.exceptions import (
@@ -69,7 +70,7 @@ from agentic.query_classifier import (
     RecommendedPipeline,
     QueryComplexity
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("api.search")
 
@@ -713,7 +714,7 @@ async def get_unified_stats():
 
 class UniversalSearchRequest(BaseModel):
     """Request model for universal search."""
-    query: str
+    query: str = Field(..., min_length=3, description="The search query (min 3 characters)")
     user_id: Optional[str] = None
     context: Optional[dict] = None
     max_iterations: int = 10
@@ -815,11 +816,33 @@ async def universal_search(request: UniversalSearchRequest):
         response = await orchestrator.search(search_request)
         return response
 
+    except PydanticValidationError as e:
+        # Pydantic validation errors (min_length, etc.)
+        logger.warning(f"Universal search validation failed: {e}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"Validation error: {str(e)}"
+        )
+    except ValueError as e:
+        # Other validation errors
+        logger.warning(f"Universal search validation failed: {e}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"Validation error: {str(e)}"
+        )
     except Exception as e:
+        error_msg = str(e)
+        # Check if it's a validation error wrapped in another exception
+        if "validation error" in error_msg.lower() or "string_too_short" in error_msg.lower():
+            logger.warning(f"Universal search validation failed: {e}")
+            raise HTTPException(
+                status_code=422,
+                detail=f"Validation error: {error_msg}"
+            )
         logger.error(f"Universal search failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Universal search failed: {str(e)}"
+            detail=f"Universal search failed: {error_msg}"
         )
 
 
