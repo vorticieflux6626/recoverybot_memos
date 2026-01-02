@@ -1091,6 +1091,16 @@ from .confidence_logger import (
 # P2 Observability: GenAI Semantic Conventions (January 2026)
 from .tracing import GenAIAttributes
 
+# P3 Observability: Dashboard (January 2026)
+from .observability_dashboard import (
+    ObservabilityDashboard,
+    ObservabilityAggregator,
+    RequestObservability,
+    DashboardStats,
+    get_observability_dashboard,
+    create_request_observability,
+)
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -1904,6 +1914,15 @@ __all__ = [
     # P2 Observability: GenAI Semantic Conventions (January 2026)
     # OpenTelemetry GenAI attribute names
     "GenAIAttributes",
+
+    # P3 Observability: Dashboard (January 2026)
+    # Aggregate views for pipeline monitoring
+    "ObservabilityDashboard",
+    "ObservabilityAggregator",
+    "RequestObservability",
+    "DashboardStats",
+    "get_observability_dashboard",
+    "create_request_observability",
 ]
 
-__version__ = "0.84.0"  # P2 Observability: Confidence Logger + GenAI Tracing Conventions
+__version__ = "0.85.0"  # P3 Observability Complete: Dashboard + Full Stack

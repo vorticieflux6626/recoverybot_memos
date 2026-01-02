@@ -1,6 +1,6 @@
 # memOS Server
 
-> **Updated**: 2026-01-02 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.81.0
+> **Updated**: 2026-01-02 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.86.0
 
 ## Quick Reference
 
@@ -153,7 +153,7 @@ See [server/agentic/AGENTIC_IMPROVEMENT_PLAN.md](server/agentic/AGENTIC_IMPROVEM
 
 See [server/agentic/OBSERVABILITY_IMPROVEMENT_PLAN.md](server/agentic/OBSERVABILITY_IMPROVEMENT_PLAN.md) for the observability roadmap.
 
-**Priority P0-P2 (Complete):**
+**Priority P0-P3 (Complete):**
 - Decision Logger - Track agent decisions with reasoning (`decision_logger.py`)
 - Context Tracker - Monitor context flow between pipeline stages (`context_tracker.py`)
 - LLM Call Logger - Comprehensive LLM invocation tracking (`llm_logger.py`)
@@ -161,9 +161,7 @@ See [server/agentic/OBSERVABILITY_IMPROVEMENT_PLAN.md](server/agentic/OBSERVABIL
 - Technician Log - Human-readable diagnostic summaries (`technician_log.py`)
 - Confidence Logger - Multi-signal confidence breakdown (`confidence_logger.py`)
 - GenAI Semantic Conventions - OpenTelemetry GenAI attributes (`tracing.py`)
-
-**Priority P3 (Pending):**
-- Dashboard Endpoint - Aggregate observability views
+- Dashboard Endpoint - Aggregate observability views (`observability_dashboard.py`)
 
 ---
 
