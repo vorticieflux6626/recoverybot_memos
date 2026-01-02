@@ -167,6 +167,14 @@ class EventType(str, Enum):
     PIPELINE_ROUTED = "pipeline_routed"  # Which pipeline was chosen
     CONTEXT_TRANSFER = "context_transfer"  # Context flow between pipeline stages
 
+    # ========== P2 Observability Events ==========
+    # Feature status tracking
+    FEATURE_STATUS = "feature_status"  # Feature enabled/skipped with reason
+    # Confidence breakdown
+    CONFIDENCE_CALCULATED = "confidence_calculated"  # Multi-signal confidence with weights
+    # Technician log
+    TECHNICIAN_LOG_READY = "technician_log_ready"  # Human-readable diagnostic ready
+
     # ========== NEW: BGE-M3 Hybrid Retrieval Events ==========
     HYBRID_SEARCH_START = "hybrid_search_start"
     HYBRID_SEARCH_COMPLETE = "hybrid_search_complete"

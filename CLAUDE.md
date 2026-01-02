@@ -153,16 +153,17 @@ See [server/agentic/AGENTIC_IMPROVEMENT_PLAN.md](server/agentic/AGENTIC_IMPROVEM
 
 See [server/agentic/OBSERVABILITY_IMPROVEMENT_PLAN.md](server/agentic/OBSERVABILITY_IMPROVEMENT_PLAN.md) for the observability roadmap.
 
-**Priority P0-P1 (Complete):**
+**Priority P0-P2 (Complete):**
 - Decision Logger - Track agent decisions with reasoning (`decision_logger.py`)
 - Context Tracker - Monitor context flow between pipeline stages (`context_tracker.py`)
 - LLM Call Logger - Comprehensive LLM invocation tracking (`llm_logger.py`)
 - Scratchpad Observer - Track scratchpad state changes (`scratchpad_observer.py`)
 - Technician Log - Human-readable diagnostic summaries (`technician_log.py`)
+- Confidence Logger - Multi-signal confidence breakdown (`confidence_logger.py`)
+- GenAI Semantic Conventions - OpenTelemetry GenAI attributes (`tracing.py`)
 
-**Priority P2 (Pending):**
-- OpenTelemetry Connection - Wire tracing to orchestrator
-- Confidence Breakdown - Multi-signal confidence logging
+**Priority P3 (Pending):**
+- Dashboard Endpoint - Aggregate observability views
 
 ---
 

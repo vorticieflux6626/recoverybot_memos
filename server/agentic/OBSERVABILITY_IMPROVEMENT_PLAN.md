@@ -1,6 +1,6 @@
 # Agentic Pipeline Observability Improvement Plan
 
-> **Created**: 2026-01-02 | **Status**: P1 Complete | **Version**: 1.1
+> **Created**: 2026-01-02 | **Status**: P2 Complete | **Version**: 1.2
 
 ## Implementation Status
 
@@ -11,11 +11,39 @@
 | **P1** | LLM Call Logger | ✅ Complete | `agentic/llm_logger.py` |
 | **P1** | Scratchpad Observer | ✅ Complete | `agentic/scratchpad_observer.py` |
 | **P1** | Technician Log Format | ✅ Complete | `agentic/technician_log.py` |
-| **P2** | OpenTelemetry Connection | ⏳ Pending | - |
-| **P2** | Confidence Breakdown | ⏳ Pending | - |
+| **P2** | Confidence Logger | ✅ Complete | `agentic/confidence_logger.py` |
+| **P2** | GenAI Semantic Conventions | ✅ Complete | `agentic/tracing.py` |
+| **P2** | SSE Event Types | ✅ Complete | `agentic/events.py` |
 | **P3** | Dashboard Endpoint | ⏳ Pending | - |
 
-### Completed Features (P0-P1)
+### Completed Features (P0-P2)
+
+### P2 Features (January 2026)
+
+**Confidence Logger** (`confidence_logger.py`):
+- `ConfidenceLogger` class with multi-signal confidence calculation
+- `ConfidenceBreakdown` dataclass for detailed breakdown
+- `SignalScore` dataclass for individual signal tracking
+- `ConfidenceSignal` enum (verification, source_diversity, content_depth, synthesis_quality)
+- `ConfidenceLevel` enum (VERY_HIGH, HIGH, MODERATE, LOW, VERY_LOW)
+- `ConfidenceCalibrationTracker` for detecting systematic over/under-confidence
+- Factory functions: `get_confidence_logger()`, `get_calibration_tracker()`
+- Tracks: weighted scores, threshold comparisons, calibration drift, signal disagreement
+
+**GenAI Semantic Conventions** (`tracing.py`):
+- `GenAIAttributes` class with OpenTelemetry GenAI attribute names
+- `trace_llm_call_genai()` context manager with full GenAI attributes
+- `update_llm_response()` method for response token tracking
+- Attributes: gen_ai.system, gen_ai.request.model, gen_ai.operation.name, gen_ai.agent.role, gen_ai.usage.*
+
+**P2 SSE Event Types** (`events.py`):
+- `FEATURE_STATUS` - Track feature enabled/skipped with reason
+- `CONFIDENCE_CALCULATED` - Multi-signal confidence with weights
+- `TECHNICIAN_LOG_READY` - Human-readable diagnostic ready
+
+---
+
+### P0-P1 Features (January 2026)
 
 **Decision Logger** (`decision_logger.py`):
 - `AgentDecision` dataclass for structured decision tracking

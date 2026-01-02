@@ -83,6 +83,38 @@ logger = logging.getLogger("agentic.tracing")
 # Type variable for generic function decoration
 F = TypeVar('F', bound=Callable[..., Any])
 
+
+# =============================================================================
+# GenAI Semantic Conventions (OpenTelemetry 2025)
+# Based on: https://opentelemetry.io/docs/specs/semconv/gen-ai/
+# =============================================================================
+class GenAIAttributes:
+    """OpenTelemetry GenAI semantic convention attribute names."""
+    # System attributes
+    SYSTEM = "gen_ai.system"  # e.g., "ollama", "openai"
+
+    # Request attributes
+    REQUEST_MODEL = "gen_ai.request.model"
+    REQUEST_MAX_TOKENS = "gen_ai.request.max_tokens"
+    REQUEST_TEMPERATURE = "gen_ai.request.temperature"
+    REQUEST_TOP_P = "gen_ai.request.top_p"
+    REQUEST_STOP_SEQUENCES = "gen_ai.request.stop_sequences"
+
+    # Response attributes
+    RESPONSE_ID = "gen_ai.response.id"
+    RESPONSE_MODEL = "gen_ai.response.model"  # Actual model used
+    RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons"
+
+    # Usage attributes
+    USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
+    USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
+    USAGE_TOTAL_TOKENS = "gen_ai.usage.total_tokens"
+
+    # Operation attributes (custom extension)
+    OPERATION_NAME = "gen_ai.operation.name"  # analysis, synthesis, etc.
+    AGENT_ROLE = "gen_ai.agent.role"  # analyzer, synthesizer, verifier
+    PROMPT_TEMPLATE = "gen_ai.prompt.template"  # Template name used
+
 # Global configuration
 _tracer_provider: Optional["TracerProvider"] = None
 _tracer: Optional[Any] = None
@@ -550,7 +582,7 @@ class AgenticTracer:
         operation: str,
         input_tokens: int = 0
     ):
-        """Trace an LLM API call."""
+        """Trace an LLM API call (legacy)."""
         with self.tracer.start_as_current_span(f"llm_{operation}") as span:
             _set_span_attributes(span, {
                 "request_id": self.request_id,
@@ -560,6 +592,97 @@ class AgenticTracer:
                 "phase": "llm_call",
             })
             yield span
+
+    @contextmanager
+    def trace_llm_call_genai(
+        self,
+        model: str,
+        operation: str,
+        agent_role: str,
+        input_tokens: int = 0,
+        prompt_template: str = "custom",
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        system: str = "ollama"
+    ):
+        """
+        Trace an LLM API call with GenAI semantic conventions.
+
+        Args:
+            model: Model name (e.g., "qwen3:8b")
+            operation: Operation type (analysis, synthesis, verification, etc.)
+            agent_role: Agent making the call (analyzer, synthesizer, etc.)
+            input_tokens: Estimated input token count
+            prompt_template: Name of the prompt template used
+            temperature: Temperature parameter if set
+            max_tokens: Max tokens parameter if set
+            system: LLM system (ollama, openai, etc.)
+
+        Yields:
+            Span with GenAI attributes that can be updated with response info
+        """
+        with self.tracer.start_as_current_span(f"gen_ai.{operation}") as span:
+            # Set GenAI semantic convention attributes
+            _set_span_attributes(span, {
+                # Request context
+                "request_id": self.request_id,
+                # GenAI system
+                GenAIAttributes.SYSTEM: system,
+                GenAIAttributes.REQUEST_MODEL: model,
+                GenAIAttributes.OPERATION_NAME: operation,
+                GenAIAttributes.AGENT_ROLE: agent_role,
+                GenAIAttributes.PROMPT_TEMPLATE: prompt_template,
+                # Usage (input)
+                GenAIAttributes.USAGE_INPUT_TOKENS: input_tokens,
+            })
+
+            # Optional parameters
+            if temperature is not None:
+                _set_span_attribute(span, GenAIAttributes.REQUEST_TEMPERATURE, temperature)
+            if max_tokens is not None:
+                _set_span_attribute(span, GenAIAttributes.REQUEST_MAX_TOKENS, max_tokens)
+
+            try:
+                yield span
+            except Exception as e:
+                _record_exception(span, e)
+                _set_span_status(span, StatusCode.ERROR if OTEL_AVAILABLE else None, str(e))
+                raise
+
+    def update_llm_response(
+        self,
+        span: Any,
+        output_tokens: int,
+        response_model: Optional[str] = None,
+        finish_reason: str = "stop"
+    ):
+        """
+        Update span with LLM response information.
+
+        Call this after receiving the LLM response within the trace_llm_call_genai context.
+
+        Args:
+            span: The span from trace_llm_call_genai
+            output_tokens: Number of output tokens
+            response_model: Actual model used (if different from requested)
+            finish_reason: Finish reason (stop, length, etc.)
+        """
+        _set_span_attributes(span, {
+            GenAIAttributes.USAGE_OUTPUT_TOKENS: output_tokens,
+            GenAIAttributes.RESPONSE_FINISH_REASONS: finish_reason,
+        })
+        if response_model:
+            _set_span_attribute(span, GenAIAttributes.RESPONSE_MODEL, response_model)
+
+        # Calculate total tokens
+        input_tokens = 0
+        try:
+            # Try to get input tokens from existing span attributes
+            if hasattr(span, 'attributes'):
+                input_tokens = span.attributes.get(GenAIAttributes.USAGE_INPUT_TOKENS, 0)
+        except Exception:
+            pass
+        _set_span_attribute(span, GenAIAttributes.USAGE_TOTAL_TOKENS, input_tokens + output_tokens)
 
     def add_event(self, name: str, attributes: Optional[Dict[str, Any]] = None):
         """Add an event to the root span."""

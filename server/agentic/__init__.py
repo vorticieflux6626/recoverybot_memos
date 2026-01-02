@@ -1075,6 +1075,22 @@ from .technician_log import (
     get_technician_log,
 )
 
+# P2 Observability: Confidence Logger (January 2026)
+from .confidence_logger import (
+    ConfidenceLogger,
+    ConfidenceBreakdown,
+    SignalScore,
+    ConfidenceSignal,
+    ConfidenceLevel,
+    ConfidenceCalibrationTracker,
+    get_confidence_logger,
+    get_calibration_tracker,
+    DEFAULT_WEIGHTS,
+)
+
+# P2 Observability: GenAI Semantic Conventions (January 2026)
+from .tracing import GenAIAttributes
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -1872,6 +1888,22 @@ __all__ = [
     "get_log_builder",
     "store_technician_log",
     "get_technician_log",
+
+    # P2 Observability: Confidence Logger (January 2026)
+    # Multi-signal confidence breakdown for calibration debugging
+    "ConfidenceLogger",
+    "ConfidenceBreakdown",
+    "SignalScore",
+    "ConfidenceSignal",
+    "ConfidenceLevel",
+    "ConfidenceCalibrationTracker",
+    "get_confidence_logger",
+    "get_calibration_tracker",
+    "DEFAULT_WEIGHTS",
+
+    # P2 Observability: GenAI Semantic Conventions (January 2026)
+    # OpenTelemetry GenAI attribute names
+    "GenAIAttributes",
 ]
 
-__version__ = "0.83.0"  # P1 Observability: LLM Logger + Scratchpad Observer + Technician Log
+__version__ = "0.84.0"  # P2 Observability: Confidence Logger + GenAI Tracing Conventions
