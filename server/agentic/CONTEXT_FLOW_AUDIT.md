@@ -300,12 +300,31 @@ Created comprehensive modality test suite in `tests/test_agentic_modalities.py`:
 
 **Legend:** ✅ = Verified Working | ⚠️ = Implemented, Needs Testing
 
+### Diverse Query Test Results
+
+Ran `test_agentic_diverse_queries.py` with Knowledge category:
+
+| Metric | Value |
+|--------|-------|
+| Success Rate | 100% |
+| Confidence | 57% |
+| Term Coverage | 50% (2/4 expected terms) |
+| Composite Score | 37% |
+| Execution Time | 213.5s |
+| Pipeline | analyze |
+
+**Quality Insights:**
+- Missing source citations detected
+- Term coverage at 50% suggests synthesis could better integrate key terms
+- Composite score formula: `0.3*confidence + 0.4*term_coverage + 0.3*source_bonus`
+
 ### Next Steps for Modality Testing
 
 1. **Increase timeout to 600s** for full pipeline tests
 2. **Add unit tests** for each modality in isolation
 3. **Add SSE event verification** to confirm feature execution
 4. **Create modality benchmark suite** with expected behaviors
+5. **Improve source citation formatting** in synthesis prompts
 
 ## Action Items
 
