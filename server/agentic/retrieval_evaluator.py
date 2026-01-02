@@ -214,7 +214,12 @@ class RetrievalEvaluator:
             for i, r in enumerate(search_results[:8])
         ])
 
-        prompt = f"""Evaluate how well each document answers this query.
+        prompt = f"""<role>RETRIEVAL QUALITY EVALUATOR for industrial documentation</role>
+<expertise>Assess relevance and coverage of technical documents for FANUC robotics, Allen-Bradley PLCs, Siemens automation, servo systems, and industrial troubleshooting. Prioritize manufacturer documentation and authoritative sources.</expertise>
+
+Think through this step by step, providing thorough reasoning for each document evaluation.
+
+Evaluate how well each document answers this query.
 
 QUERY: {query}
 
@@ -222,12 +227,12 @@ DOCUMENTS:
 {docs_text}
 
 For each document, rate on a scale of 0-10:
-- relevance: How directly relevant to the query
-- coverage: How much of the query it answers
+- relevance: How directly relevant to the query (10 = exactly addresses the error/topic)
+- coverage: How much of the query it answers (10 = complete solution/explanation)
 
 Output JSON array:
 [
-  {{"doc": 1, "relevance": 0-10, "coverage": 0-10, "reason": "brief explanation"}},
+  {{"doc": 1, "relevance": 0-10, "coverage": 0-10, "reason": "detailed explanation of relevance assessment"}},
   ...
 ]"""
 

@@ -133,7 +133,12 @@ class VerifierAgent:
             for s in sources[:5]
         ])
 
-        prompt = f"""Analyze if this claim is supported by the sources provided.
+        prompt = f"""<role>TECHNICAL FACT VERIFIER for industrial automation</role>
+<expertise>Cross-reference claims against manufacturer documentation. Identify conflicts between sources. Assess source credibility for FANUC, Allen-Bradley, Siemens, and industrial equipment.</expertise>
+
+Think through this step by step, providing thorough reasoning for each consideration.
+
+Analyze if this claim is supported by the sources provided.
 
 Claim: {claim}
 
@@ -145,7 +150,7 @@ Respond in JSON format:
   "supported": true/false,
   "confidence": 0.0-1.0,
   "conflicts": ["any contradicting information"],
-  "reasoning": "brief explanation"
+  "reasoning": "detailed explanation of verification logic"
 }}
 
 JSON:"""

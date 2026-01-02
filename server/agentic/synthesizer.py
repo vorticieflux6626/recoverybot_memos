@@ -38,9 +38,9 @@ def _get_settings():
 
 logger = logging.getLogger("agentic.synthesizer")
 
-# Chain-of-Draft instruction to reduce thinking tokens by up to 80%
-# Source: https://www.helicone.ai/blog/prompt-thinking-models
-CHAIN_OF_DRAFT_INSTRUCTION = """Think step by step, but only keep a minimum draft for each thinking step.
+# Thorough reasoning instruction for thinking models
+# Full reasoning preferred for industrial troubleshooting accuracy over token reduction
+THINKING_MODEL_REASONING_INSTRUCTION = """Think through this step by step, providing thorough reasoning for each consideration.
 Provide your final answer with citations."""
 
 # Thinking models for complex reasoning tasks
@@ -156,8 +156,14 @@ class SynthesizerAgent:
                 verification_text += f"\nPotential conflicts: {conflict_notes}"
 
         # Build synthesis prompt with mandatory citation requirements
-        prompt = f"""You are a research synthesizer providing accurate, well-structured answers.
+        prompt = f"""<role>EXPERT RESEARCH SYNTHESIZER for industrial automation</role>
+<expertise>Combine information from multiple sources into accurate, actionable answers for FANUC robotics, Allen-Bradley PLCs, Siemens automation, servo systems, and industrial troubleshooting. Every claim MUST be cited. Use technical terminology correctly.</expertise>
+
+Think through this step by step, providing thorough reasoning for your synthesis.
+
 Based on the search results provided, create a comprehensive answer to the user's question.
+
+**FOCUS REQUIREMENT**: Your answer MUST directly address the specific topic in the Original Question below. Do NOT answer about tangentially related topics that appear in search results. Stay focused on exactly what was asked.
 
 Original Question: {query}
 
@@ -166,18 +172,19 @@ Search Results:
 {verification_text}
 
 CRITICAL REQUIREMENTS (you MUST follow these):
-1. **MANDATORY CITATIONS**: Every factual claim MUST have a [Source N] citation. Answers without citations are INCOMPLETE.
-2. **TERM COVERAGE**: Use the key technical terms from the question in your answer (e.g., error codes, component names, procedures).
-3. Be direct and solution-focused with specific details, examples, and references.
-4. Structure your answer with clear sections if the topic is complex.
-5. If information is limited, acknowledge what's known and what remains unclear.
-6. If sources conflict, note the discrepancy: "Source 1 says X, but Source 2 says Y."
+1. **STAY ON TOPIC**: Answer ONLY about the specific error code, component, or procedure mentioned in the Original Question. Ignore unrelated content in search results.
+2. **MANDATORY CITATIONS**: Every factual claim MUST have a [Source N] citation. Answers without citations are INCOMPLETE.
+3. **TERM COVERAGE**: Use the key technical terms from the question in your answer (e.g., error codes, component names, procedures).
+4. Be direct and solution-focused with specific details, examples, and references.
+5. Structure your answer with clear sections if the topic is complex.
+6. If information is limited, acknowledge what's known and what remains unclear.
+7. If sources conflict, note the discrepancy: "Source 1 says X, but Source 2 says Y."
 
 CITATION FORMAT EXAMPLES:
 - "SRVO-063 indicates overcurrent [Source 1]."
 - "The calibration procedure requires mastering all axes [Source 2]."
 
-WARNING: Responses without [Source N] citations will be considered incomplete and may be rejected.
+WARNING: Responses that answer about a DIFFERENT topic than asked will be rejected. Responses without [Source N] citations will be considered incomplete.
 
 Your synthesized answer (with citations):"""
 
@@ -547,8 +554,8 @@ Please try rephrasing your question or providing more context."""
                 verification_text = f"\n\nNote: {len(verified)}/{len(verifications)} claims have been verified."
 
         # Build a comprehensive synthesis prompt that asks the model to ANSWER the question
-        # OPTIMIZATION: Chain-of-Draft instruction reduces thinking tokens by up to 80%
-        cod_prefix = CHAIN_OF_DRAFT_INSTRUCTION + "\n\n" if is_thinking_model else ""
+        # Thorough reasoning instruction added for thinking models to improve accuracy
+        reasoning_prefix = THINKING_MODEL_REASONING_INSTRUCTION + "\n\n" if is_thinking_model else ""
 
         # Extract domain knowledge from context if provided (e.g., HSEA FANUC error codes)
         domain_knowledge_text = ""
@@ -562,7 +569,10 @@ DOMAIN KNOWLEDGE (use this authoritative information to supplement your answer):
 """
                 logger.info(f"Synthesizer including domain knowledge: {len(domain_ctx)} chars")
 
-        prompt = f"""{cod_prefix}You are an expert research assistant. Your task is to carefully read the source content below and provide a detailed, accurate answer to the user's question.
+        prompt = f"""{reasoning_prefix}<role>EXPERT RESEARCH SYNTHESIZER for industrial automation</role>
+<expertise>Combine information from multiple sources into accurate, actionable answers for FANUC robotics, Allen-Bradley PLCs, Siemens automation, servo systems, and industrial troubleshooting. Every claim MUST be cited. Use technical terminology correctly.</expertise>
+
+**FOCUS REQUIREMENT**: Your answer MUST directly address the specific topic in the USER'S QUESTION below. Do NOT answer about tangentially related topics that appear in search results. Stay focused on exactly what was asked.
 
 USER'S QUESTION: {query}
 {domain_knowledge_text}
@@ -574,20 +584,21 @@ I have provided {num_sources} sources for you to analyze:
 {verification_text}
 
 CRITICAL REQUIREMENTS (you MUST follow these):
-1. **MANDATORY CITATIONS**: Every factual claim MUST have a [Source X] citation. Answers without citations are INCOMPLETE.
-2. **TERM COVERAGE**: Use the key technical terms from the question in your answer (e.g., error codes, component names, procedures, part numbers).
-3. Read ALL source content carefully and extract information that directly answers the question.
-4. Be specific - include names, dates, times, addresses, phone numbers, part numbers, and other details.
-5. If sources disagree, note the discrepancy: "Source 1 says X [Source 1], but Source 2 says Y [Source 2]."
-6. If the sources don't contain enough information, clearly state what is known and what remains unclear.
-7. Use a clear, organized format with headings if the answer is complex.
+1. **STAY ON TOPIC**: Answer ONLY about the specific error code, component, or procedure mentioned in the USER'S QUESTION. Ignore unrelated content in search results.
+2. **MANDATORY CITATIONS**: Every factual claim MUST have a [Source X] citation. Answers without citations are INCOMPLETE.
+3. **TERM COVERAGE**: Use the key technical terms from the question in your answer (e.g., error codes, component names, procedures, part numbers).
+4. Read ALL source content carefully and extract information that directly answers the question.
+5. Be specific - include names, dates, times, addresses, phone numbers, part numbers, and other details.
+6. If sources disagree, note the discrepancy: "Source 1 says X [Source 1], but Source 2 says Y [Source 2]."
+7. If the sources don't contain enough information, clearly state what is known and what remains unclear.
+8. Use a clear, organized format with headings if the answer is complex.
 
 CITATION FORMAT EXAMPLES:
 - "SRVO-063 indicates overcurrent in the servo amplifier [Source 1]."
 - "The calibration procedure requires mastering all axes before operation [Source 2]."
 - "AA meetings are held on Mondays at 6:00 PM at the Community Center [Source 1]."
 
-WARNING: Responses without [Source X] citations will be considered incomplete and may be rejected.
+WARNING: Responses that answer about a DIFFERENT topic than asked will be rejected. Responses without [Source X] citations will be considered incomplete.
 
 YOUR DETAILED ANSWER (with citations):"""
 

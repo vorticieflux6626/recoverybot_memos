@@ -1,79 +1,101 @@
 # Prompt & Context Engineering Improvement Plan
 
-> **Created**: 2026-01-02 | **Status**: Active | **Version**: 1.0
+> **Created**: 2026-01-02 | **Status**: Active | **Version**: 1.1 | **Updated**: 2026-01-02
 
 ## Executive Summary
 
 Based on comprehensive research into prompt engineering and context engineering best practices, combined with an audit of our current agentic pipeline, this plan outlines high-impact improvements for the Recovery Bot memOS industrial troubleshooting system.
 
+### Implementation Status (2026-01-02)
+
+| Improvement | Status | Notes |
+|-------------|--------|-------|
+| ✅ Fix LLM URL issue | **COMPLETE** | Components now use `self.ollama_url` |
+| ✅ Fix float16 serialization | **COMPLETE** | Added `float()` conversion |
+| ✅ Role-based agent personas | **COMPLETE** | All 5 agents updated |
+| ✅ Thorough reasoning instruction | **COMPLETE** | Replaced CoD with full reasoning |
+| ✅ STAY ON TOPIC requirement | **COMPLETE** | Synthesizer now rejects off-topic |
+| 🔄 Lost-in-middle mitigation | Pending | Document reordering |
+| 🔄 Temperature tuning | Pending | Per-agent optimization |
+
+### Design Decision: Full Reasoning Over Token Reduction
+
+**Original Plan**: Chain-of-Draft (CoD) to reduce tokens by 68-92%
+
+**Changed To**: Thorough step-by-step reasoning
+
+**Rationale**: For industrial troubleshooting queries, accuracy is more important than token efficiency. The relevance drift issue (answering about "Tool Life Management" instead of "SRVO-023 collision detection") showed that abbreviated reasoning can lose focus. Full reasoning provides:
+- Better topic adherence
+- More thorough evaluation of source relevance
+- Higher confidence in technical accuracy
+
 ### Current State Assessment
 
-| Component | Current Implementation | Gap |
-|-----------|----------------------|-----|
-| **Chain-of-Draft** | Applied to synthesizer only | Not applied to fast agents |
-| **Role-Based Prompts** | Partial (analyzer has domain knowledge) | Missing explicit agent personas |
-| **Output Structure** | JSON for most agents | Could use XML sections for synthesis |
-| **KV Cache Optimization** | Good prefix structure exists | Not consistently applied |
-| **Lost-in-Middle** | Not addressed | Need document reordering |
-| **Context Limits** | Well implemented | Could add source prioritization |
+| Component | Current Implementation | Status |
+|-----------|----------------------|--------|
+| **Thorough Reasoning** | Applied to all agents | ✅ Complete |
+| **Role-Based Prompts** | All 5 agents have personas | ✅ Complete |
+| **STAY ON TOPIC** | Synthesizer has explicit requirement | ✅ Complete |
+| **Output Structure** | JSON for most agents, XML tags for roles | ✅ Complete |
+| **Lost-in-Middle** | Not addressed | 🔄 Pending |
+| **Temperature Tuning** | Default values | 🔄 Pending |
 
-### Priority Matrix
+### Remaining Priority Matrix
 
 | Priority | Improvement | Impact | Effort | Target |
 |----------|-------------|--------|--------|--------|
-| **P0** | Apply Chain-of-Draft to all fast agents | High | Low | 2h |
-| **P0** | Fix pipeline issues (LLM URL, float16) | Critical | Low | 1h |
-| **P1** | Add role-based agent personas | High | Medium | 4h |
 | **P1** | Implement lost-in-middle mitigation | High | Low | 2h |
-| **P2** | Add `/no_think` suffix for qwen3:8b | Medium | Low | 1h |
 | **P2** | Temperature tuning per agent | Medium | Low | 1h |
 | **P3** | Self-consistency for STRICT verification | Medium | Medium | 4h |
 | **P3** | Dynamic few-shot from experience store | Medium | High | 8h |
 
 ---
 
-## P0: Critical Fixes
+## Completed Improvements
 
-### 1. Apply Chain-of-Draft to All Fast Agents
+### 1. Fix Pipeline Issues ✅
 
-**Current State**: Only `synthesizer.py` uses CoD for thinking models.
+**Issue 1**: LLM URL missing protocol - **FIXED**
+- Root cause: `orchestrator_universal.py` was passing `ollama_url` parameter instead of `self.ollama_url`
+- Fix: Changed all component initializations to use `self.ollama_url`
 
-**Change**: Add CoD instruction to all qwen3:8b agent prompts.
+**Issue 2**: float16 serialization error - **FIXED**
+- Location: `orchestrator_universal.py` lines ~4648, ~4699
+- Fix: Added `float()` conversion for all numpy scores
 
-**Files to Modify**:
-- `analyzer.py` → `_build_analysis_prompt()`
-- `verifier.py` → prompt in `_verify_strict()`
-- `query_classifier.py` → classification prompt
-- `retrieval_evaluator.py` → CRAG evaluation prompt
+### 2. Role-Based Agent Personas ✅
 
-**Pattern**:
-```python
-COD_INSTRUCTION = "Think step by step, but only keep ~5 words per step. Then provide your answer."
+All 5 agents now have explicit role personas with industrial automation expertise:
 
-def _build_analysis_prompt(self, query, context):
-    return f"""{COD_INSTRUCTION}
+| Agent | Role | Expertise |
+|-------|------|-----------|
+| `analyzer.py` | INDUSTRIAL QUERY ANALYZER | FANUC, Allen-Bradley, Siemens, servo systems |
+| `verifier.py` | TECHNICAL FACT VERIFIER | Cross-reference, source credibility |
+| `query_classifier.py` | QUERY ROUTING SPECIALIST | Pipeline routing, complexity assessment |
+| `retrieval_evaluator.py` | RETRIEVAL QUALITY EVALUATOR | Document relevance, coverage scoring |
+| `synthesizer.py` | EXPERT RESEARCH SYNTHESIZER | Multi-source synthesis, citation accuracy |
 
-Analyze this query...
-"""
+### 3. STAY ON TOPIC Requirement ✅
+
+Added explicit focus requirements to synthesizer prompts:
+
+```
+**FOCUS REQUIREMENT**: Your answer MUST directly address the specific topic
+in the Original Question below. Do NOT answer about tangentially related
+topics that appear in search results. Stay focused on exactly what was asked.
 ```
 
-**Expected Impact**: 68-92% fewer reasoning tokens, 40-76% faster response.
+And in CRITICAL REQUIREMENTS:
+```
+1. **STAY ON TOPIC**: Answer ONLY about the specific error code, component,
+   or procedure mentioned in the Original Question. Ignore unrelated content
+   in search results.
+```
 
-### 2. Fix Pipeline Issues
-
-**Issue 1**: LLM URL missing protocol
-- Check `gateway_client.py` for missing `http://` prefix
-- Ensure fallback to direct Ollama uses full URL
-
-**Issue 2**: float16 serialization error in hybrid reranking
-- Location: `orchestrator_universal.py` line ~700
-- Fix: Convert numpy float16 to Python float before JSON serialization
-
-```python
-# Before
-scores = reranker.compute_score(...)
-# After
-scores = [float(s) for s in reranker.compute_score(...)]
+Warning updated:
+```
+WARNING: Responses that answer about a DIFFERENT topic than asked will be
+rejected. Responses without [Source N] citations will be considered incomplete.
 ```
 
 ---

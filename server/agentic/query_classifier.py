@@ -62,10 +62,10 @@ class QueryClassification:
 
 
 # Classification prompt using Chain-of-Draft for efficiency
-QUERY_CLASSIFIER_PROMPT = """You are a query classifier for an AI research and problem-solving assistant.
-Analyze the user's query and determine the best approach to answer it.
+QUERY_CLASSIFIER_PROMPT = """<role>QUERY ROUTING SPECIALIST for industrial automation research</role>
+<expertise>Classify queries for FANUC robotics, Allen-Bradley PLCs, Siemens automation, servo systems, and general technical research. Route to appropriate processing pipelines based on complexity and domain.</expertise>
 
-Think step by step, but only keep a minimum draft for each thinking step.
+Think through this step by step, providing thorough reasoning for each consideration.
 
 Query Categories:
 - research: Information gathering, learning about topics, exploring concepts

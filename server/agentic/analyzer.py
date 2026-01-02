@@ -253,7 +253,13 @@ class QueryAnalyzer:
                                       for m in recent])
             context_info = f"\n\nRecent conversation:\n{context_info}"
 
-        return f"""Analyze this user query to determine if web search would be helpful and what level of reasoning is required.
+        # Role-based prompt with thorough reasoning for industrial troubleshooting accuracy
+        return f"""<role>INDUSTRIAL QUERY ANALYZER for manufacturing automation</role>
+<expertise>FANUC robotics, Allen-Bradley PLCs, Siemens automation, servo systems, industrial troubleshooting</expertise>
+
+Think through this step by step, providing thorough reasoning for each consideration.
+
+Analyze this user query to determine if web search would be helpful and what level of reasoning is required.
 
 Query: "{query}"{context_info}
 
