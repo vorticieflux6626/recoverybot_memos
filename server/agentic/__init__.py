@@ -1048,6 +1048,33 @@ from .context_tracker import (
     get_context_tracker,
 )
 
+# P1 Observability: LLM Call Logger (January 2026)
+from .llm_logger import (
+    LLMCallLogger,
+    LLMCall,
+    LLMOperation,
+    get_llm_logger,
+)
+
+# P1 Observability: Scratchpad Observer (January 2026)
+from .scratchpad_observer import (
+    ScratchpadObserver,
+    ScratchpadChange,
+    ScratchpadOperation,
+    get_scratchpad_observer,
+)
+
+# P1 Observability: Technician Log (January 2026)
+from .technician_log import (
+    TechnicianLog,
+    TechnicianLogBuilder,
+    SourceInfo,
+    RefinementRecord,
+    get_log_builder,
+    store_technician_log,
+    get_technician_log,
+)
+
 __all__ = [
     # ==========================================================================
     # PRIMARY: UniversalOrchestrator - SINGLE SOURCE OF TRUTH
@@ -1821,6 +1848,30 @@ __all__ = [
     "ContextType",
     "PipelineStage",
     "get_context_tracker",
+
+    # P1 Observability: LLM Call Logger (January 2026)
+    # Comprehensive LLM invocation tracking
+    "LLMCallLogger",
+    "LLMCall",
+    "LLMOperation",
+    "get_llm_logger",
+
+    # P1 Observability: Scratchpad Observer (January 2026)
+    # Track scratchpad state changes
+    "ScratchpadObserver",
+    "ScratchpadChange",
+    "ScratchpadOperation",
+    "get_scratchpad_observer",
+
+    # P1 Observability: Technician Log (January 2026)
+    # Human-readable diagnostic summaries
+    "TechnicianLog",
+    "TechnicianLogBuilder",
+    "SourceInfo",
+    "RefinementRecord",
+    "get_log_builder",
+    "store_technician_log",
+    "get_technician_log",
 ]
 
-__version__ = "0.82.0"  # P0 Observability: Decision Logger + Context Tracker
+__version__ = "0.83.0"  # P1 Observability: LLM Logger + Scratchpad Observer + Technician Log

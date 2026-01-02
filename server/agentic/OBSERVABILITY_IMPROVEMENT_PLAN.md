@@ -1,6 +1,54 @@
 # Agentic Pipeline Observability Improvement Plan
 
-> **Created**: 2026-01-02 | **Status**: Planning | **Version**: 1.0
+> **Created**: 2026-01-02 | **Status**: P1 Complete | **Version**: 1.1
+
+## Implementation Status
+
+| Phase | Component | Status | File |
+|-------|-----------|--------|------|
+| **P0** | Decision Logger | ✅ Complete | `agentic/decision_logger.py` |
+| **P0** | Context Tracker | ✅ Complete | `agentic/context_tracker.py` |
+| **P1** | LLM Call Logger | ✅ Complete | `agentic/llm_logger.py` |
+| **P1** | Scratchpad Observer | ✅ Complete | `agentic/scratchpad_observer.py` |
+| **P1** | Technician Log Format | ✅ Complete | `agentic/technician_log.py` |
+| **P2** | OpenTelemetry Connection | ⏳ Pending | - |
+| **P2** | Confidence Breakdown | ⏳ Pending | - |
+| **P3** | Dashboard Endpoint | ⏳ Pending | - |
+
+### Completed Features (P0-P1)
+
+**Decision Logger** (`decision_logger.py`):
+- `AgentDecision` dataclass for structured decision tracking
+- `DecisionLogger` class with SSE emission support
+- Factory function `get_decision_logger(request_id)`
+- Tracks: agent name, decision type, reasoning, confidence, alternatives
+
+**Context Tracker** (`context_tracker.py`):
+- `ContextTransfer` dataclass for inter-stage context flow
+- `ContextFlowTracker` class with deduplication detection
+- Factory function `get_context_tracker(request_id)`
+- Tracks: source/target stages, token counts, content hashes
+
+**LLM Call Logger** (`llm_logger.py`):
+- `LLMCall` dataclass for comprehensive LLM invocation records
+- `LLMCallLogger` class with async context manager pattern
+- Factory function `get_llm_logger(request_id, emitter, verbose)`
+- Tracks: prompt/response tokens, latency, parse success, model, operation
+
+**Scratchpad Observer** (`scratchpad_observer.py`):
+- `ScratchpadChange` dataclass for state change records
+- `ScratchpadObserver` class with convenience methods
+- Factory function `get_scratchpad_observer(request_id)`
+- Tracks: findings, questions, entities, gaps, contradictions
+
+**Technician Log** (`technician_log.py`):
+- `TechnicianLog` dataclass with markdown/HTML generation
+- `TechnicianLogBuilder` fluent API for construction
+- `SourceInfo` and `RefinementRecord` supporting dataclasses
+- Confidence visualization with emoji indicators and progress bars
+- Factory functions: `get_log_builder()`, `store_technician_log()`, `get_technician_log()`
+
+---
 
 ## Executive Summary
 
