@@ -704,16 +704,17 @@ class UniversalOrchestrator(BaseSearchPipeline):
         self.db_path = db_path or "/home/sparkone/sdd/Recovery_Bot/memOS/data"
 
         # Core components (always initialized)
-        self.classifier = QueryClassifier(ollama_url=ollama_url)
+        # Note: Use self.ollama_url (resolved from base class) not ollama_url (parameter which may be None)
+        self.classifier = QueryClassifier(ollama_url=self.ollama_url)
         self.reflector = get_self_reflection_agent()
-        self.retrieval_evaluator = RetrievalEvaluator(ollama_url=ollama_url)
+        self.retrieval_evaluator = RetrievalEvaluator(ollama_url=self.ollama_url)
         self.experience_distiller = get_experience_distiller()
         self.classifier_feedback = get_classifier_feedback()
         self.context_classifier = get_sufficient_context_classifier()
 
         # Adaptive refinement engine (Phase 2)
         self.adaptive_refinement = get_adaptive_refinement_engine(
-            ollama_url=ollama_url,
+            ollama_url=self.ollama_url,
             min_confidence_threshold=self.config.min_confidence_threshold,
             max_refinement_attempts=self.config.max_refinement_attempts
         )
@@ -4640,14 +4641,15 @@ class UniversalOrchestrator(BaseSearchPipeline):
             )
 
             # Update scores in state from BGE-M3
+            # Note: Convert to native Python float to avoid numpy float16 JSON serialization issues
             url_to_score = {}
             for r in reranked:
                 if r.metadata and "url" in r.metadata:
-                    url_to_score[r.metadata["url"]] = r.combined_score
+                    url_to_score[r.metadata["url"]] = float(r.combined_score)
 
             for result in state.raw_results:
                 if result.url in url_to_score:
-                    result.relevance_score = url_to_score[result.url]
+                    result.relevance_score = float(url_to_score[result.url])
 
             # Sort by BGE-M3 scores first
             state.raw_results.sort(key=lambda x: x.relevance_score, reverse=True)
@@ -4691,14 +4693,15 @@ class UniversalOrchestrator(BaseSearchPipeline):
             )
 
             # Update scores in state from cross-encoder
+            # Note: Convert to native Python float to avoid numpy float type serialization issues
             url_to_score = {}
             for c in rerank_result.candidates:
-                url_to_score[c.url] = c.rerank_score
+                url_to_score[c.url] = float(c.rerank_score)
 
             for result in state.raw_results:
                 if result.url in url_to_score:
                     # Blend cross-encoder score with original (cross-encoder is primary)
-                    result.relevance_score = url_to_score[result.url]
+                    result.relevance_score = float(url_to_score[result.url])
 
             # Re-sort by cross-encoder scores
             state.raw_results.sort(key=lambda x: x.relevance_score, reverse=True)

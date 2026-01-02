@@ -163,6 +163,25 @@ See [server/agentic/OBSERVABILITY_IMPROVEMENT_PLAN.md](server/agentic/OBSERVABIL
 - GenAI Semantic Conventions - OpenTelemetry GenAI attributes (`tracing.py`)
 - Dashboard Endpoint - Aggregate observability views (`observability_dashboard.py`)
 
+### Prompt & Context Engineering (2026-01-02)
+
+See [server/agentic/PROMPT_CONTEXT_IMPROVEMENT_PLAN.md](server/agentic/PROMPT_CONTEXT_IMPROVEMENT_PLAN.md) for the improvement roadmap.
+
+**Bugs Fixed:**
+- LLM URL bug - Components were passing `None` instead of resolved URL
+- float16 serialization - numpy float types in reranking couldn't be JSON serialized
+
+**Pipeline Audit Results:**
+- Duration: 82.7s (target: <60s)
+- Confidence: 56% (target: 80%+)
+- Found relevance drift issue (synthesis answering off-topic)
+
+**Planned Improvements:**
+- P0: Chain-of-Draft for fast agents (68-92% token reduction)
+- P1: Role-based agent personas for better topic focus
+- P1: Lost-in-middle mitigation for document reordering
+- P2: `/no_think` suffix for qwen3:8b, temperature tuning
+
 ---
 
 ## Reference Documentation
