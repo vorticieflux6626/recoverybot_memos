@@ -481,14 +481,22 @@ class SearXNGSearchProvider(SearchProvider):
                         if retry_response.status_code == 200:
                             retry_data = retry_response.json()
                             retry_results = retry_data.get("results", [])
-                            if len(retry_results) > len(page_results):
+
+                            # Aggregate results: merge initial + retry, dedupe by URL
+                            initial_urls = {r.get("url") for r in page_results if r.get("url")}
+                            new_results = [
+                                r for r in retry_results
+                                if r.get("url") and r.get("url") not in initial_urls
+                            ]
+
+                            if new_results:
+                                page_results.extend(new_results)
                                 logger.info(
-                                    f"Fallback search improved results: "
-                                    f"{len(page_results)} → {len(retry_results)}"
+                                    f"Fallback search aggregated: {len(initial_urls)} initial + "
+                                    f"{len(new_results)} new = {len(page_results)} total"
                                 )
-                                page_results = retry_results
-                                # Update engines for subsequent pages
-                                engines = fallback_engines
+                            else:
+                                logger.debug(f"Fallback retry returned no new unique results")
 
                 # Record successful engines based on results
                 engine_result_counts = {}
