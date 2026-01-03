@@ -41,7 +41,7 @@ class SearchProvider(ABC):
     """Base class for search providers"""
 
     @abstractmethod
-    async def search(self, query: str, max_results: int = 5) -> List[WebSearchResult]:
+    async def search(self, query: str, max_results: int = 15) -> List[WebSearchResult]:
         """Search for the query and return results. Must be implemented by subclasses."""
         pass
 
@@ -390,7 +390,7 @@ class SearXNGSearchProvider(SearchProvider):
     async def search(
         self,
         query: str,
-        max_results: int = 10,
+        max_results: int = 25,
         query_type: Optional[str] = None,
         engines: Optional[str] = None
     ) -> List[WebSearchResult]:
@@ -399,7 +399,7 @@ class SearXNGSearchProvider(SearchProvider):
 
         Args:
             query: Search query string
-            max_results: Maximum number of results
+            max_results: Maximum number of results (default 25 for better coverage)
             query_type: Optional type override ('academic', 'technical', 'general', 'all')
             engines: Optional explicit engine list (comma-separated)
 
@@ -591,7 +591,7 @@ class BraveSearchProvider(SearchProvider):
             await self._client.aclose()
             self._client = None
 
-    async def search(self, query: str, max_results: int = 5) -> List[WebSearchResult]:
+    async def search(self, query: str, max_results: int = 15) -> List[WebSearchResult]:
         if not self.available:
             logger.debug("Brave API key not configured")
             return []
@@ -669,7 +669,7 @@ class DuckDuckGoProvider(SearchProvider):
             await self._client.aclose()
             self._client = None
 
-    async def search(self, query: str, max_results: int = 5) -> List[WebSearchResult]:
+    async def search(self, query: str, max_results: int = 15) -> List[WebSearchResult]:
         metrics = get_search_metrics()
         start_time = time.time()
 
@@ -844,13 +844,13 @@ class PDFDocumentProvider(SearchProvider):
             self._failure_count += 1
             return False
 
-    async def search(self, query: str, max_results: int = 10) -> List[WebSearchResult]:
+    async def search(self, query: str, max_results: int = 15) -> List[WebSearchResult]:
         """
         Search FANUC technical documentation.
 
         Args:
             query: Search query (may include error codes)
-            max_results: Maximum number of results
+            max_results: Maximum number of results (default 15)
 
         Returns:
             List of WebSearchResult from PDF documents
@@ -2120,7 +2120,7 @@ class SearcherAgent:
     async def search(
         self,
         queries: List[str],
-        max_results_per_query: int = 3,
+        max_results_per_query: int = 10,
         query_type: Optional[str] = None
     ) -> List[WebSearchResult]:
         """
@@ -2129,7 +2129,7 @@ class SearcherAgent:
 
         Args:
             queries: List of search query strings
-            max_results_per_query: Max results per query
+            max_results_per_query: Max results per query (default 10 for better coverage)
             query_type: Optional type hint ('academic', 'technical', 'general')
                        If None, auto-detected from first query
 
