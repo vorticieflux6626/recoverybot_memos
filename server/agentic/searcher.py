@@ -447,9 +447,48 @@ class SearXNGSearchProvider(SearchProvider):
 
                 # Process unresponsive engines (rate limits, CAPTCHAs, timeouts)
                 unresponsive = data.get("unresponsive_engines", [])
+                unresponsive_names = [u[0] for u in unresponsive if len(u) >= 1]
                 if unresponsive:
                     metrics.record_unresponsive_engines(unresponsive)
                     logger.info(f"SearXNG unresponsive engines: {unresponsive}")
+
+                # FIX: Auto-retry without rate-limited Brave
+                # Brave is a primary source for industrial content, so always retry if it's down
+                # Only retry on first page to avoid infinite loops
+                logger.debug(f"Page {page} returned {len(page_results)} results, unresponsive: {unresponsive_names}")
+                if page == 1 and "brave" in unresponsive_names:
+                    # Brave was rate-limited and we got poor results - retry without it
+                    fallback_engines = ",".join([
+                        e for e in engines.split(",")
+                        if e.strip() not in unresponsive_names
+                    ])
+                    if fallback_engines and fallback_engines != engines:
+                        logger.warning(
+                            f"Brave rate-limited ({len(page_results)} initial results), "
+                            f"retrying with fallback engines: {fallback_engines}"
+                        )
+                        # Make retry request with fallback engines
+                        retry_response = await client.get(
+                            f"{self.base_url}/search",
+                            params={
+                                "q": query,
+                                "format": "json",
+                                "engines": fallback_engines,
+                                "language": "en-US",
+                                "pageno": 1
+                            }
+                        )
+                        if retry_response.status_code == 200:
+                            retry_data = retry_response.json()
+                            retry_results = retry_data.get("results", [])
+                            if len(retry_results) > len(page_results):
+                                logger.info(
+                                    f"Fallback search improved results: "
+                                    f"{len(page_results)} → {len(retry_results)}"
+                                )
+                                page_results = retry_results
+                                # Update engines for subsequent pages
+                                engines = fallback_engines
 
                 # Record successful engines based on results
                 engine_result_counts = {}
