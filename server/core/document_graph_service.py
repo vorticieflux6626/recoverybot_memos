@@ -563,6 +563,399 @@ class DocumentGraphService:
         }
 
     # ============================================
+    # FEDERATION API - Multi-Domain Support (2026-01-03)
+    # ============================================
+
+    async def get_domain_registry(self, load_all: bool = False) -> Dict[str, Any]:
+        """
+        Get registered knowledge domains from PDF Extraction Tools.
+
+        Available domains:
+        - fanuc: Robot error codes, KAREL, servo motors (268K+ nodes)
+        - imm: Injection molding defects, processes (3K nodes)
+        - industrial_automation: PLCs, sensors, protocols (5K nodes)
+        - oem_imm: Polymers, Allen-Bradley, RJG sensors (10K nodes)
+
+        Args:
+            load_all: Whether to load unloaded domains
+
+        Returns:
+            Domain registry with statistics
+        """
+        if not self.is_available:
+            return {"domains": {}}
+
+        cache_key = self._cache_key("domains", load_all)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            params = {"load_all": "true"} if load_all else {}
+            response = await self.client.get("/api/v1/domains/registry", params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            result = data.get("data", {})
+            self._set_cached(cache_key, result, ttl=600)  # 10 min cache
+            return result
+
+        except Exception as e:
+            logger.error(f"Get domain registry failed: {e}")
+            return {"domains": {}}
+
+    async def cross_domain_search(
+        self,
+        query: str,
+        domains: Optional[List[str]] = None,
+        entity_types: Optional[List[str]] = None,
+        top_k: int = 10,
+        search_mode: str = "hybrid"
+    ) -> List[Dict[str, Any]]:
+        """
+        Search across multiple industrial knowledge domains.
+
+        Uses RRF fusion to combine results from multiple domain graphs.
+
+        Args:
+            query: Search query
+            domains: List of domains to search (default: all)
+            entity_types: Filter by entity types (error_code, remedy, component, etc.)
+            top_k: Number of results
+            search_mode: 'keyword', 'semantic', or 'hybrid'
+
+        Returns:
+            List of cross-domain search results
+        """
+        if not self.is_available:
+            return []
+
+        # Auto-detect domains if not specified
+        if not domains:
+            domains = self._route_query_to_domains(query)
+
+        cache_key = self._cache_key("cross_domain", query, ",".join(domains), top_k)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            request_body = {
+                "query": query,
+                "domains": domains,
+                "top_k": top_k,
+                "search_mode": search_mode
+            }
+            if entity_types:
+                request_body["entity_types"] = entity_types
+
+            response = await self.client.post(
+                "/api/v1/domains/search",
+                json=request_body
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            results = data.get("data", {}).get("results", [])
+            self._set_cached(cache_key, results)
+
+            logger.info(f"Cross-domain search '{query[:30]}...' returned {len(results)} results from {domains}")
+            return results
+
+        except Exception as e:
+            logger.error(f"Cross-domain search failed: {e}")
+            return []
+
+    def _route_query_to_domains(self, query: str) -> List[str]:
+        """Route queries to appropriate domains based on keywords."""
+        domains = []
+        query_lower = query.lower()
+
+        # FANUC robotics
+        if any(kw in query_lower for kw in ["servo", "robot", "srvo", "motn", "fanuc", "r-30", "karel", "encoder"]):
+            domains.append("fanuc")
+
+        # Injection molding
+        if any(kw in query_lower for kw in ["injection", "mold", "plastic", "defect", "flash", "sink", "warp"]):
+            domains.append("imm")
+
+        # Industrial automation (PLCs, etc.)
+        if any(kw in query_lower for kw in ["plc", "allen bradley", "controllogix", "siemens", "profinet", "ethernet/ip"]):
+            domains.append("industrial_automation")
+
+        # OEM/Materials
+        if any(kw in query_lower for kw in ["polymer", "ultramid", "lexan", "rjg", "material", "resin"]):
+            domains.append("oem_imm")
+
+        return domains if domains else ["fanuc"]  # Default to FANUC
+
+    async def hsea_troubleshoot(
+        self,
+        error_code: str,
+        include_embeddings: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get HSEA-structured troubleshooting data for an error code.
+
+        Uses the HSEA (Hierarchical Stratified Embedding Architecture)
+        three-layer retrieval for comprehensive error context.
+
+        Args:
+            error_code: Error code (e.g., 'SRVO-023', 'MOTN-023')
+            include_embeddings: Whether to include embeddings in response
+
+        Returns:
+            Structured troubleshooting data with cause, remedy, metadata
+        """
+        if not self.is_available:
+            return None
+
+        error_code = error_code.upper().strip()
+        cache_key = self._cache_key("hsea_troubleshoot", error_code)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            response = await self.client.get(
+                f"/api/v1/search/hsea/troubleshoot/{error_code}"
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            result = data.get("data", {})
+
+            # Remove embeddings if not requested (they're large)
+            if not include_embeddings and "context" in result:
+                ctx = result["context"]
+                if "metadata" in ctx and "embeddings" in ctx.get("metadata", {}):
+                    del ctx["metadata"]["embeddings"]
+
+            self._set_cached(cache_key, result)
+            logger.info(f"HSEA troubleshoot for {error_code}: found context")
+            return result
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.debug(f"Error code not found: {error_code}")
+                return None
+            logger.error(f"HSEA troubleshoot error: {e.response.status_code}")
+            return None
+        except Exception as e:
+            logger.error(f"HSEA troubleshoot failed: {e}")
+            return None
+
+    async def get_similar_errors(
+        self,
+        error_code: str,
+        top_k: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Find similar error codes using HSEA embedding similarity.
+
+        Args:
+            error_code: Source error code
+            top_k: Number of similar errors to return
+
+        Returns:
+            List of similar error codes with similarity scores
+        """
+        if not self.is_available:
+            return []
+
+        error_code = error_code.upper().strip()
+
+        try:
+            response = await self.client.get(
+                f"/api/v1/search/hsea/similar/{error_code}",
+                params={"top_k": top_k}
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("data", {}).get("similar_codes", [])
+
+        except Exception as e:
+            logger.error(f"Get similar errors failed: {e}")
+            return []
+
+    async def get_mcp_tools(self) -> List[Dict[str, Any]]:
+        """
+        Get MCP-compatible tool definitions for LLM consumption.
+
+        These tools can be used by Claude or other LLMs for
+        structured knowledge graph queries.
+
+        Returns:
+            List of MCP tool definitions with input schemas
+        """
+        if not self.is_available:
+            return []
+
+        cache_key = self._cache_key("mcp_tools")
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            response = await self.client.get("/api/v1/tools/mcp-manifest")
+            response.raise_for_status()
+            data = response.json()
+
+            tools = data.get("data", {}).get("tools", [])
+            self._set_cached(cache_key, tools, ttl=3600)  # 1 hour cache
+            return tools
+
+        except Exception as e:
+            logger.error(f"Get MCP tools failed: {e}")
+            return []
+
+    async def get_imm_defect(
+        self,
+        defect_name: str,
+        include_process_params: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get injection molding defect information.
+
+        Args:
+            defect_name: Name of defect (e.g., 'flash', 'sink marks', 'warpage')
+            include_process_params: Include relevant process parameters
+
+        Returns:
+            Defect information with causes and remedies
+        """
+        if not self.is_available:
+            return None
+
+        try:
+            response = await self.client.get(
+                f"/api/v1/imm/defects/{defect_name}",
+                params={"include_process_params": str(include_process_params).lower()}
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("data", {})
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            logger.error(f"Get IMM defect error: {e.response.status_code}")
+            return None
+        except Exception as e:
+            logger.error(f"Get IMM defect failed: {e}")
+            return None
+
+    async def get_enhanced_context_for_rag(
+        self,
+        query: str,
+        max_tokens: int = 4000
+    ) -> str:
+        """
+        Get enhanced RAG context using Federation API features.
+
+        Combines:
+        - HSEA troubleshooting for error codes
+        - Cross-domain search for broader context
+        - Similar error codes for related issues
+
+        Args:
+            query: User query
+            max_tokens: Approximate token limit
+
+        Returns:
+            Rich formatted context string
+        """
+        context_parts = []
+
+        # Extract error codes from query
+        error_codes = self._extract_error_codes(query)
+
+        # 1. HSEA Troubleshoot for specific error codes
+        for code in error_codes[:2]:
+            hsea_data = await self.hsea_troubleshoot(code)
+            if hsea_data and "context" in hsea_data:
+                ctx = hsea_data["context"]
+                metadata = ctx.get("metadata", {})
+
+                context_parts.append(f"## Error Code: {code}")
+                context_parts.append(f"**Category:** {metadata.get('category', 'Unknown')}")
+                context_parts.append(f"**Title:** {metadata.get('full_title', ctx.get('title', ''))}")
+
+                if metadata.get("cause"):
+                    context_parts.append(f"**Cause:** {metadata['cause']}")
+                if metadata.get("remedy"):
+                    context_parts.append(f"**Remedy:** {metadata['remedy']}")
+                if metadata.get("severity"):
+                    context_parts.append(f"**Severity:** {metadata['severity']}")
+
+                # Add mentions/context from manual
+                mentions = metadata.get("mentions", [])
+                if mentions:
+                    context_parts.append("\n**From FANUC Manual:**")
+                    for m in mentions[:2]:
+                        context_parts.append(f"- Page {m.get('page', '?')}: {m.get('context', '')[:200]}...")
+
+                # Get similar errors for related troubleshooting
+                similar = await self.get_similar_errors(code, top_k=3)
+                if similar:
+                    context_parts.append("\n**Related Error Codes:**")
+                    for s in similar:
+                        context_parts.append(f"- {s.get('error_code', '?')}: {s.get('title', '')} (similarity: {s.get('score', 0):.2f})")
+
+                context_parts.append("")
+
+        # 2. Cross-domain search for broader context
+        domains = self._route_query_to_domains(query)
+        cross_results = await self.cross_domain_search(
+            query=query,
+            domains=domains,
+            top_k=5
+        )
+
+        if cross_results:
+            context_parts.append("## Cross-Domain Knowledge\n")
+            for i, r in enumerate(cross_results, 1):
+                domain = r.get("domain", "unknown")
+                node_type = r.get("node_type", "")
+                label = r.get("label", r.get("title", ""))
+                score = r.get("score", 0)
+
+                context_parts.append(f"### [{i}] {label}")
+                context_parts.append(f"**Domain:** {domain} | **Type:** {node_type} | **Score:** {score:.3f}")
+
+                preview = r.get("content_preview") or r.get("content") or ""
+                if preview:
+                    context_parts.append(f"{preview[:300]}...")
+                context_parts.append("")
+
+        # 3. IMM defect info if injection molding related
+        query_lower = query.lower()
+        defect_keywords = ["flash", "sink", "warp", "void", "short shot", "burn", "jetting"]
+        for defect in defect_keywords:
+            if defect in query_lower:
+                defect_info = await self.get_imm_defect(defect)
+                if defect_info:
+                    context_parts.append(f"## Injection Molding Defect: {defect.title()}\n")
+                    if "causes" in defect_info:
+                        context_parts.append("**Causes:**")
+                        for c in defect_info["causes"][:3]:
+                            context_parts.append(f"- {c}")
+                    if "remedies" in defect_info:
+                        context_parts.append("\n**Remedies:**")
+                        for r in defect_info["remedies"][:3]:
+                            context_parts.append(f"- {r}")
+                    context_parts.append("")
+                break  # Only process first matching defect
+
+        context = "\n".join(context_parts)
+
+        # Token limit enforcement
+        if len(context) > max_tokens * 4:
+            context = context[:max_tokens * 4] + "\n\n[Context truncated...]"
+
+        return context
+
+    # ============================================
     # LIFECYCLE
     # ============================================
 

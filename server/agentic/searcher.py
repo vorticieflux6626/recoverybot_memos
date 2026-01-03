@@ -91,10 +91,12 @@ class SearXNGSearchProvider(SearchProvider):
         "linux": "askubuntu,unix_stackexchange,serverfault,arch_linux_wiki,gentoo,reddit,bing",
         # Package/library search
         "packages": "pypi,npm,crates,pkg_go_dev,dockerhub",
-        # Injection Molding Machines (IMM) / Euromap
-        "imm": "reddit,brave,bing,wikipedia",
-        "euromap": "reddit,brave,bing,wikipedia",
-        "plastics": "reddit,brave,bing,wikipedia",
+        # Injection Molding Machines (IMM) / Euromap / Plastics Processing
+        # Note: wikipedia removed - returns medical "injection" results instead of IMM
+        # Uses brave+bing for manufacturer docs, reddit for troubleshooting, SE for technical
+        "imm": "brave,bing,reddit,electronics_stackexchange,stackoverflow",
+        "euromap": "brave,bing,reddit,electronics_stackexchange,stackoverflow",
+        "plastics": "brave,bing,reddit,electronics_stackexchange,stackoverflow",
     }
 
     # GAP-2 FIX: Map analyzer query_types to ENGINE_GROUPS keys
@@ -106,6 +108,7 @@ class SearXNGSearchProvider(SearchProvider):
         "debugging": None,
         "problem_solving": None,
         "unknown": None,  # Unknown types should also trigger pattern detection
+        "industrial_troubleshooting": None,  # FIX 5: From analyzer's industrial pattern detection
 
         # Direct mappings
         "technical_research": "technical",

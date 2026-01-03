@@ -375,7 +375,7 @@ Return ONLY the JSON object, no other text."""
                     "stream": False,
                     "options": {
                         "temperature": 0.3,
-                        "num_predict": 512
+                        "num_predict": 1024
                     }
                 }
             )
@@ -417,7 +417,7 @@ Return ONLY the JSON object, no other text."""
                 timeout=self.timeout,
                 options={
                     "temperature": 0.3,
-                    "num_predict": 512,
+                    "num_predict": 1024,
                 }
             )
 
@@ -449,6 +449,14 @@ Return ONLY the JSON object, no other text."""
         try:
             # Extract JSON from response using proper brace matching
             json_str = extract_json_object(response)
+            logger.info(f"[ANALYZER DEBUG] Response length: {len(response)}, JSON extracted: {json_str is not None}")
+            if not json_str:
+                # Log more details to debug the issue
+                start_idx = response.find('{')
+                end_idx = response.rfind('}')
+                logger.warning(f"[ANALYZER DEBUG] No JSON found. start_idx={start_idx}, end_idx={end_idx}")
+                logger.warning(f"[ANALYZER DEBUG] First 500 chars: {response[:500]}")
+                logger.warning(f"[ANALYZER DEBUG] Last 200 chars: {response[-200:]}")
             if json_str:
                 data = json.loads(json_str)
 
@@ -456,11 +464,13 @@ Return ONLY the JSON object, no other text."""
                 requires_thinking = data.get("requires_thinking_model", False)
                 reasoning_complexity = data.get("reasoning_complexity", "moderate")
                 query_type = data.get("query_type", "informational")
+                logger.debug(f"[ANALYZER DEBUG] Parsed query_type from LLM: {query_type}")
 
-                # FIX 5: Force fanuc classification when error code patterns detected
+                # FIX 5: Force industrial classification when error code/equipment patterns detected
                 # This ensures HSEA domain knowledge is queried and prioritized
                 import re
-                fanuc_error_patterns = [
+                industrial_patterns = [
+                    # FANUC robotics error codes
                     r'\bSRVO[-_]?\d{3}\b',  # SRVO-023, SRVO_023
                     r'\bMOTN[-_]?\d{3}\b',  # MOTN-023, MOTN_023
                     r'\bSYST[-_]?\d{3}\b',  # SYST-023
@@ -468,11 +478,29 @@ Return ONLY the JSON object, no other text."""
                     r'\bHOST[-_]?\d{3}\b',  # HOST-023
                     r'\bR-30i[AB]\b',       # R-30iA, R-30iB
                     r'\bLR\s?Mate\b',       # LR Mate
+                    # Allen-Bradley / Rockwell
                     r'\bControlLogix\b',    # Allen-Bradley
                     r'\b1756[-_]L\d+\b',    # 1756-L71
+                    r'\bCompactLogix\b',
+                    r'\bPLC[-_]?\d\b',
+                    # Injection Molding Machines (IMM)
+                    r'\binjection\s+mold',  # injection molding, injection molder
+                    r'\bbarrel\s+(heater|temperature|zone)',  # barrel heater, barrel temperature
+                    r'\b(plasticizing|plastici[sz]er)\b',
+                    r'\bscrew\s+(speed|rpm|rotation)',
+                    r'\b(clamp|clamping)\s+(force|tonnage|pressure)',
+                    r'\bplaten\b',
+                    r'\bnozzle\s+(temperature|heater)',
+                    r'\bhopper\s+(dryer|temperature)',
+                    r'\bmold\s+(temperature|cooling)',
+                    # IMM manufacturers
+                    r'\b(Engel|Arburg|Husky|Nissei|Toshiba|Sumitomo|Milacron|Haitian|JSW)\b',
+                    # Siemens automation
+                    r'\bSinamics\b',
+                    r'\bS7[-_]?\d{3,4}\b',  # S7-1200, S7-1500
                 ]
                 query_upper = query.upper()
-                is_industrial_error = any(re.search(pattern, query_upper, re.IGNORECASE) for pattern in fanuc_error_patterns)
+                is_industrial_error = any(re.search(pattern, query, re.IGNORECASE) for pattern in industrial_patterns)
                 # Force search when industrial error code detected - domain knowledge is critical
                 force_search = False
                 if is_industrial_error:

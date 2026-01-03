@@ -1568,41 +1568,98 @@ class UniversalOrchestrator(BaseSearchPipeline):
         """
         Search technical documentation via PDF API if enabled and relevant.
 
-        Returns formatted context string if FANUC-related content found,
+        Enhanced 2026-01-03: Now uses Federation API for multi-domain support.
+        Supports FANUC, IMM, Industrial Automation, and OEM domains.
+
+        Returns formatted context string if industrial-related content found,
         None otherwise.
         """
         if not self.config.enable_technical_docs:
             return None
 
-        # Check if query is FANUC-related
-        if not is_fanuc_query(query):
+        # Check if query is industrial/technical (expanded from FANUC-only)
+        if not self._is_industrial_query(query):
             return None
 
         try:
             doc_service = self._get_document_graph_service()
 
-            # Extract error codes for troubleshooting path
-            error_codes = extract_error_codes(query)
+            # Use enhanced Federation API context (includes HSEA, cross-domain, etc.)
+            context = await doc_service.get_enhanced_context_for_rag(
+                query=query,
+                max_tokens=4000
+            )
 
-            if error_codes:
-                # Use PathRAG for error resolution
-                context = await doc_service.get_context_for_rag(
-                    query=query,
-                    error_code=error_codes[0],  # Primary error code
-                    max_results=5
-                )
-            else:
-                # General documentation search
-                context = await doc_service.get_context_for_rag(
-                    query=query,
-                    max_results=5
-                )
+            # Fallback to basic context if enhanced returns empty
+            if not context:
+                error_codes = extract_error_codes(query)
+                if error_codes:
+                    context = await doc_service.get_context_for_rag(
+                        query=query,
+                        context_type="troubleshooting",
+                        max_tokens=2000
+                    )
+                else:
+                    context = await doc_service.get_context_for_rag(
+                        query=query,
+                        context_type="general",
+                        max_tokens=2000
+                    )
 
             return context if context else None
 
         except Exception as e:
             logger.warning(f"Technical docs search failed: {e}")
             return None
+
+    def _is_industrial_query(self, query: str) -> bool:
+        """
+        Check if query is related to industrial automation domains.
+
+        Expanded from is_fanuc_query to support multi-domain Federation API.
+        Covers: FANUC, Allen-Bradley, Siemens, IMM, sensors, materials.
+        """
+        query_lower = query.lower()
+
+        # FANUC patterns
+        if is_fanuc_query(query):
+            return True
+
+        # Allen-Bradley / Rockwell patterns
+        ab_patterns = [
+            "allen bradley", "allen-bradley", "controllogix", "compactlogix",
+            "plc", "1756", "1769", "studio 5000", "rslogix", "kinetix",
+            "powerflex", "ethernet/ip", "major fault", "minor fault"
+        ]
+        if any(p in query_lower for p in ab_patterns):
+            return True
+
+        # Siemens patterns
+        siemens_patterns = [
+            "siemens", "s7-", "simatic", "profinet", "profibus", "tia portal",
+            "step 7", "sinamics", "sinumerik", "ob82", "ob86"
+        ]
+        if any(p in query_lower for p in siemens_patterns):
+            return True
+
+        # Injection molding patterns
+        imm_patterns = [
+            "injection", "molding", "mold", "plastic", "resin", "polymer",
+            "flash", "sink mark", "warpage", "short shot", "void", "burn",
+            "hot runner", "nozzle", "barrel", "screw", "clamp"
+        ]
+        if any(p in query_lower for p in imm_patterns):
+            return True
+
+        # Sensor/industrial patterns
+        sensor_patterns = [
+            "sensor", "encoder", "thermocouple", "rjg", "cavity pressure",
+            "servo", "motor", "drive", "vfd", "inverter"
+        ]
+        if any(p in query_lower for p in sensor_patterns):
+            return True
+
+        return False
 
     def _get_hsea_controller(self) -> HSEAController:
         """Lazy initialize HSEA controller for three-stratum FANUC knowledge."""
@@ -5404,6 +5461,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
         start = time.time()
         try:
             dag = self._get_reasoning_dag()
+            # FIX BUG-002: Clear previous query nodes to prevent cross-query contamination
+            dag.clear()
             # Add root node for the query
             dag.add_node(request.query, NodeType.ROOT)
             self._record_timing("reasoning_dag_init", time.time() - start)
@@ -5726,15 +5785,19 @@ class UniversalOrchestrator(BaseSearchPipeline):
         """Phase 12.5: Extract conclusion from reasoning DAG."""
         start = time.time()
         try:
-            # Add synthesis as conclusion node
-            dag.add_node(synthesis[:500], NodeType.CONCLUSION)
+            # FIX BUG-001: Don't truncate synthesis - add full content to DAG
+            # The DAG is for reasoning structure, but we return the full synthesis
+            dag.add_node(synthesis[:500], NodeType.CONCLUSION)  # Summary for DAG reasoning only
 
-            # Get convergent answer
-            conclusion = dag.get_convergent_answer()
+            # Get DAG analysis (for metadata), but return FULL synthesis
+            dag_answer = dag.get_convergent_answer()
 
+            # FIX: Return full synthesis, not truncated DAG conclusion
+            # DAG provides confidence/path metadata, but synthesis is the authoritative answer
             result = {
                 "paths": len(dag.nodes),
-                "enhanced_synthesis": conclusion if conclusion else synthesis
+                "dag_confidence": dag_answer.split("Confidence: ")[-1].split(",")[0] if "Confidence:" in dag_answer else "N/A",
+                "enhanced_synthesis": synthesis  # Return FULL synthesis, not DAG conclusion
             }
             self._record_timing("reasoning_dag_conclusion", time.time() - start)
             return result
