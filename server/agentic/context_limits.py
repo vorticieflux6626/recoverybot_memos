@@ -408,6 +408,144 @@ def format_context_utilization_report(
     )
 
 
+# ============================================================================
+# Lost-in-Middle Mitigation
+# ============================================================================
+# LLMs attend less to content in the middle of the context window.
+# This function reorders documents to place most relevant at start and end.
+# Research: https://arxiv.org/abs/2307.03172 (Liu et al., 2023)
+# ============================================================================
+
+from typing import List, TypeVar, Callable, Any
+
+T = TypeVar('T')
+
+
+def reorder_for_attention(
+    items: List[T],
+    score_fn: Optional[Callable[[T], float]] = None,
+    score_key: Optional[str] = None,
+    reverse: bool = True
+) -> List[T]:
+    """
+    Reorder items to mitigate lost-in-the-middle problem.
+
+    Places most important items at the START and END of the list,
+    with less important items in the middle. This improves LLM attention
+    to critical content.
+
+    Pattern: Sorts by score, then interleaves front/back placement:
+    - Most relevant → position 0 (start)
+    - 2nd most relevant → last position (end)
+    - 3rd most relevant → position 1
+    - 4th most relevant → second-to-last
+    - ... continues alternating
+
+    Args:
+        items: List of items to reorder
+        score_fn: Function to extract score from item (higher = more relevant)
+        score_key: Alternative: attribute/key name to extract score
+        reverse: If True, higher scores = more relevant (default)
+
+    Returns:
+        Reordered list with important items at extremes
+
+    Example:
+        >>> docs = [{"title": "A", "score": 0.9}, {"title": "B", "score": 0.5}, ...]
+        >>> reordered = reorder_for_attention(docs, score_key="score")
+        # Result: highest score at start, 2nd highest at end, etc.
+    """
+    if not items or len(items) <= 2:
+        return items
+
+    # Determine scoring function
+    if score_fn is not None:
+        get_score = score_fn
+    elif score_key is not None:
+        def get_score(item: T) -> float:
+            if isinstance(item, dict):
+                return item.get(score_key, 0) or 0
+            return getattr(item, score_key, 0) or 0
+    else:
+        # Default: assume items are already sortable or use index
+        def get_score(item: T) -> float:
+            return 0
+
+    # Sort by score
+    try:
+        sorted_items = sorted(items, key=get_score, reverse=reverse)
+    except TypeError:
+        # Items not sortable, return as-is
+        logger.warning("Items not sortable for lost-in-middle reordering")
+        return items
+
+    # Interleave: front/back alternating
+    reordered = [None] * len(sorted_items)
+    front_idx = 0
+    back_idx = len(sorted_items) - 1
+
+    for i, item in enumerate(sorted_items):
+        if i % 2 == 0:
+            # Even indices go to front (advancing forward)
+            reordered[front_idx] = item
+            front_idx += 1
+        else:
+            # Odd indices go to back (advancing backward)
+            reordered[back_idx] = item
+            back_idx -= 1
+
+    logger.debug(f"Reordered {len(items)} items for attention (front/back placement)")
+    return reordered
+
+
+def reorder_search_results(
+    results: List[Dict[str, Any]],
+    score_key: str = "relevance_score"
+) -> List[Dict[str, Any]]:
+    """
+    Reorder search results for optimal LLM attention.
+
+    Convenience wrapper for reorder_for_attention with common defaults.
+
+    Args:
+        results: List of search result dicts
+        score_key: Key containing relevance score (default: "relevance_score")
+
+    Returns:
+        Reordered results with most relevant at start and end
+    """
+    return reorder_for_attention(results, score_key=score_key)
+
+
+def reorder_sources_for_synthesis(
+    sources: List[Any],
+    score_attr: str = "combined_score"
+) -> List[Any]:
+    """
+    Reorder sources for synthesis prompt construction.
+
+    Works with both dicts and objects (WebSearchResult, etc.)
+
+    Args:
+        sources: List of source objects or dicts
+        score_attr: Attribute/key containing relevance score
+
+    Returns:
+        Reordered sources with most relevant at start and end
+    """
+    def get_score(item) -> float:
+        if isinstance(item, dict):
+            return item.get(score_attr, 0) or item.get("relevance_score", 0) or 0
+        # Try multiple common attributes
+        for attr in [score_attr, "relevance_score", "score", "combined_score"]:
+            val = getattr(item, attr, None)
+            if val is not None:
+                return float(val)
+        return 0
+
+    return reorder_for_attention(sources, score_fn=get_score)
+
+
 # Pre-calculated limits for common pipeline stages
 ANALYZER_LIMITS = get_analyzer_limits()
 SYNTHESIZER_LIMITS = get_synthesizer_limits()

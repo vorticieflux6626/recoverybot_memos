@@ -914,7 +914,11 @@ class BGEM3HybridRetriever:
         cursor = conn.cursor()
 
         dense_blob = doc.dense_embedding.tobytes() if doc.dense_embedding is not None else None
-        sparse_json = json.dumps(doc.sparse_vector) if doc.sparse_vector else None
+        # Convert numpy float16/32 to Python float for JSON serialization
+        sparse_vec_native = None
+        if doc.sparse_vector:
+            sparse_vec_native = {k: float(v) for k, v in doc.sparse_vector.items()}
+        sparse_json = json.dumps(sparse_vec_native) if sparse_vec_native else None
         metadata_json = json.dumps(doc.metadata)
 
         cursor.execute("""
@@ -1080,6 +1084,13 @@ class BGEM3HybridRetriever:
             key=lambda x: x.combined_score,
             reverse=True
         )
+
+        # Convert all numpy float types to Python floats for JSON serialization
+        for result in sorted_results:
+            result.dense_score = float(result.dense_score)
+            result.sparse_score = float(result.sparse_score)
+            result.multivec_score = float(result.multivec_score)
+            result.combined_score = float(result.combined_score)
 
         return sorted_results[:top_k]
 
@@ -1255,7 +1266,7 @@ class BGEM3HybridRetriever:
         ) / (1024 * 1024)  # MB
 
         sparse_size = sum(
-            len(json.dumps(doc.sparse_vector))
+            len(json.dumps({k: float(v) for k, v in doc.sparse_vector.items()}))
             for doc in self.documents.values()
             if doc.sparse_vector
         ) / (1024 * 1024)  # MB

@@ -574,7 +574,13 @@ Output ONLY a JSON object:
         """Refine synthesis based on reflection results"""
 
         if not reflection.needs_refinement:
+            logger.debug(f"[{request_id}] Self-RAG: No refinement needed, returning original ({len(original_synthesis)} chars)")
             return original_synthesis
+
+        logger.info(f"[{request_id}] Self-RAG: Refining synthesis ({len(original_synthesis)} chars) - "
+                   f"relevance={reflection.relevance_score:.2f}, usefulness={reflection.usefulness_score:.2f}, "
+                   f"support={reflection.support_level.value if hasattr(reflection.support_level, 'value') else reflection.support_level}, "
+                   f"temporal_conflicts={len(reflection.temporal_conflicts)}")
 
         issues = []
         if reflection.temporal_conflicts:
@@ -607,17 +613,23 @@ Keep the same structure but correct any errors."""
                 refined = await self._call_via_gateway(prompt, max_tokens=2048, request_id=request_id)
             else:
                 refined = await self._call_llm(prompt, max_tokens=2048, request_id=request_id)
+
             if refined and len(refined) > 200:
+                logger.info(f"[{request_id}] Self-RAG: Refinement complete - original={len(original_synthesis)}, refined={len(refined)} chars")
                 return refined
+            else:
+                # Refined output too short - keep original
+                logger.warning(f"[{request_id}] Self-RAG: Refined output too short ({len(refined) if refined else 0} chars), keeping original ({len(original_synthesis)} chars)")
+                return original_synthesis
         except Exception as e:
-            logger.error(f"Refinement failed: {e}")
+            logger.error(f"[{request_id}] Self-RAG: Refinement failed: {e}")
 
         return original_synthesis
 
     async def _call_llm(self, prompt: str, max_tokens: int = 256, request_id: str = "") -> str:
         """Call Ollama LLM with context utilization tracking"""
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=60.0) as client:  # Increased from 30s
                 response = await client.post(
                     f"{self.ollama_url}/api/generate",
                     json={
@@ -646,8 +658,14 @@ Keep the same structure but correct any errors."""
                     )
 
                     return result
+                else:
+                    logger.error(f"LLM call returned status {response.status_code}: {response.text[:200]}")
+        except httpx.TimeoutException:
+            logger.error(f"LLM call timed out after 60s for model {self.model}")
+        except httpx.HTTPError as e:
+            logger.error(f"LLM HTTP error: {type(e).__name__}: {e}")
         except Exception as e:
-            logger.error(f"LLM call failed: {e}")
+            logger.error(f"LLM call failed: {type(e).__name__}: {e}")
         return ""
 
     async def _call_via_gateway(

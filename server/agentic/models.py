@@ -153,6 +153,16 @@ class WebSearchResult(BaseModel):
     source_domain: str
     relevance_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
+    def __hash__(self) -> int:
+        """Make WebSearchResult hashable using URL as unique identifier."""
+        return hash(self.url)
+
+    def __eq__(self, other: object) -> bool:
+        """Equality based on URL for deduplication."""
+        if isinstance(other, WebSearchResult):
+            return self.url == other.url
+        return False
+
 
 class QueryAnalysis(BaseModel):
     """Result of LLM analyzing the user query"""
@@ -240,6 +250,11 @@ class SearchState(BaseModel):
     information_sufficient: bool = False
     refinement_attempts: int = 0
     max_refinements: int = 3
+
+    # FIX 3: Domain knowledge tracking for CRAG bypass
+    # When authoritative domain knowledge is present, bypass CRAG "ambiguous" handling
+    has_domain_knowledge: bool = Field(default=False, description="True if HSEA/domain corpus provided authoritative data")
+    domain_knowledge_chars: int = Field(default=0, description="Size of domain knowledge for quality assessment")
 
     # Search progress
     search_phases_completed: List[str] = Field(default_factory=list)

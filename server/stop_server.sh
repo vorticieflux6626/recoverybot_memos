@@ -1,9 +1,14 @@
 #!/bin/bash
-# Stop memOS Server
-# Usage: ./stop_server.sh [--force]
+# Stop memOS Server and Docker Services
+# Usage: ./stop_server.sh [--force] [--docker] [--all]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 FORCE=false
 PORT=8001
+STOP_DOCKER=false
+STOP_ALL=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -14,6 +19,15 @@ while [[ $# -gt 0 ]]; do
         --port)
             PORT="$2"
             shift 2
+            ;;
+        --docker)
+            STOP_DOCKER=true
+            shift
+            ;;
+        --all)
+            STOP_ALL=true
+            STOP_DOCKER=true
+            shift
             ;;
         *)
             shift
@@ -54,4 +68,21 @@ if [ -z "$REMAINING" ]; then
 else
     echo "⚠️  Some processes still running. Use --force to kill them."
     exit 1
+fi
+
+# Stop Docker services if requested
+if [ "$STOP_DOCKER" = true ]; then
+    echo ""
+    echo "🐳 Stopping Docker services..."
+
+    if [ "$STOP_ALL" = true ]; then
+        # Stop all services including data stores
+        docker compose --profile docling down 2>/dev/null
+        echo "   ✅ All Docker services stopped"
+    else
+        # Stop only Docling (keep postgres/redis running for other uses)
+        docker compose --profile docling stop docling 2>/dev/null
+        echo "   ✅ Docling stopped"
+        echo "   ℹ️  PostgreSQL and Redis still running (use --all to stop them)"
+    fi
 fi

@@ -21,6 +21,7 @@ from .context_limits import (
     get_synthesizer_limits,
     get_dynamic_source_allocation,
     get_model_context_window,
+    reorder_sources_for_synthesis,
     SYNTHESIZER_LIMITS,
     THINKING_SYNTHESIZER_LIMITS,
 )
@@ -178,7 +179,7 @@ CRITICAL REQUIREMENTS (you MUST follow these):
 4. Be direct and solution-focused with specific details, examples, and references.
 5. Structure your answer with clear sections if the topic is complex.
 6. If information is limited, acknowledge what's known and what remains unclear.
-7. If sources conflict, note the discrepancy: "Source 1 says X, but Source 2 says Y."
+7. If sources conflict, note the discrepancy: "Source 1 says X [Source 1], but Source 2 says Y [Source 2]."
 
 CITATION FORMAT EXAMPLES:
 - "SRVO-063 indicates overcurrent [Source 1]."
@@ -409,12 +410,20 @@ Your synthesized answer (with citations):"""
         return ""
 
     def _format_results(self, results: List[WebSearchResult]) -> str:
-        """Format search results for the synthesis prompt - use all results to maximize context utilization"""
+        """Format search results for the synthesis prompt - use relevant results for accurate synthesis.
+
+        Applies lost-in-middle mitigation: reorders sources so most relevant are at
+        the start and end of the list, where LLMs attend best.
+        """
+        # Apply lost-in-middle mitigation: reorder for optimal LLM attention
+        # Most relevant at start, 2nd most at end, alternating
+        reordered = reorder_sources_for_synthesis(results[:15])
+
         formatted = []
-        for i, result in enumerate(results[:15], 1):
+        for i, result in enumerate(reordered, 1):
             formatted.append(
-                f"[{i}] **{result.title}**\n"
-                f"Source: {result.source_domain}\n"
+                f"[Source {i}] **{result.title}**\n"
+                f"URL: {result.source_domain}\n"
                 f"{result.snippet}\n"
             )
         return "\n---\n".join(formatted)
@@ -435,11 +444,11 @@ Try these approaches:
 
 Please try rephrasing your question or providing more context."""
 
-        # Basic compilation of results - use all available results
+        # Basic compilation of results - use available relevant results
         synthesis = f"Here's what I found regarding your question: \"{query}\"\n\n"
 
         for i, result in enumerate(results[:10], 1):
-            synthesis += f"**[{i}] {result.title}**\n{result.snippet}\n\n"
+            synthesis += f"**[Source {i}] {result.title}**\n{result.snippet}\n\n"
 
         synthesis += "\nFor more detailed information, consult the original sources linked above."
 
@@ -500,13 +509,20 @@ Please try rephrasing your question or providing more context."""
             return await self.synthesize(query, search_results, verifications, context, request_id, use_gateway)
 
         # Format scraped content for the prompt
-        # Use all sources that have meaningful content, prioritize by content length
+        # Use relevant sources that have meaningful content, prioritize by content length
         valid_sources = [
             s for s in scraped_content
             if s.get("content") and len(s.get("content", "")) > 100
         ]
         # Sort by content length descending (best sources first)
         valid_sources.sort(key=lambda x: len(x.get("content", "")), reverse=True)
+
+        # Apply lost-in-middle mitigation: reorder so best sources are at start and end
+        # This improves LLM attention to the most important content
+        valid_sources = reorder_sources_for_synthesis(
+            valid_sources,
+            score_attr="relevance_score"  # If available, otherwise falls back to order
+        )
 
         content_sections = []
         total_chars = 0
@@ -516,6 +532,17 @@ Please try rephrasing your question or providing more context."""
         max_total_chars = limits["max_total_content"]
         max_sources = limits["max_urls_to_scrape"]
         per_source_limit_base = limits["max_content_per_source"]
+
+        # FIX 2: Cap sources when domain knowledge exists to improve signal-to-noise ratio
+        # When HSEA provides authoritative domain knowledge, limit web sources to supplementary role
+        domain_knowledge_chars = len(context.get("additional_context", "")) if context else 0
+        if domain_knowledge_chars > 100:  # Has meaningful domain knowledge
+            # Reduce sources to improve signal-to-noise ratio
+            # Domain knowledge should be primary; web sources are supplementary
+            original_max_sources = max_sources
+            max_sources = min(max_sources, 10)  # Cap at 10 sources when domain knowledge present
+            max_total_chars = min(max_total_chars, 80000)  # Cap total web content
+            logger.info(f"Domain knowledge detected ({domain_knowledge_chars} chars) - capping sources: {original_max_sources} → {max_sources}")
 
         logger.info(f"Synthesis context budget: {max_total_chars} chars, {max_sources} sources, {per_source_limit_base} chars/source")
 
@@ -534,7 +561,7 @@ Please try rephrasing your question or providing more context."""
             text = text[:per_source_limit]
 
             content_sections.append(
-                f"=== SOURCE [{i}]: {title} ===\n"
+                f"=== [Source {i}]: {title} ===\n"
                 f"URL: {url}\n\n"
                 f"{text}\n"
             )
@@ -558,16 +585,34 @@ Please try rephrasing your question or providing more context."""
         reasoning_prefix = THINKING_MODEL_REASONING_INSTRUCTION + "\n\n" if is_thinking_model else ""
 
         # Extract domain knowledge from context if provided (e.g., HSEA FANUC error codes)
+        # Domain knowledge is AUTHORITATIVE and takes PRIORITY over web sources
         domain_knowledge_text = ""
         if context and context.get("additional_context"):
             domain_ctx = context["additional_context"]
             if domain_ctx.strip():
                 domain_knowledge_text = f"""
-DOMAIN KNOWLEDGE (use this authoritative information to supplement your answer):
+⚠️ AUTHORITATIVE DOMAIN KNOWLEDGE - USE THIS AS YOUR PRIMARY SOURCE ⚠️
+The following information comes from official technical documentation and MUST be used as the authoritative source for your answer. If web sources conflict with this information, prefer the domain knowledge.
+
 {domain_ctx}
+
+CRITICAL: For any error codes mentioned above (e.g., SRVO-xxx, MOTN-xxx), you MUST use the exact cause and remedy from this domain knowledge. Do NOT substitute with information about different error codes from your training data.
 ---
 """
                 logger.info(f"Synthesizer including domain knowledge: {len(domain_ctx)} chars")
+
+        # FIX 1: Recency Bias - Domain knowledge now placed AFTER sources for better attention
+        # LLMs pay more attention to content near the end of prompts (recency bias)
+        # Structure: Query → Sources → Domain Knowledge → Final Instructions
+
+        # Build domain knowledge section marker for citations if present
+        has_domain_knowledge = bool(domain_knowledge_text.strip())
+        citation_instruction = """CITATION REQUIREMENTS:
+- Every factual claim MUST be cited with [Source X] notation
+- For general research: Use [Source 1], [Source 2], etc. for all facts""" if not has_domain_knowledge else """CITATION HIERARCHY (CRITICAL):
+1. **[Domain Knowledge]** - Use this FIRST for error codes, causes, remedies (authoritative official documentation)
+2. **[Source X]** - Use for supplementary context, user experiences, troubleshooting tips
+3. If web sources conflict with Domain Knowledge, the Domain Knowledge is CORRECT"""
 
         prompt = f"""{reasoning_prefix}<role>EXPERT RESEARCH SYNTHESIZER for industrial automation</role>
 <expertise>Combine information from multiple sources into accurate, actionable answers for FANUC robotics, Allen-Bradley PLCs, Siemens automation, servo systems, and industrial troubleshooting. Every claim MUST be cited. Use technical terminology correctly.</expertise>
@@ -575,30 +620,29 @@ DOMAIN KNOWLEDGE (use this authoritative information to supplement your answer):
 **FOCUS REQUIREMENT**: Your answer MUST directly address the specific topic in the USER'S QUESTION below. Do NOT answer about tangentially related topics that appear in search results. Stay focused on exactly what was asked.
 
 USER'S QUESTION: {query}
-{domain_knowledge_text}
-IMPORTANT: You must directly answer the question using information from the sources AND the domain knowledge provided above. You MUST cite your sources using [Source X] notation. For domain knowledge, cite as [Domain Knowledge].
 
-I have provided {num_sources} sources for you to analyze:
+I have provided {num_sources} web sources for you to analyze:
 
 {full_content}
 {verification_text}
+{domain_knowledge_text}
+{citation_instruction}
 
-CRITICAL REQUIREMENTS (you MUST follow these):
+CRITICAL REQUIREMENTS:
 1. **STAY ON TOPIC**: Answer ONLY about the specific error code, component, or procedure mentioned in the USER'S QUESTION. Ignore unrelated content in search results.
-2. **MANDATORY CITATIONS**: Every factual claim MUST have a [Source X] citation. Answers without citations are INCOMPLETE.
+2. **MANDATORY CITATIONS**: Every factual claim MUST have a citation. Answers without citations are INCOMPLETE.
 3. **TERM COVERAGE**: Use the key technical terms from the question in your answer (e.g., error codes, component names, procedures, part numbers).
-4. Read ALL source content carefully and extract information that directly answers the question.
-5. Be specific - include names, dates, times, addresses, phone numbers, part numbers, and other details.
+4. Read all source content carefully and extract ONLY information that directly answers the question.
+5. Be specific - include part numbers, error codes, parameter names, and other technical details.
 6. If sources disagree, note the discrepancy: "Source 1 says X [Source 1], but Source 2 says Y [Source 2]."
 7. If the sources don't contain enough information, clearly state what is known and what remains unclear.
-8. Use a clear, organized format with headings if the answer is complex.
 
 CITATION FORMAT EXAMPLES:
-- "SRVO-063 indicates overcurrent in the servo amplifier [Source 1]."
-- "The calibration procedure requires mastering all axes before operation [Source 2]."
-- "AA meetings are held on Mondays at 6:00 PM at the Community Center [Source 1]."
+- "SRVO-023 indicates 'Stop error excess' - the servo positional error exceeded a specified value [Domain Knowledge]."
+- "A user on the forum reported success by inspecting the external axis coupling [Source 3]."
+- "The R-30iB Plus controller manual recommends verifying encoder connections [Source 1]."
 
-WARNING: Responses that answer about a DIFFERENT topic than asked will be rejected. Responses without [Source X] citations will be considered incomplete.
+WARNING: Responses about a DIFFERENT topic than asked will be rejected. Responses without citations are INCOMPLETE.
 
 YOUR DETAILED ANSWER (with citations):"""
 

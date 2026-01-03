@@ -238,11 +238,22 @@ Search query:"""
                 query = query.replace('"', '').replace("'", "")
                 query = query.split('\n')[0][:100]  # First line, max 100 chars
 
-                return query if query else tentative_content[:50]
+                # Validate query looks like a proper search query, not synthesis fragment
+                if query and len(query) > 5:
+                    # Check for markdown formatting (indicates synthesis fragment)
+                    if any(marker in query for marker in ['**', '##', '- ', '* ', '[Source', '(Source']):
+                        logger.warning(f"FLARE: Generated query looks like synthesis fragment, using original query")
+                        return original_query
+                    return query
+
+                # Fallback to original query, not raw synthesis text
+                logger.warning(f"FLARE: Empty or too short generated query, using original query")
+                return original_query
 
         except Exception as e:
-            logger.warning(f"Query generation failed: {e}")
-            return tentative_content[:50]
+            logger.warning(f"FLARE query generation failed: {e}, falling back to original query")
+            # Critical fix: NEVER use raw synthesis text as fallback - use original query
+            return original_query
 
     async def _retrieve_documents(
         self,

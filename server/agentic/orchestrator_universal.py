@@ -1352,7 +1352,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
             if results:
                 memories = []
                 for mem, similarity, decayed_score in results:
-                    if decayed_score >= 0.5:  # Only include relevant memories
+                    # Increased threshold from 0.5 to 0.7 to reduce cross-contamination
+                    # between similar-structure queries (e.g., FANUC vs Allen-Bradley)
+                    if decayed_score >= 0.7:  # Only include highly relevant memories
                         memories.append(f"[Past Finding] {mem.content[:500]}")
                         logger.debug(
                             f"[{request_id}] A-MEM retrieval: score={decayed_score:.2f}, "
@@ -2189,7 +2191,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         hybrid_ms = int((time.time() - hybrid_start) * 1000)
 
                         await emitter.emit(events.hybrid_search_complete(
-                            request_id, len(hybrid_results), hybrid_ms
+                            request_id, len(hybrid_results), len(hybrid_results), 0, hybrid_ms
                         ))
                         logger.info(f"[{request_id}] Hybrid re-ranking complete: {len(hybrid_results)} results in {hybrid_ms}ms")
                     except Exception as e:
@@ -2441,12 +2443,25 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     passages = []
                     for idx, content in enumerate(scraped_content[:10]):
                         # Get source info if available
-                        source = state.raw_results[idx] if idx < len(state.raw_results) else {}
-                        source_dict = source if isinstance(source, dict) else (source.__dict__ if hasattr(source, '__dict__') else {})
+                        source = state.raw_results[idx] if idx < len(state.raw_results) else None
+                        # Handle WebSearchResult (Pydantic model) or dict
+                        if source is None:
+                            title = f"Source {idx+1}"
+                            url = ""
+                        elif isinstance(source, dict):
+                            title = source.get("title", f"Source {idx+1}")
+                            url = source.get("url", "")
+                        elif hasattr(source, 'title'):
+                            # Pydantic model or object with attributes
+                            title = getattr(source, 'title', f"Source {idx+1}")
+                            url = getattr(source, 'url', "")
+                        else:
+                            title = f"Source {idx+1}"
+                            url = ""
                         passages.append({
                             "content": content,
-                            "title": source_dict.get("title", f"Source {idx+1}"),
-                            "url": source_dict.get("url", "")
+                            "title": title,
+                            "url": url
                         })
 
                     # Get decomposed questions if available
@@ -3408,6 +3423,11 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 request.query, request_id
             )
             enhancement_metadata["features_used"].append("domain_corpus")
+            # FIX 3: Track domain knowledge presence for CRAG bypass
+            if domain_context:
+                state.has_domain_knowledge = True
+                state.domain_knowledge_chars = len(domain_context)
+                logger.info(f"[{request_id}] Domain knowledge retrieved: {len(domain_context)} chars")
 
         # PHASE 5: CRAG Evaluation (if enabled)
         # Check DyLAN skip decision for EVALUATOR
@@ -3551,18 +3571,36 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 # Convert scraped content to passage format for IB filter
                 passages = []
                 for idx, content in enumerate(scraped_content[:10]):
-                    # Get source info if available
-                    source = state.raw_results[idx] if idx < len(state.raw_results) else {}
+                    # Get source info if available - handle WebSearchResult (Pydantic) or dict
+                    source = state.raw_results[idx] if idx < len(state.raw_results) else None
+                    if source is None:
+                        title = f"Source {idx+1}"
+                        url = ""
+                    elif isinstance(source, dict):
+                        title = source.get("title", f"Source {idx+1}")
+                        url = source.get("url", "")
+                    elif hasattr(source, 'title'):
+                        # Pydantic model or object with attributes
+                        title = getattr(source, 'title', f"Source {idx+1}")
+                        url = getattr(source, 'url', "")
+                    else:
+                        title = f"Source {idx+1}"
+                        url = ""
                     passages.append({
                         "content": content,
-                        "title": source.get("title", f"Source {idx+1}"),
-                        "url": source.get("url", "")
+                        "title": title,
+                        "url": url
                     })
+
+                # Get decomposed questions from state if available
+                decomposed_questions = None
+                if state.search_plan:
+                    decomposed_questions = getattr(state.search_plan, 'decomposed_questions', None)
 
                 ib_result = await self._apply_ib_filtering(
                     query=request.query,
                     passages=passages,
-                    decomposed_questions=decomposed
+                    decomposed_questions=decomposed_questions
                 )
 
                 # Context Flow Issue #1 FIX: Use filtered_passages instead of single compressed_content
@@ -4579,7 +4617,12 @@ class UniversalOrchestrator(BaseSearchPipeline):
             })
 
             # Handle corrective actions
-            if evaluation.recommended_action == CorrectiveAction.REFINE_QUERY:
+            # FIX 3: Skip REFINE_QUERY when domain knowledge provides authoritative data
+            # Domain knowledge from HSEA/corpus is authoritative - web search quality is less important
+            if state.has_domain_knowledge and evaluation.recommended_action == CorrectiveAction.REFINE_QUERY:
+                logger.info(f"[{request_id}] CRAG bypass: Domain knowledge present ({state.domain_knowledge_chars} chars) - skipping query refinement")
+                search_trace[-1]["crag_bypass"] = "domain_knowledge_present"
+            elif evaluation.recommended_action == CorrectiveAction.REFINE_QUERY:
                 refined_queries = evaluation.refined_queries[:3]
                 # Integrate with Query Tree for parallel exploration
                 if self.config.enable_query_tree and refined_queries:
@@ -4793,7 +4836,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
             try:
                 # Pin KV cache during scrape operation to prevent eviction
                 async with ToolCallContext(request_id, ToolType.WEB_SCRAPE, manager=ttl_manager) as ctx:
-                    result = await self.scraper.scrape_url(url)
+                    # Pass query context for VL scraper relevance evaluation
+                    result = await self.scraper.scrape_url(url, query_context=state.query)
                 if result.get("success") and result.get("content"):
                     content = result["content"]
                     scraped_content.append(content[:request.max_content_per_source])
@@ -4913,6 +4957,14 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 if verification_results:
                     verified_count = sum(1 for v in verification_results if v.verified)
                     avg_confidence = sum(v.confidence for v in verification_results) / len(verification_results)
+
+                    # FIX 4: Boost confidence when domain knowledge is present
+                    # Domain knowledge from HSEA/corpus is authoritative - web verification is supplementary
+                    if state.has_domain_knowledge:
+                        # Authoritative domain knowledge provides baseline confidence
+                        domain_boost = min(0.25, state.domain_knowledge_chars / 4000)  # Up to 0.25 boost for 1000+ chars
+                        avg_confidence = min(1.0, avg_confidence + domain_boost)
+                        logger.info(f"[{request_id}] Verifier: Domain knowledge boost +{domain_boost:.2f} → confidence {avg_confidence:.2f}")
 
                     # Create a composite result for return
                     from dataclasses import dataclass

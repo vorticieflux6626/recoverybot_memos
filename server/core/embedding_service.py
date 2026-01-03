@@ -38,50 +38,75 @@ class EmbeddingService:
     
     async def generate_embedding(self, text: str) -> List[float]:
         """
-        Generate embedding vector for text using Ollama
+        Generate embedding vector for text using Ollama.
+        Includes retry logic for transient 500 errors.
         """
         if not text or not text.strip():
             return [0.0] * self.embedding_dimensions
-        
+
         # Check cache first (LRU: move to end on access)
         text_hash = hash(text.strip().lower())
         if text_hash in self._embedding_cache:
             # Move to end to mark as recently used
             self._embedding_cache.move_to_end(text_hash)
             return self._embedding_cache[text_hash]
-        
-        try:
-            # Call Ollama embeddings API
-            response = await self.client.post(
-                "/api/embeddings",
-                json={
-                    "model": self.embedding_model,
-                    "prompt": text.strip()
-                }
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                embedding = data.get("embedding", [])
-                
-                if embedding:
-                    # Normalize embedding vector
-                    normalized_embedding = self._normalize_vector(embedding)
-                    
-                    # Cache the result
-                    self._cache_embedding(text_hash, normalized_embedding)
-                    
-                    return normalized_embedding
+
+        # Retry logic for transient 500 errors (Ollama under load)
+        max_retries = 3
+        base_delay = 1.0
+
+        for attempt in range(max_retries):
+            try:
+                # Call Ollama embeddings API
+                response = await self.client.post(
+                    "/api/embeddings",
+                    json={
+                        "model": self.embedding_model,
+                        "prompt": text.strip()
+                    }
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    embedding = data.get("embedding", [])
+
+                    if embedding:
+                        # Normalize embedding vector
+                        normalized_embedding = self._normalize_vector(embedding)
+
+                        # Cache the result
+                        self._cache_embedding(text_hash, normalized_embedding)
+
+                        return normalized_embedding
+                    else:
+                        logger.warning(f"Empty embedding returned for text: {text[:50]}...")
+                        return [0.0] * self.embedding_dimensions
+                elif response.status_code == 500:
+                    # Transient server error - retry with backoff
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)  # Exponential backoff
+                        logger.warning(f"Ollama embedding 500 error, retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
+                        import asyncio
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        logger.error(f"Ollama embedding API failed after {max_retries} retries: 500 Internal Server Error")
+                        return [0.0] * self.embedding_dimensions
                 else:
-                    logger.warning(f"Empty embedding returned for text: {text[:50]}...")
+                    logger.error(f"Ollama embedding API error: {response.status_code} - {response.text[:200]}")
                     return [0.0] * self.embedding_dimensions
-            else:
-                logger.error(f"Ollama embedding API error: {response.status_code}")
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f"Embedding generation error: {type(e).__name__}, retrying in {delay}s")
+                    import asyncio
+                    await asyncio.sleep(delay)
+                    continue
+                logger.error(f"Embedding generation failed after {max_retries} retries: {type(e).__name__}: {e}")
                 return [0.0] * self.embedding_dimensions
-                
-        except Exception as e:
-            logger.error(f"Embedding generation failed: {e}")
-            return [0.0] * self.embedding_dimensions
+
+        return [0.0] * self.embedding_dimensions
     
     async def generate_embeddings_batch(
         self, 

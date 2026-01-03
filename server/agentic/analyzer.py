@@ -457,10 +457,35 @@ Return ONLY the JSON object, no other text."""
                 reasoning_complexity = data.get("reasoning_complexity", "moderate")
                 query_type = data.get("query_type", "informational")
 
+                # FIX 5: Force fanuc classification when error code patterns detected
+                # This ensures HSEA domain knowledge is queried and prioritized
+                import re
+                fanuc_error_patterns = [
+                    r'\bSRVO[-_]?\d{3}\b',  # SRVO-023, SRVO_023
+                    r'\bMOTN[-_]?\d{3}\b',  # MOTN-023, MOTN_023
+                    r'\bSYST[-_]?\d{3}\b',  # SYST-023
+                    r'\bINTP[-_]?\d{3}\b',  # INTP-023
+                    r'\bHOST[-_]?\d{3}\b',  # HOST-023
+                    r'\bR-30i[AB]\b',       # R-30iA, R-30iB
+                    r'\bLR\s?Mate\b',       # LR Mate
+                    r'\bControlLogix\b',    # Allen-Bradley
+                    r'\b1756[-_]L\d+\b',    # 1756-L71
+                ]
+                query_upper = query.upper()
+                is_industrial_error = any(re.search(pattern, query_upper, re.IGNORECASE) for pattern in fanuc_error_patterns)
+                # Force search when industrial error code detected - domain knowledge is critical
+                force_search = False
+                if is_industrial_error:
+                    query_type = "industrial_troubleshooting"
+                    requires_thinking = True
+                    reasoning_complexity = "expert"
+                    force_search = True  # Industrial errors MUST use search to get HSEA domain knowledge
+                    logger.info(f"FIX 5: Detected industrial error code pattern - forcing query_type=industrial_troubleshooting, requires_search=True")
+
                 # Apply heuristics for thinking model if LLM didn't classify
                 thinking_query_types = {
                     "troubleshooting", "technical_research", "comparative_analysis",
-                    "debugging", "problem_solving"
+                    "debugging", "problem_solving", "industrial_troubleshooting"
                 }
                 if query_type in thinking_query_types and not requires_thinking:
                     requires_thinking = True
@@ -478,8 +503,11 @@ Return ONLY the JSON object, no other text."""
                         requires_thinking = True
                         reasoning_complexity = "complex"
 
+                # Use force_search for industrial errors, otherwise use LLM classification
+                final_requires_search = force_search or data.get("requires_search", True)
+
                 analysis = QueryAnalysis(
-                    requires_search=data.get("requires_search", True),
+                    requires_search=final_requires_search,
                     search_reasoning=data.get("search_reasoning", ""),
                     query_type=query_type,
                     key_topics=data.get("key_topics", [query]),

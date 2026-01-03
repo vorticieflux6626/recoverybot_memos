@@ -107,21 +107,21 @@ services:
       - "host.docker.internal:host-gateway"
 
   # Docling Document Processor (for PDF/HTML table extraction)
+  # Note: Image runs on port 5001 internally, mapped to 8003 externally
   docling:
     image: ghcr.io/docling-project/docling-serve:latest
     container_name: memos-docling
     environment:
       - DOCLING_HOST=0.0.0.0
-      - DOCLING_PORT=8003
       - DOCLING_WORKERS=4
       - DOCLING_LOG_LEVEL=INFO
     ports:
-      - "8003:8003"
+      - "8003:5001"
     volumes:
       - docling_data:/data
       - ./data/docling/cache:/cache
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
       interval: 30s
       timeout: 10s
       retries: 3

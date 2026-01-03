@@ -168,6 +168,12 @@ class ContentScraper:
         Returns:
             True if the page likely requires JS rendering
         """
+        # PDFs and other binary files should never use VL scraper
+        url_lower = url.lower()
+        if any(url_lower.endswith(ext) for ext in ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.zip', '.tar', '.gz']):
+            logger.debug(f"URL {url[:60]} is a binary file, skipping VL scraper")
+            return False
+
         domain = urlparse(url).netloc.lower().replace("www.", "")
 
         # Check known JS-heavy domains
@@ -195,11 +201,15 @@ class ContentScraper:
 
         return False
 
-    async def _scrape_with_vl(self, url: str) -> Dict[str, Any]:
+    async def _scrape_with_vl(self, url: str, query_context: str = "") -> Dict[str, Any]:
         """
         Scrape a URL using the VL (Vision-Language) scraper.
 
         Uses Playwright to capture screenshots and VL models to extract content.
+
+        Args:
+            url: URL to scrape
+            query_context: Original query for relevance evaluation
 
         Returns dict with: url, title, content, content_type, success, error,
         extraction_type, vl_model - or None if VL scraper unavailable/failed.
@@ -220,7 +230,8 @@ class ContentScraper:
 
             # Use the VL scraper's scrape method
             # Returns ScrapingResult with .extraction (ExtractionResult) and .screenshot (ScreenshotResult)
-            result = await vl_scraper.scrape(url)
+            # Pass query_context for proper relevance evaluation
+            result = await vl_scraper.scrape(url, context=query_context)
 
             if result and result.success:
                 # Get title from screenshot metadata
@@ -340,13 +351,14 @@ class ContentScraper:
 
         return scraped
 
-    async def scrape_url(self, url: str, use_cache: bool = True) -> Dict[str, Any]:
+    async def scrape_url(self, url: str, use_cache: bool = True, query_context: str = "") -> Dict[str, Any]:
         """
         Scrape content from a single URL.
 
         Args:
             url: URL to scrape
             use_cache: Whether to check/update cache (default True)
+            query_context: Original query for VL scraper relevance evaluation
 
         Returns:
             Dict with url, title, content, content_type, success, error
@@ -378,7 +390,7 @@ class ContentScraper:
 
         # Phase K.1: Check if domain is known to be JS-heavy (VL scraper first)
         if self.enable_vl_scraper and self._is_js_heavy_page(url):
-            vl_result = await self._scrape_with_vl(url)
+            vl_result = await self._scrape_with_vl(url, query_context=query_context)
             if vl_result:
                 # Record metrics and cache
                 duration_ms = (time.time() - start_time) * 1000
@@ -430,7 +442,7 @@ class ContentScraper:
                     # If very little content extracted, try VL scraper as fallback
                     if len(content) < 500 and self._is_js_heavy_page(url, html_text):
                         logger.info(f"Minimal content ({len(content)} chars), trying VL scraper as fallback")
-                        vl_result = await self._scrape_with_vl(url)
+                        vl_result = await self._scrape_with_vl(url, query_context=query_context)
                         if vl_result and len(vl_result.get("content", "")) > len(content):
                             logger.info(f"VL scraper extracted more content: {len(vl_result.get('content', ''))} chars")
                             result = vl_result

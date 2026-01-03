@@ -518,11 +518,12 @@ Output ONLY a JSON array of strings:
 
         return new_children
 
-    def _estimate_retrieval_quality(self, docs: List[str]) -> float:
+    def _estimate_retrieval_quality(self, docs: List) -> float:
         """
         Estimate quality of retrieved documents.
 
         Simple heuristic based on document count and length.
+        Handles both string documents and WebSearchResult objects.
         """
         if not docs:
             return 0.0
@@ -530,8 +531,20 @@ Output ONLY a JSON array of strings:
         # Base score from count
         count_score = min(1.0, len(docs) / 5)
 
-        # Score from average length
-        avg_len = sum(len(d) for d in docs) / len(docs)
+        # Score from average length - handle both strings and WebSearchResult objects
+        total_len = 0
+        for d in docs:
+            if isinstance(d, str):
+                total_len += len(d)
+            elif hasattr(d, 'snippet'):
+                # WebSearchResult has snippet attribute
+                total_len += len(getattr(d, 'snippet', '') or '')
+            elif hasattr(d, 'content'):
+                total_len += len(getattr(d, 'content', '') or '')
+            else:
+                total_len += 100  # Default estimate for unknown types
+
+        avg_len = total_len / len(docs) if docs else 0
         length_score = min(1.0, avg_len / 500)
 
         # Combined score

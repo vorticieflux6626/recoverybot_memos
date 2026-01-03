@@ -129,10 +129,18 @@ class EngineStats:
         """Calculate backoff based on recent failures"""
         if self.failed_queries == 0:
             return 0
-        # Base: 30s for CAPTCHA, 60s for timeout, doubles each consecutive failure
-        # Max 10 minutes
-        base = 30
-        return min(base * (2 ** min(self.failed_queries - 1, 4)), 600)
+        # Time-based decay: if last error was >5 min ago, reduce effective failures
+        effective_failures = self.failed_queries
+        if self.last_error_time:
+            seconds_since_error = (datetime.now(timezone.utc) - self.last_error_time).total_seconds()
+            if seconds_since_error > 300:  # 5 minutes
+                effective_failures = max(1, self.failed_queries // 2)
+            elif seconds_since_error > 120:  # 2 minutes
+                effective_failures = max(1, self.failed_queries - 1)
+        # Base: 15s (reduced from 30s), doubles each consecutive failure
+        # Max 3 minutes (reduced from 10 minutes)
+        base = 15
+        return min(base * (2 ** min(effective_failures - 1, 3)), 180)
 
 
 class SearchMetrics:

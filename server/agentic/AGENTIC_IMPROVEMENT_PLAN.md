@@ -1,6 +1,31 @@
 # Agentic Pipeline Improvement Plan
 
-> **Created**: 2026-01-02 | **Status**: Complete | **Version**: 2.0
+> **Created**: 2026-01-02 | **Updated**: 2026-01-03 | **Status**: Active | **Version**: 2.1
+
+## Latest Updates (2026-01-03)
+
+### Domain Knowledge Priority Fixes
+
+Resolved content drift issue where FANUC queries were being answered with unrelated content (e.g., Allen-Bradley). The root cause was domain knowledge from HSEA being ignored by the thinking model due to prompt structure issues.
+
+**5 Fixes Implemented:**
+
+| Fix | File | Description |
+|-----|------|-------------|
+| **Fix 1** | `synthesizer.py` | Moved domain knowledge AFTER source content to leverage recency bias (LLMs pay more attention to end of prompt) |
+| **Fix 2** | `synthesizer.py` | Cap sources to 10 when domain knowledge exists (reduces noise from 136K chars → 80K max) |
+| **Fix 3** | `orchestrator_universal.py`, `models.py` | CRAG bypass when domain knowledge present - skip REFINE_QUERY for authoritative data |
+| **Fix 4** | `orchestrator_universal.py` | Verifier domain knowledge boost (+0.25 confidence when HSEA provides authoritative data) |
+| **Fix 5** | `analyzer.py` | Force `industrial_troubleshooting` classification for SRVO/MOTN/SYST patterns, ensures `requires_search=True` |
+
+**Verification in Logs:**
+```
+Domain knowledge detected (1372 chars) - capping sources: 30 → 10
+Synthesizer including domain knowledge: 1372 chars
+Verifier: Domain knowledge boost +0.25 → confidence 0.40
+```
+
+---
 
 ## Executive Summary
 

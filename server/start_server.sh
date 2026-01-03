@@ -1,6 +1,6 @@
 #!/bin/bash
-# Start memOS Server
-# Usage: ./start_server.sh [--fg] [--debug]
+# Start memOS Server and Docker Services
+# Usage: ./start_server.sh [--fg] [--debug] [--no-docker] [--docling]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -10,6 +10,8 @@ FOREGROUND=false
 DEBUG=""
 PORT=8001
 HOST="0.0.0.0"
+START_DOCKER=true
+INCLUDE_DOCLING=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -25,9 +27,17 @@ while [[ $# -gt 0 ]]; do
             PORT="$2"
             shift 2
             ;;
+        --no-docker)
+            START_DOCKER=false
+            shift
+            ;;
+        --docling)
+            INCLUDE_DOCLING=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--fg] [--debug] [--port PORT]"
+            echo "Usage: $0 [--fg] [--debug] [--port PORT] [--no-docker] [--docling]"
             exit 1
             ;;
     esac
@@ -38,6 +48,54 @@ if pgrep -f "uvicorn main:app.*--port $PORT" > /dev/null 2>&1; then
     echo "⚠️  memOS server already running on port $PORT"
     echo "   Use ./stop_server.sh to stop it first"
     exit 1
+fi
+
+# Start Docker services if requested
+if [ "$START_DOCKER" = true ]; then
+    echo "🐳 Starting Docker services..."
+
+    # Build docker-compose command
+    DOCKER_CMD="docker compose"
+    if [ "$INCLUDE_DOCLING" = true ]; then
+        DOCKER_CMD="$DOCKER_CMD --profile docling"
+    fi
+
+    # Start core services (postgres, redis)
+    $DOCKER_CMD up -d postgres redis 2>/dev/null
+
+    # Optionally start Docling
+    if [ "$INCLUDE_DOCLING" = true ]; then
+        echo "   Starting Docling document processor..."
+        $DOCKER_CMD up -d docling 2>/dev/null
+    fi
+
+    # Wait for services to be healthy
+    echo "   Waiting for services..."
+    sleep 3
+
+    # Check PostgreSQL
+    if docker ps --filter "name=memos-postgres" --filter "status=running" -q | grep -q .; then
+        echo "   ✅ PostgreSQL (port 5432)"
+    else
+        echo "   ⚠️  PostgreSQL not running"
+    fi
+
+    # Check Redis
+    if docker ps --filter "name=memos-redis" --filter "status=running" -q | grep -q .; then
+        echo "   ✅ Redis (port 6379)"
+    else
+        echo "   ⚠️  Redis not running"
+    fi
+
+    # Check Docling if enabled
+    if [ "$INCLUDE_DOCLING" = true ]; then
+        if docker ps --filter "name=memos-docling" --filter "status=running" -q | grep -q .; then
+            echo "   ✅ Docling (port 8003)"
+        else
+            echo "   ⚠️  Docling not running (may take longer to start)"
+        fi
+    fi
+    echo ""
 fi
 
 # Activate virtual environment

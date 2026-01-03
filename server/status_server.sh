@@ -1,6 +1,9 @@
 #!/bin/bash
-# Check memOS Server Status
+# Check memOS Server and Docker Services Status
 # Usage: ./status_server.sh [--verbose]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 VERBOSE=false
 PORT=8001
@@ -21,7 +24,53 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "📊 memOS Server Status"
+echo "📊 memOS System Status"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Docker Services
+echo ""
+echo "🐳 Docker Services:"
+
+# PostgreSQL
+if docker ps --filter "name=memos-postgres" --filter "status=running" -q 2>/dev/null | grep -q .; then
+    PG_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' memos-postgres 2>/dev/null || echo "unknown")
+    if [ "$PG_HEALTH" = "healthy" ]; then
+        echo "   ✅ PostgreSQL   :5432 (healthy)"
+    else
+        echo "   ⚠️  PostgreSQL   :5432 (status: $PG_HEALTH)"
+    fi
+else
+    echo "   ❌ PostgreSQL   :5432 (not running)"
+fi
+
+# Redis
+if docker ps --filter "name=memos-redis" --filter "status=running" -q 2>/dev/null | grep -q .; then
+    REDIS_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' memos-redis 2>/dev/null || echo "unknown")
+    if [ "$REDIS_HEALTH" = "healthy" ]; then
+        echo "   ✅ Redis        :6379 (healthy)"
+    else
+        echo "   ⚠️  Redis        :6379 (status: $REDIS_HEALTH)"
+    fi
+else
+    echo "   ❌ Redis        :6379 (not running)"
+fi
+
+# Docling
+if docker ps --filter "name=memos-docling" --filter "status=running" -q 2>/dev/null | grep -q .; then
+    DOCLING_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' memos-docling 2>/dev/null || echo "unknown")
+    if [ "$DOCLING_HEALTH" = "healthy" ]; then
+        echo "   ✅ Docling      :8003 (healthy)"
+    elif [ "$DOCLING_HEALTH" = "starting" ]; then
+        echo "   ⏳ Docling      :8003 (starting...)"
+    else
+        echo "   ⚠️  Docling      :8003 (status: $DOCLING_HEALTH)"
+    fi
+else
+    echo "   ⚪ Docling      :8003 (not running - optional)"
+fi
+
+echo ""
+echo "🖥️  memOS Server:"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Check process

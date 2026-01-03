@@ -15,7 +15,7 @@ Based on comprehensive research into prompt engineering and context engineering 
 | ✅ Role-based agent personas | **COMPLETE** | All 5 agents updated |
 | ✅ Thorough reasoning instruction | **COMPLETE** | Replaced CoD with full reasoning |
 | ✅ STAY ON TOPIC requirement | **COMPLETE** | Synthesizer now rejects off-topic |
-| 🔄 Lost-in-middle mitigation | Pending | Document reordering |
+| ✅ Lost-in-middle mitigation | **COMPLETE** | Reordering in context_limits.py + synthesizer.py |
 | 🔄 Temperature tuning | Pending | Per-agent optimization |
 
 ### Design Decision: Full Reasoning Over Token Reduction
@@ -37,7 +37,7 @@ Based on comprehensive research into prompt engineering and context engineering 
 | **Role-Based Prompts** | All 5 agents have personas | ✅ Complete |
 | **STAY ON TOPIC** | Synthesizer has explicit requirement | ✅ Complete |
 | **Output Structure** | JSON for most agents, XML tags for roles | ✅ Complete |
-| **Lost-in-Middle** | Not addressed | 🔄 Pending |
+| **Lost-in-Middle** | Reordering implemented in synthesizer | ✅ Complete |
 | **Temperature Tuning** | Default values | 🔄 Pending |
 
 ### Remaining Priority Matrix
@@ -137,34 +137,24 @@ Every claim MUST be cited. Use technical terminology correctly.
 """
 ```
 
-### 4. Implement Lost-in-Middle Mitigation
+### 4. Implement Lost-in-Middle Mitigation ✅
 
 **Purpose**: LLMs attend less to middle of context. Reorder documents to place important content at start and end.
 
-**Implementation in `context_curator.py` or `orchestrator_universal.py`**:
+**Status**: IMPLEMENTED (2026-01-02)
 
-```python
-def reorder_for_attention(sources: List[Dict], relevance_key: str = "relevance") -> List[Dict]:
-    """Reorder sources to mitigate lost-in-the-middle problem.
+**Implementation**:
+- `context_limits.py`: Added `reorder_for_attention()`, `reorder_search_results()`, `reorder_sources_for_synthesis()`
+- `synthesizer.py`: Applied to `_format_results()` and `synthesize_with_content()`
 
-    Pattern: Most relevant at start, second-most at end, alternating.
-    """
-    sorted_sources = sorted(sources, key=lambda s: s.get(relevance_key, 0), reverse=True)
+**Pattern**: Sort by relevance, then interleave front/back:
+- Most relevant → position 0 (start)
+- 2nd most relevant → last position (end)
+- 3rd most relevant → position 1
+- 4th most relevant → second-to-last
+- ... continues alternating
 
-    if len(sorted_sources) <= 2:
-        return sorted_sources
-
-    reordered = []
-    for i, source in enumerate(sorted_sources):
-        if i % 2 == 0:
-            reordered.insert(0, source)  # Add to beginning
-        else:
-            reordered.append(source)  # Add to end
-
-    return reordered
-```
-
-**Apply before synthesis prompt construction.**
+**Research Reference**: Liu et al., 2023 - "Lost in the Middle" (arXiv:2307.03172)
 
 ---
 

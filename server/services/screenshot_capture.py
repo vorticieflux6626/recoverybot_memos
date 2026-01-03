@@ -124,6 +124,25 @@ class ScreenshotCapture:
 
         logger.info("Screenshot capture browser started")
 
+    def _is_browser_healthy(self) -> bool:
+        """Check if browser and context are still connected and usable"""
+        try:
+            if self._browser is None or self._context is None:
+                return False
+            # Check if browser is still connected
+            if not self._browser.is_connected():
+                return False
+            return True
+        except Exception:
+            return False
+
+    async def _ensure_browser(self):
+        """Ensure browser is running and healthy, restart if needed"""
+        if not self._is_browser_healthy():
+            logger.warning("Browser context unhealthy, restarting...")
+            await self.stop()
+            await self.start()
+
     async def stop(self):
         """Stop the browser instance"""
         if self._context:
@@ -163,12 +182,20 @@ class ScreenshotCapture:
         start_time = datetime.now(timezone.utc)
 
         try:
-            # Ensure browser is running
-            if self._browser is None:
-                await self.start()
+            # Ensure browser is running and healthy
+            await self._ensure_browser()
 
-            # Create new page
-            page = await self._context.new_page()
+            # Create new page with retry on context failure
+            try:
+                page = await self._context.new_page()
+            except Exception as e:
+                if "closed" in str(e).lower():
+                    logger.warning(f"Browser context closed, restarting: {e}")
+                    await self.stop()
+                    await self.start()
+                    page = await self._context.new_page()
+                else:
+                    raise
 
             try:
                 # Navigate to URL
@@ -302,10 +329,18 @@ class ScreenshotCapture:
         start_time = datetime.now(timezone.utc)
 
         try:
-            if self._browser is None:
-                await self.start()
+            await self._ensure_browser()
 
-            page = await self._context.new_page()
+            try:
+                page = await self._context.new_page()
+            except Exception as e:
+                if "closed" in str(e).lower():
+                    logger.warning(f"Browser context closed, restarting: {e}")
+                    await self.stop()
+                    await self.start()
+                    page = await self._context.new_page()
+                else:
+                    raise
 
             try:
                 await page.goto(url, wait_until='domcontentloaded', timeout=cfg.wait_timeout)
@@ -372,10 +407,18 @@ class ScreenshotCapture:
         cfg = self.config
 
         try:
-            if self._browser is None:
-                await self.start()
+            await self._ensure_browser()
 
-            page = await self._context.new_page()
+            try:
+                page = await self._context.new_page()
+            except Exception as e:
+                if "closed" in str(e).lower():
+                    logger.warning(f"Browser context closed, restarting: {e}")
+                    await self.stop()
+                    await self.start()
+                    page = await self._context.new_page()
+                else:
+                    raise
 
             try:
                 await page.goto(url, wait_until='domcontentloaded', timeout=cfg.wait_timeout)

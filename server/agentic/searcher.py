@@ -78,8 +78,13 @@ class SearXNGSearchProvider(SearchProvider):
         "news": "bing_news,brave",
         "all": "brave,bing,reddit,wikipedia,arxiv,semantic_scholar,github,stackoverflow",
         # FANUC/Industrial robotics - Reddit + Stack Exchange for troubleshooting
-        "fanuc": "reddit,brave,bing,arxiv,electronics_stackexchange,robotics_stackexchange",
-        "robotics": "reddit,brave,bing,arxiv,github,gitlab,robotics_stackexchange,electronics_stackexchange",
+        # Note: arXiv removed - returns academic papers not relevant to industrial troubleshooting
+        "fanuc": "brave,bing,reddit,electronics_stackexchange,robotics_stackexchange,stackoverflow",
+        "robotics": "brave,bing,reddit,github,gitlab,robotics_stackexchange,electronics_stackexchange,stackoverflow",
+        # PLC/Industrial Automation (Allen-Bradley, Siemens, etc.)
+        # Uses brave+bing for industrial manuals, reddit for troubleshooting, stack exchange for technical
+        "plc": "brave,bing,reddit,electronics_stackexchange,stackoverflow",
+        "industrial": "brave,bing,reddit,electronics_stackexchange,stackoverflow",
         # Q&A focused
         "qa": "stackoverflow,superuser,askubuntu,serverfault,unix_stackexchange,reddit",
         # Linux/sysadmin
@@ -100,6 +105,7 @@ class SearXNGSearchProvider(SearchProvider):
         "troubleshooting": None,  # None = run detect_query_type() for FANUC/IMM detection
         "debugging": None,
         "problem_solving": None,
+        "unknown": None,  # Unknown types should also trigger pattern detection
 
         # Direct mappings
         "technical_research": "technical",
@@ -180,6 +186,39 @@ class SearXNGSearchProvider(SearchProvider):
         r"\bmould\s+(open|close)", r"\brobot\s+ready\b", r"\bcycle\s+start\b",
     ]
 
+    # Patterns to detect PLC/Industrial Automation queries (Allen-Bradley, Siemens, etc.)
+    PLC_PATTERNS = [
+        # Allen-Bradley / Rockwell Automation
+        r"\ballen[- ]bradley\b", r"\bcontrollogix\b", r"\bcompactlogix\b",
+        r"\b175[0-9]-[a-z0-9]+\b",  # 1756-L71, 1756-EN2T, 1769-L33ER, etc.
+        r"\brslogix\b", r"\bstudio\s*5000\b", r"\bfactorytalk\b",
+        r"\brockwell\s+automation\b", r"\b1734-[a-z0-9]+\b", r"\b1769-[a-z0-9]+\b",
+        # Siemens PLCs
+        r"\bs7-[0-9]+\b", r"\bsiemens\s+(plc|s7|sinumerik|simatic)\b",
+        r"\bprofinet\b", r"\bprofibus\b", r"\btia\s+portal\b",
+        r"\bstep\s*7\b", r"\bsimatic\b", r"\bsinumerik\b",
+        r"\b6es7\d{3}\b",  # Siemens order numbers
+        # General PLC terms
+        r"\bplc\b", r"\bladder\s+logic\b", r"\bfunction\s+block\b",
+        r"\bi/o\s+(rack|module|card)\b", r"\bremote\s+i/o\b",
+        r"\bethernet/ip\b", r"\bdevicenet\b", r"\bcontrolnet\b",
+        r"\bhmi\b.*\bpanel\b", r"\bscada\b",
+        # Fault/Error patterns common across vendors
+        r"\bfault\s+(code|type|message)\b", r"\bmajor\s+(fault|error)\b",
+        r"\bminor\s+fault\b", r"\brecoverable\s+fault\b",
+        r"\bcommunication\s+(timeout|error|fault)\b",
+        r"\bmodule\s+(fault|error|not\s+found)\b",
+        # Motion control (servo/VFD)
+        r"\bservo\s+(drive|motor|amplifier|fault)\b",
+        r"\bvfd\b", r"\bvariable\s+frequency\b", r"\binverter\b",
+        r"\bpowerflex\b", r"\bkinetix\b",
+        # Other major vendors
+        r"\bautomationdirect\b", r"\bclick\s+plc\b", r"\bdo-more\b",
+        r"\bomron\b", r"\bmitsubishi\s+plc\b", r"\bfx[3-5]u?\b",
+        r"\bkeyence\b", r"\bbeckhoff\b", r"\btwincat\b",
+        r"\bmodbus\b", r"\bopc\s+ua\b", r"\bmqtt\b",
+    ]
+
     def __init__(self, base_url: Optional[str] = None):
         settings = _get_settings()
         self.base_url = (base_url or settings.searxng_url).rstrip("/")
@@ -211,13 +250,17 @@ class SearXNGSearchProvider(SearchProvider):
         """
         Detect query type based on patterns.
 
-        Returns: 'fanuc', 'imm', 'academic', 'technical', or 'general'
+        Returns: 'fanuc', 'plc', 'imm', 'academic', 'technical', or 'general'
         """
         query_lower = query.lower()
 
         # Count pattern matches for each category
         fanuc_score = sum(
             1 for p in self.FANUC_PATTERNS
+            if re.search(p, query_lower, re.IGNORECASE)
+        )
+        plc_score = sum(
+            1 for p in self.PLC_PATTERNS
             if re.search(p, query_lower, re.IGNORECASE)
         )
         imm_score = sum(
@@ -237,6 +280,11 @@ class SearXNGSearchProvider(SearchProvider):
         if fanuc_score >= 1:
             logger.info(f"Detected FANUC query (score={fanuc_score}): {query[:50]}")
             return "fanuc"
+
+        # PLC/Industrial automation (Allen-Bradley, Siemens, etc.)
+        if plc_score >= 1:
+            logger.info(f"Detected PLC/Industrial query (score={plc_score}): {query[:50]}")
+            return "plc"
 
         # IMM/Euromap queries are also very specific
         if imm_score >= 1:
@@ -1404,6 +1452,30 @@ class SearcherAgent:
         "urbandictionary.com",
     }
 
+    # Reddit subreddits to filter out (entertainment, gaming, memes, unrelated)
+    # These frequently pollute industrial/technical search results
+    BLOCKED_SUBREDDITS = {
+        "starfield", "natureisfuckinglit", "askreddit", "pics", "funny",
+        "gaming", "todayilearned", "aww", "worldnews", "news", "memes",
+        "dankmemes", "movies", "music", "television", "videos",
+        "politics", "politicalhumor", "conspiracy", "wallstreetbets",
+        "cryptocurrency", "bitcoin", "nfl", "nba", "soccer", "baseball",
+        "sports", "formula1", "cars", "autos", "food", "foodporn",
+        "cooking", "recipes", "relationships", "relationship_advice",
+        "tifu", "confessions", "unpopularopinion", "showerthoughts",
+        "lifeprotips", "jokes", "dadjokes", "nottheonion", "facepalm",
+        "whatcouldgowrong", "publicfreakout", "trashy", "cringetopia",
+        "choosingbeggars", "entitledparents", "insanepeoplefacebook",
+        "antiwork", "workreform", "maliciouscompliance", "pettyrevenge",
+        "prorevenge", "legaladvice", "amitheasshole", "aita",
+        "eyebleach", "wholesomememes", "mademesmile", "humansbeingbros",
+        "animalsbeingbros", "animalsbeingjerks", "cats", "dogs", "pets",
+        "art", "drawing", "painting", "photography", "earthporn",
+        "cityporn", "spaceporn", "historyporn", "oldschoolcool",
+        "interestingasfuck", "damnthatsinteresting", "nextfuckinglevel",
+        "oddlysatisfying", "mildlyinteresting", "mildlyinfuriating",
+    }
+
     # ===== DOMAIN CATEGORIES =====
     # Maps domains to their category for dynamic boost calculation
     DOMAIN_CATEGORIES = {
@@ -1737,6 +1809,25 @@ class SearcherAgent:
             return word[:-4]   # replacement -> replac
         return word
 
+    def _is_blocked_subreddit(self, url: str) -> bool:
+        """Check if a Reddit URL is from a blocked subreddit.
+
+        Blocked subreddits are entertainment, gaming, memes, etc. that
+        frequently pollute industrial/technical search results.
+        """
+        import re
+        if "reddit.com" not in url:
+            return False
+
+        # Extract subreddit from URL pattern: /r/subreddit/
+        match = re.search(r"/r/([^/]+)", url, re.IGNORECASE)
+        if match:
+            subreddit = match.group(1).lower()
+            if subreddit in self.BLOCKED_SUBREDDITS:
+                logger.debug(f"Blocked subreddit: r/{subreddit}")
+                return True
+        return False
+
     def _extract_keywords(self, text: str) -> Set[str]:
         """Extract meaningful keywords from text, excluding stopwords.
 
@@ -2038,8 +2129,10 @@ class SearcherAgent:
         self.last_provider = provider_name
 
         # Auto-detect query type from first query if not specified
-        if query_type is None and queries and isinstance(provider, SearXNGSearchProvider):
-            query_type = provider.detect_query_type(queries[0])
+        # Always detect query type for proper engine selection and domain boosting
+        if query_type is None and queries:
+            # Use SearXNG provider's detection (it has the patterns)
+            query_type = self.searxng.detect_query_type(queries[0])
             logger.info(f"Auto-detected query type: {query_type}")
 
         # Execute searches in parallel
@@ -2063,6 +2156,11 @@ class SearcherAgent:
                     # Skip blocked domains (dictionaries, etc.)
                     if any(bd in result.source_domain for bd in self.BLOCKED_DOMAINS):
                         logger.debug(f"Blocked off-topic domain: {result.source_domain}")
+                        continue
+
+                    # Skip blocked subreddits (entertainment, gaming, memes)
+                    if self._is_blocked_subreddit(result.url):
+                        logger.info(f"Filtered blocked subreddit: {result.url[:60]}...")
                         continue
 
                     # Check semantic relevance before domain boost
@@ -2129,10 +2227,17 @@ class SearcherAgent:
             if self._calculate_keyword_relevance(all_query_keywords, r) > 0
         ]
 
-        # If aggressive filtering removed too many results, fall back to penalized list
+        # If aggressive filtering removed too many results, use score-based fallback
         if len(filtered_results) < 3:
-            filtered_results = all_results[:max(10, len(all_results))]
-            logger.warning("Aggressive filtering removed too many results, using penalized fallback")
+            # Fallback: Use results with relevance score > 0.2 (penalized but not completely irrelevant)
+            score_filtered = [r for r in all_results if r.relevance_score >= 0.2]
+            if len(score_filtered) >= 3:
+                filtered_results = score_filtered[:max(10, len(score_filtered))]
+                logger.warning(f"Keyword filtering too aggressive, using score threshold (0.2+): {len(filtered_results)} results")
+            else:
+                # Last resort: use penalized list but still sort by score
+                filtered_results = sorted(all_results, key=lambda r: r.relevance_score, reverse=True)[:max(10, len(all_results))]
+                logger.warning("Aggressive filtering removed too many results, using penalized fallback")
         else:
             removed_count = len(all_results) - len(filtered_results)
             if removed_count > 0:

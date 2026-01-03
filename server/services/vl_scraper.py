@@ -40,6 +40,7 @@ class ExtractionType(Enum):
     GENERAL_INFO = "general_info"
     MEETING_SCHEDULE = "meeting_schedule"
     RESOURCE_LIST = "resource_list"
+    TECHNICAL_INFO = "technical_info"  # For industrial/technical documentation
 
 
 @dataclass
@@ -162,11 +163,30 @@ Return in JSON format:
     "additional_notes": "Any other relevant information"
 }
 
+Return ONLY the JSON object.""",
+
+    ExtractionType.TECHNICAL_INFO: """Extract technical/industrial information from this webpage screenshot.
+
+Return in JSON format:
+{
+    "page_title": "Title or heading of the page",
+    "product_model": "Product model number/name if visible",
+    "manufacturer": "Manufacturer name",
+    "document_type": "Type of document (manual, troubleshooting guide, spec sheet, etc.)",
+    "error_codes": ["List of error codes mentioned"],
+    "procedures": ["List of procedures or steps described"],
+    "specifications": {"key": "value pairs of technical specifications"},
+    "warnings": ["Any warnings or cautions mentioned"],
+    "part_numbers": ["Part numbers mentioned"],
+    "related_products": ["Related products or components mentioned"],
+    "key_information": ["Other important technical details"]
+}
+
 Return ONLY the JSON object."""
 }
 
-# Relevance evaluation prompt
-RELEVANCE_PROMPT = """You are evaluating whether extracted information is relevant to recovery services, addiction treatment, mental health support, or community assistance resources.
+# Relevance evaluation prompt - now context-aware for any query type
+RELEVANCE_PROMPT = """You are evaluating whether extracted information is relevant to the user's original query.
 
 Extracted Information:
 {extracted_data}
@@ -175,16 +195,19 @@ Original Query/Context:
 {context}
 
 Evaluate the relevance on a scale of 0.0 to 1.0:
-- 1.0: Highly relevant (directly about recovery services, treatment, support groups)
-- 0.7-0.9: Moderately relevant (related healthcare, social services, community resources)
-- 0.4-0.6: Somewhat relevant (general health info, tangentially related)
-- 0.1-0.3: Low relevance (unrelated but might have some useful info)
-- 0.0: Not relevant (completely unrelated, ads, errors, etc.)
+- 1.0: Highly relevant (directly answers or addresses the query topic)
+- 0.7-0.9: Moderately relevant (related information that helps understand the topic)
+- 0.4-0.6: Somewhat relevant (tangentially related, may provide useful background)
+- 0.1-0.3: Low relevance (mostly unrelated but might have some useful info)
+- 0.0: Not relevant (completely unrelated, ads, errors, cookie notices, etc.)
+
+IMPORTANT: Judge relevance based on the ORIGINAL QUERY, not any predefined topic.
+For example, if the query is about FANUC robotics, information about FANUC products IS relevant.
 
 Return in JSON format:
 {{
     "relevance_score": 0.0-1.0,
-    "reasoning": "Brief explanation of the score",
+    "reasoning": "Brief explanation of the score based on query relevance",
     "useful_for": "What this information could be useful for, if anything",
     "recommendation": "keep" or "discard"
 }}
@@ -427,10 +450,10 @@ class VLScraper:
     async def scrape(
         self,
         url: str,
-        extraction_type: ExtractionType = ExtractionType.RECOVERY_SERVICE,
+        extraction_type: ExtractionType = ExtractionType.GENERAL_INFO,
         evaluate_relevance: bool = True,
-        relevance_threshold: float = 0.4,
-        context: str = "Recovery services and addiction support"
+        relevance_threshold: float = 0.3,
+        context: str = ""
     ) -> ScrapingResult:
         """
         Complete scraping pipeline: capture screenshot, extract data, evaluate relevance.
