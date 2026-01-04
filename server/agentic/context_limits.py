@@ -59,13 +59,14 @@ class PipelineContextConfig:
     planner_model: str = "qwen3:8b"
     planner_context: int = 40960  # 40K tokens
 
-    # Synthesizer model (content synthesis) - use more of the 128K context
-    synthesizer_model: str = "deepseek-r1:14b-qwen-distill-q8_0"
-    synthesizer_context: int = 64000  # 64K tokens (conservative use of 128K window)
+    # Synthesizer model (content synthesis) - phi4-reasoning scored 0.893 overall
+    # Benchmark: 95.8% analysis coverage, 23% better than deepseek-r1:14b
+    synthesizer_model: str = "phi4-reasoning:14b"
+    synthesizer_context: int = 16000  # 16K tokens (phi4 has 16K context window)
 
-    # Thinking model (complex reasoning) - can use larger portion for reasoning
-    thinking_model: str = "deepseek-r1:14b-qwen-distill-q8_0"
-    thinking_context: int = 64000  # 64K tokens (128K available, leave room for output)
+    # Thinking model (complex reasoning) - phi4-reasoning best practical option
+    thinking_model: str = "phi4-reasoning:14b"
+    thinking_context: int = 16000  # 16K tokens
 
     # Fast evaluation model
     evaluator_model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better evaluation quality

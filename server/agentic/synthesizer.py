@@ -73,8 +73,9 @@ THINKING_MODELS = {
     }
 }
 
-# Default thinking model - 14b distill offers best speed/quality balance for TITAN RTX 24GB
-DEFAULT_THINKING_MODEL = "deepseek-r1:14b-qwen-distill-q8_0"
+# Default thinking model - phi4-reasoning:14b scored 0.893 overall (23% better than deepseek-r1)
+# Benchmark: 95.8% analysis coverage, 72s duration, ~11GB VRAM on TITAN RTX 24GB
+DEFAULT_THINKING_MODEL = "phi4-reasoning:14b"
 
 
 class SynthesizerAgent:

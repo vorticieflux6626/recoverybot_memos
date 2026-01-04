@@ -97,6 +97,27 @@ pytest tests/integration/ -v
 - `tests/integration/` - Cross-component tests
 - `tests/contracts/` - API contract validation (via root tests/)
 
+## MCP Code Intelligence
+
+This project is indexed by the ecosystem-wide MCP code intelligence layer.
+
+**Infrastructure**: `/home/sparkone/sdd/mcp_infrastructure/`
+
+| Tool | Command | Purpose |
+|------|---------|---------|
+| **Search code** | `kit search /home/sparkone/sdd/Recovery_Bot "query"` | Find code patterns |
+| **Find usages** | `kit usages /home/sparkone/sdd/Recovery_Bot "ClassName"` | Find symbol references |
+| **Dependencies** | `kit dependencies /path/to/file.py -l python` | Analyze imports |
+| **File tree** | `kit file-tree /home/sparkone/sdd/Recovery_Bot/memOS` | View structure |
+| **Re-index** | `/home/sparkone/sdd/mcp_infrastructure/scripts/index_ecosystem.sh` | Refresh after major changes |
+| **Health check** | `/home/sparkone/sdd/mcp_infrastructure/scripts/check_mcp_health.sh` | Verify services |
+
+**Index location**: Root project `.kit/index.json` (51.4 MB, includes memOS)
+
+**Cross-project search**: This project is indexed alongside PDF_Extraction_Tools, MCP_Servers, and MCP_Node_Editor for unified semantic search.
+
+**Documentation**: See `/home/sparkone/sdd/mcp_infrastructure/CLAUDE.md` for full architecture details.
+
 ---
 
 ## Overview
