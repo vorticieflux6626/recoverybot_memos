@@ -63,6 +63,10 @@ from agentic.events import (
     EventType,
     SearchEvent
 )
+from agentic.observability_dashboard import (
+    get_observability_dashboard,
+    create_request_observability
+)
 from agentic.query_classifier import (
     QueryClassifier,
     QueryClassification,
@@ -94,6 +98,47 @@ class ClassifyResponse(BaseModel):
     reasoning: str
 
 router = APIRouter(prefix="/api/v1/search", tags=["Search"])
+
+
+# =============================================================================
+# OBSERVABILITY CAPTURE HELPER
+# =============================================================================
+
+def _capture_observability(
+    request_id: str,
+    query: str,
+    preset: str,
+    pipeline: str,
+    success: bool,
+    duration_ms: int,
+    confidence: float = 0.0,
+    error: str = None
+):
+    """
+    Capture request observability data for the Unified Dashboard.
+
+    Called at the end of each pipeline execution to record the request
+    in the observability dashboard for monitoring and debugging.
+    """
+    try:
+        dashboard = get_observability_dashboard()
+        obs = create_request_observability(request_id, query, preset)
+        obs.success = success
+        obs.total_duration_ms = duration_ms
+        obs.final_confidence = confidence
+        obs.confidence_level = (
+            "high" if confidence >= 0.8 else
+            "medium" if confidence >= 0.6 else
+            "low" if confidence >= 0.4 else
+            "very_low"
+        )
+        obs.error_message = error
+        obs.agents_executed = [pipeline]  # Basic tracking
+        dashboard.store_request(obs)
+        logger.debug(f"[{request_id}] Observability captured: {pipeline}, conf={confidence:.2f}")
+    except Exception as e:
+        logger.warning(f"[{request_id}] Failed to capture observability: {e}")
+
 
 # =============================================================================
 # UNIFIED ORCHESTRATOR SYSTEM
@@ -5074,6 +5119,9 @@ async def _execute_direct_answer(
     """Execute direct LLM answer without web search."""
     import httpx
     import os
+    import time
+
+    start_time = time.time()
 
     await emitter.emit(SearchEvent(
         event_type=EventType.SYNTHESIZING,
@@ -5106,6 +5154,8 @@ async def _execute_direct_answer(
 
     answer = result.get("message", {}).get("content", "")
 
+    duration_ms = int((time.time() - start_time) * 1000)
+
     # Emit completion
     await emitter.emit(SearchEvent(
         event_type=EventType.SEARCH_COMPLETED,
@@ -5126,6 +5176,17 @@ async def _execute_direct_answer(
             }
         }
     ))
+
+    # Capture observability for dashboard
+    _capture_observability(
+        request_id=request_id,
+        query=request.query,
+        preset=request.preset,
+        pipeline="direct_answer",
+        success=True,
+        duration_ms=duration_ms,
+        confidence=0.9
+    )
 
 
 async def _execute_simple_search(
@@ -5209,6 +5270,17 @@ async def _execute_simple_search(
         },
         graph_line=graph_state.to_line_simple()
     ))
+
+    # Capture observability for dashboard
+    _capture_observability(
+        request_id=request_id,
+        query=request.query,
+        preset=preset,
+        pipeline="web_search",
+        success=True,
+        duration_ms=execution_time_ms,
+        confidence=confidence
+    )
 
 
 async def _execute_agentic_pipeline(
@@ -5332,6 +5404,17 @@ async def _execute_agentic_pipeline(
         },
         graph_line=graph_state.to_line_simple()
     ))
+
+    # Capture observability for dashboard
+    _capture_observability(
+        request_id=request_id,
+        query=request.query,
+        preset=preset,
+        pipeline="agentic_search",
+        success=True,
+        duration_ms=execution_time_ms,
+        confidence=confidence
+    )
 
 
 # =============================================================================

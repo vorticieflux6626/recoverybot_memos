@@ -409,6 +409,14 @@ class FeatureConfig:
     enable_technical_docs: bool = False    # FANUC manual RAG via PDF API
     enable_hsea_context: bool = False      # HSEA three-stratum FANUC knowledge
 
+    # Diagnostic Path Traversal (Layer 3) - Enhanced 2026-01-04
+    # Controls how agentic search navigates knowledge graphs for troubleshooting
+    enable_symptom_entry: bool = False          # Allow symptom-based reverse lookup via INDICATES edges
+    enable_structured_causal_chain: bool = False  # XML-like structured output for synthesis
+    technical_traversal_mode: str = "semantic_astar"  # semantic_astar|flow_based|multi_hop
+    technical_max_hops: int = 4                 # Traversal depth (2-6)
+    technical_beam_width: int = 10              # Beam search width (5-50)
+
     # LLM Gateway (Layer 3) - Unified LLM routing
     enable_gateway_routing: bool = False   # Route LLM calls through gateway service
 
@@ -495,7 +503,12 @@ PRESET_CONFIGS = {
         enable_deep_reading=True,
         # Layer 3 technical documentation (PDF API)
         enable_technical_docs=True,
-        enable_hsea_context=True  # HSEA three-stratum FANUC knowledge
+        enable_hsea_context=True,  # HSEA three-stratum FANUC knowledge
+        # Diagnostic Path Traversal (2026-01-04)
+        enable_symptom_entry=True,  # Allow symptom-based entry
+        enable_structured_causal_chain=True,  # XML-like output for synthesis
+        technical_traversal_mode="semantic_astar",
+        technical_max_hops=4
     ),
     OrchestratorPreset.RESEARCH: FeatureConfig(
         # All enhanced features
@@ -545,6 +558,12 @@ PRESET_CONFIGS = {
         # Layer 3 technical documentation (PDF API)
         enable_technical_docs=True,
         enable_hsea_context=True,  # HSEA three-stratum FANUC knowledge
+        # Diagnostic Path Traversal (2026-01-04) - thorough settings for research
+        enable_symptom_entry=True,  # Allow symptom-based entry
+        enable_structured_causal_chain=True,  # XML-like output for synthesis
+        technical_traversal_mode="flow_based",  # PathRAG flow-based for research
+        technical_max_hops=5,  # Deeper traversal for research
+        technical_beam_width=20,  # Wider beam for more options
         # Agent Coordination (G.6.2)
         enable_dylan_agent_skipping=True,  # DyLAN conditional agent skipping
         # G.6.4: Information Bottleneck Filtering
@@ -613,6 +632,12 @@ PRESET_CONFIGS = {
         # Layer 3 technical documentation (PDF API)
         enable_technical_docs=True,
         enable_hsea_context=True,  # HSEA three-stratum FANUC knowledge
+        # Diagnostic Path Traversal (2026-01-04) - maximum settings for FULL
+        enable_symptom_entry=True,  # Allow symptom-based entry
+        enable_structured_causal_chain=True,  # XML-like output for synthesis
+        technical_traversal_mode="multi_hop",  # Cross-document reasoning for FULL
+        technical_max_hops=6,  # Maximum traversal depth
+        technical_beam_width=50,  # Maximum beam width for exhaustive search
         # Agent Coordination (G.6.2)
         enable_dylan_agent_skipping=True,  # DyLAN conditional agent skipping
         # G.6.4: Information Bottleneck Filtering
@@ -1571,6 +1596,11 @@ class UniversalOrchestrator(BaseSearchPipeline):
         Enhanced 2026-01-03: Now uses Federation API for multi-domain support.
         Supports FANUC, IMM, Industrial Automation, and OEM domains.
 
+        Enhanced 2026-01-04: Added diagnostic path traversal with:
+        - Symptom-based entry via INDICATES edges
+        - Structured causal chain formatting for synthesis
+        - Configurable traversal mode (semantic_astar, flow_based, multi_hop)
+
         Returns formatted context string if industrial-related content found,
         None otherwise.
         """
@@ -1584,7 +1614,37 @@ class UniversalOrchestrator(BaseSearchPipeline):
         try:
             doc_service = self._get_document_graph_service()
 
-            # Use enhanced Federation API context (includes HSEA, cross-domain, etc.)
+            # Priority 1: Use structured causal chain if enabled (2026-01-04)
+            # This provides better context for troubleshooting synthesis
+            if self.config.enable_structured_causal_chain:
+                structured_context = await doc_service.get_structured_troubleshooting_context(
+                    query=query,
+                    mode=self.config.technical_traversal_mode,
+                    max_hops=self.config.technical_max_hops,
+                    max_tokens=4000
+                )
+                if structured_context:
+                    logger.debug(f"Structured causal chain context: {len(structured_context)} chars")
+                    return structured_context
+
+            # Priority 2: Use symptom-based entry if no error codes detected (2026-01-04)
+            if self.config.enable_symptom_entry:
+                error_codes = extract_error_codes(query)
+                if not error_codes:
+                    # No error codes - try symptom-based search
+                    steps = await doc_service.query_by_symptom(
+                        symptom_text=query,
+                        max_hops=self.config.technical_max_hops,
+                        mode=self.config.technical_traversal_mode
+                    )
+                    if steps:
+                        # Format as causal chain
+                        context = doc_service.format_causal_chain_for_synthesis(steps)
+                        if context:
+                            logger.debug(f"Symptom-based context: {len(context)} chars")
+                            return context
+
+            # Priority 3: Use enhanced Federation API context (includes HSEA, cross-domain)
             context = await doc_service.get_enhanced_context_for_rag(
                 query=query,
                 max_tokens=4000
@@ -3485,6 +3545,26 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 state.has_domain_knowledge = True
                 state.domain_knowledge_chars = len(domain_context)
                 logger.info(f"[{request_id}] Domain knowledge retrieved: {len(domain_context)} chars")
+
+        # PHASE 4.6: Technical Documentation Integration (PDF Extraction Tools)
+        # Enhanced 2026-01-04: Wire _search_technical_docs() into main pipeline
+        # Provides diagnostic path traversal and HSEA context for industrial queries
+        technical_context = None
+        if self.config.enable_technical_docs:
+            try:
+                technical_context = await self._search_technical_docs(request.query)
+                if technical_context:
+                    enhancement_metadata["features_used"].append("technical_docs")
+                    # Merge technical context with domain context
+                    if domain_context:
+                        domain_context = f"{domain_context}\n\n{technical_context}"
+                    else:
+                        domain_context = technical_context
+                    state.has_domain_knowledge = True
+                    state.domain_knowledge_chars = len(domain_context)
+                    logger.info(f"[{request_id}] Technical docs retrieved: {len(technical_context)} chars")
+            except Exception as e:
+                logger.warning(f"[{request_id}] Technical docs search failed: {e}")
 
         # PHASE 5: CRAG Evaluation (if enabled)
         # Check DyLAN skip decision for EVALUATOR

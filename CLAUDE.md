@@ -1,6 +1,6 @@
 # memOS Server
 
-> **Updated**: 2026-01-02 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.86.0
+> **Updated**: 2026-01-04 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.87.0
 
 ## Quick Reference
 
@@ -202,6 +202,43 @@ See [server/agentic/PROMPT_CONTEXT_IMPROVEMENT_PLAN.md](server/agentic/PROMPT_CO
 - P1: Role-based agent personas for better topic focus
 - P1: Lost-in-middle mitigation for document reordering
 - P2: `/no_think` suffix for qwen3:8b, temperature tuning
+
+### Diagnostic Path Traversal Enhancement (2026-01-04)
+
+Enhanced integration with PDF Extraction Tools for industrial troubleshooting:
+
+**New Features:**
+- **Symptom-Based Entry**: Query without knowing error codes using `INDICATES` edge traversal
+  - Pattern: `symptom → INDICATES → error_code → RESOLVED_BY → remedy`
+  - Example: "servo motor overheating" → SRVO-063 → Check encoder cable
+- **Structured Causal Chain**: XML-like output for better LLM synthesis comprehension
+  - Groups steps by type (error, diagnosis, solution, procedure)
+  - Includes edge type markers (CAUSED_BY, RESOLVED_BY)
+  - Preserves severity classification from error category
+- **Configurable Traversal Modes**:
+  - `semantic_astar` (default): A* with semantic embeddings
+  - `flow_based`: PathRAG with alpha/theta pruning (RESEARCH preset)
+  - `multi_hop`: Cross-document reasoning (FULL preset)
+
+**FeatureConfig Parameters:**
+```python
+enable_symptom_entry: bool = False          # INDICATES edge traversal
+enable_structured_causal_chain: bool = False  # XML-like output
+technical_traversal_mode: str = "semantic_astar"
+technical_max_hops: int = 4                 # Depth (2-6)
+technical_beam_width: int = 10              # Width (5-50)
+```
+
+**Preset Integration:**
+| Preset | Mode | Max Hops | Beam Width |
+|--------|------|----------|------------|
+| ENHANCED | semantic_astar | 4 | 10 |
+| RESEARCH | flow_based | 5 | 20 |
+| FULL | multi_hop | 6 | 50 |
+
+**Files Modified:**
+- `core/document_graph_service.py`: `query_by_symptom()`, `format_causal_chain_for_synthesis()`, `get_structured_troubleshooting_context()`
+- `agentic/orchestrator_universal.py`: PHASE 4.6, updated `_search_technical_docs()`, new FeatureConfig params
 
 ---
 

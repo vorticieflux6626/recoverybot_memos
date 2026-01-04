@@ -73,9 +73,10 @@ THINKING_MODELS = {
     }
 }
 
-# Default thinking model - phi4-reasoning:14b scored 0.893 overall (23% better than deepseek-r1)
-# Benchmark: 95.8% analysis coverage, 72s duration, ~11GB VRAM on TITAN RTX 24GB
-DEFAULT_THINKING_MODEL = "phi4-reasoning:14b"
+# Default thinking model - ministral-3:3b scored 0.848 overall (best speed/quality/VRAM)
+# Benchmark: 93.3% analysis coverage, 17s duration, ~3GB VRAM - fits alongside other models
+# phi4-reasoning:14b (0.893) requires 11GB which conflicts with PDF Tools vision models
+DEFAULT_THINKING_MODEL = "ministral-3:3b"
 
 
 class SynthesizerAgent:

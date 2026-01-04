@@ -75,6 +75,15 @@ except ImportError as e:
     SYSTEM_HEALTH_ENABLED = False
     logging.getLogger("memos_server").warning(f"System health API disabled: {e}")
 
+# Observability router (for Unified Dashboard)
+try:
+    from api.observability import router as observability_router
+    OBSERVABILITY_ENABLED = True
+except ImportError as e:
+    observability_router = None
+    OBSERVABILITY_ENABLED = False
+    logging.getLogger("memos_server").warning(f"Observability API disabled: {e}")
+
 # Configure logging
 setup_logging()
 logger = logging.getLogger("memos_server")
@@ -178,6 +187,11 @@ if TTS_ENABLED and tts_router:
 if SYSTEM_HEALTH_ENABLED and system_health_router:
     app.include_router(system_health_router)
     logger.info("System health endpoints enabled at /api/v1/system/*")
+
+# Include observability router if available (for Unified Dashboard)
+if OBSERVABILITY_ENABLED and observability_router:
+    app.include_router(observability_router)
+    logger.info("Observability endpoints enabled at /api/v1/observability/*")
 
 # Mount static files for Sherpa-ONNX TTS models
 # Models are served from: /api/models/sherpa-onnx/{model_dir}/{file}

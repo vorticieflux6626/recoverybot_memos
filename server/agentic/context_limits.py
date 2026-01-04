@@ -59,14 +59,15 @@ class PipelineContextConfig:
     planner_model: str = "qwen3:8b"
     planner_context: int = 40960  # 40K tokens
 
-    # Synthesizer model (content synthesis) - phi4-reasoning scored 0.893 overall
-    # Benchmark: 95.8% analysis coverage, 23% better than deepseek-r1:14b
-    synthesizer_model: str = "phi4-reasoning:14b"
-    synthesizer_context: int = 16000  # 16K tokens (phi4 has 16K context window)
+    # Synthesizer model (content synthesis) - ministral-3:3b scored 0.848 overall
+    # Benchmark: 93.3% analysis, 17s duration, only 3GB VRAM (fits with PDF Tools)
+    synthesizer_model: str = "ministral-3:3b"
+    synthesizer_context: int = 32000  # 32K tokens (ministral has 128K context)
 
-    # Thinking model (complex reasoning) - phi4-reasoning best practical option
-    thinking_model: str = "phi4-reasoning:14b"
-    thinking_context: int = 16000  # 16K tokens
+    # Thinking model (complex reasoning) - ministral-3:3b best practical option
+    # phi4-reasoning:14b (0.893) too VRAM-heavy (11GB) for production use
+    thinking_model: str = "ministral-3:3b"
+    thinking_context: int = 32000  # 32K tokens
 
     # Fast evaluation model
     evaluator_model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better evaluation quality

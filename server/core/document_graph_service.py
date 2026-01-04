@@ -386,11 +386,119 @@ class DocumentGraphService:
             return steps
 
         except httpx.HTTPStatusError as e:
+            # Don't record 404 as failure - it just means error code not found
+            if e.response.status_code == 404:
+                logger.info(f"Error code not found in graph: {error_code}")
+                return []
             logger.error(f"PDF API traversal error: {e.response.status_code}")
             self._record_failure()
             return []
         except Exception as e:
             logger.error(f"PDF API traversal failed: {e}")
+            self._record_failure()
+            return []
+
+    async def query_by_symptom(
+        self,
+        symptom_text: str,
+        max_results: int = 5,
+        max_hops: int = 4,
+        mode: str = "semantic_astar"
+    ) -> List[TroubleshootingStep]:
+        """
+        Entry point for symptom-based queries (e.g., "overcurrent", "overheating").
+
+        Uses INDICATES edge type for reverse lookup from symptoms to error codes,
+        then traverses to remedies.
+
+        Pattern: symptom → INDICATES → error_code → RESOLVED_BY → remedy
+
+        Args:
+            symptom_text: Natural language symptom description
+            max_results: Maximum number of paths to return
+            max_hops: Maximum traversal depth
+            mode: Traversal mode ('semantic_astar', 'flow_based', 'multi_hop')
+
+        Returns:
+            Ordered list of troubleshooting steps starting from related error codes
+        """
+        if not self.is_available:
+            logger.debug("PDF API not available for symptom search")
+            return []
+
+        # Check cache
+        cache_key = self._cache_key("symptom", symptom_text, max_results, mode)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            logger.debug(f"Cache hit for symptom search: {symptom_text[:30]}...")
+            return cached
+
+        try:
+            # Use traverse endpoint with symptom as source concept
+            # The PDF API will use INDICATES edges to find related error codes
+            #
+            # NOTE: edge_type_weights is documented for future PDF API support.
+            # Currently the PDF API's TraverseRequest schema does not include this field.
+            # The DiagnosticPathFinder in PDF Tools uses position-aware weights internally.
+            # TODO: Add edge_type_weights to PDF API TraverseRequest schema for client control.
+            request_body = {
+                "source_concept": symptom_text,
+                "mode": mode,
+                "max_hops": max_hops,
+                "include_content": True,
+                "alpha": 0.85,  # PathRAG damping factor
+                "theta": 0.01   # Pruning threshold
+            }
+
+            response = await self.client.post("/traverse", json=request_body)
+            response.raise_for_status()
+            data = response.json()
+
+            # Flatten paths into ordered steps
+            steps = []
+            seen_nodes = set()
+
+            for path in data.get('paths', []):
+                for node in path.get('nodes', []):
+                    node_id = node.get('node_id', '')
+                    if node_id not in seen_nodes:
+                        seen_nodes.add(node_id)
+                        steps.append(TroubleshootingStep(
+                            node_id=node_id,
+                            title=node.get('title', ''),
+                            content=node.get('content_preview', ''),
+                            step_type=self._classify_step_type(node),
+                            relevance_score=node.get('relevance_score', 0.0),
+                            hop_number=node.get('hop_number', 0),
+                            metadata={
+                                **node.get('metadata', {}),
+                                'entry_type': 'symptom',
+                                'symptom_query': symptom_text
+                            }
+                        ))
+
+                    if len(steps) >= max_results * 5:  # Limit total steps
+                        break
+
+            # Sort by hop number then relevance
+            steps.sort(key=lambda s: (s.hop_number, -s.relevance_score))
+
+            # Cache results
+            self._set_cached(cache_key, steps)
+
+            logger.info(f"Symptom-based search for '{symptom_text[:30]}...': {len(steps)} steps")
+            return steps
+
+        except httpx.HTTPStatusError as e:
+            # Don't record 404 as failure - it just means concept not found
+            if e.response.status_code == 404:
+                logger.info(f"Symptom not found in graph: {symptom_text[:50]}...")
+                return []
+            logger.error(f"PDF API symptom search error: {e.response.status_code}")
+            self._record_failure()
+            return []
+        except Exception as e:
+            logger.error(f"PDF API symptom search failed: {e}")
             self._record_failure()
             return []
 
@@ -544,6 +652,208 @@ class DocumentGraphService:
         pattern = r'(SRVO|MOTN|SYST|HOST|INTP|PRIO|COMM|VISI|SRIO|FILE|MACR|PALL|SPOT|ARC|DISP)-(\d{3,4})'
         matches = re.findall(pattern, text.upper())
         return [f"{prefix}-{num}" for prefix, num in matches]
+
+    # ============================================
+    # STRUCTURED CAUSAL CHAIN FORMATTING (2026-01-04)
+    # ============================================
+
+    def format_causal_chain_for_synthesis(
+        self,
+        steps: List[TroubleshootingStep],
+        error_code: Optional[str] = None,
+        include_parts: bool = True,
+        include_severity: bool = True
+    ) -> str:
+        """
+        Format troubleshooting path as structured context for LLM synthesis.
+
+        Produces XML-like structure that helps LLMs understand causal relationships:
+        - Error → Cause chain with edge type markers
+        - Solution steps with procedure details
+        - Component and part number references
+
+        This structured format improves LLM comprehension of:
+        - Causal relationships (what leads to what)
+        - Step sequencing (diagnosis → solution order)
+        - Entity types (error vs diagnosis vs solution)
+
+        Args:
+            steps: List of TroubleshootingStep from path traversal
+            error_code: Optional error code for header
+            include_parts: Include part numbers in output
+            include_severity: Include severity classification
+
+        Returns:
+            Structured XML-like string for synthesis context
+        """
+        if not steps:
+            return ""
+
+        lines = []
+
+        # Header with error code if provided
+        if error_code:
+            lines.append(f'<troubleshooting_chain error_code="{error_code}">')
+        else:
+            lines.append('<troubleshooting_chain>')
+
+        # Derive severity from error category
+        severity = "unknown"
+        if error_code:
+            category = error_code.split('-')[0] if '-' in error_code else ""
+            severity_map = {
+                'SRVO': 'critical',   # Servo alarms - usually need immediate attention
+                'MOTN': 'warning',    # Motion alarms - may allow continued operation
+                'SYST': 'critical',   # System alarms - often require restart
+                'HOST': 'info',       # Host communication - may be recoverable
+                'INTP': 'warning',    # Interpreter - program issues
+                'PRIO': 'critical',   # Priority alarms - high severity
+            }
+            severity = severity_map.get(category, 'warning')
+
+        # Group steps by type for better structure
+        errors = [s for s in steps if s.step_type == 'error']
+        diagnoses = [s for s in steps if s.step_type == 'diagnosis']
+        solutions = [s for s in steps if s.step_type == 'solution']
+        procedures = [s for s in steps if s.step_type == 'procedure']
+        other = [s for s in steps if s.step_type not in ('error', 'diagnosis', 'solution', 'procedure')]
+
+        # Error section
+        if errors:
+            for step in errors:
+                severity_attr = f' severity="{severity}"' if include_severity else ""
+                lines.append(f'  <step type="error"{severity_attr}>')
+                lines.append(f'    <title>{self._escape_xml(step.title)}</title>')
+                if step.content:
+                    lines.append(f'    <description>{self._escape_xml(step.content[:500])}</description>')
+                if include_parts and step.metadata.get('part_numbers'):
+                    parts = ', '.join(step.metadata['part_numbers'])
+                    lines.append(f'    <affected_parts>{parts}</affected_parts>')
+                lines.append('  </step>')
+
+        # Diagnosis section (causes)
+        if diagnoses:
+            for step in diagnoses:
+                lines.append('  <step type="diagnosis" edge="CAUSED_BY">')
+                lines.append(f'    <title>{self._escape_xml(step.title)}</title>')
+                if step.content:
+                    lines.append(f'    <cause>{self._escape_xml(step.content[:500])}</cause>')
+                if include_parts and step.metadata.get('components'):
+                    comps = ', '.join(step.metadata['components'])
+                    lines.append(f'    <components>{comps}</components>')
+                lines.append('  </step>')
+
+        # Solution section (remedies)
+        if solutions:
+            for step in solutions:
+                lines.append('  <step type="solution" edge="RESOLVED_BY">')
+                lines.append(f'    <title>{self._escape_xml(step.title)}</title>')
+                if step.content:
+                    lines.append(f'    <action>{self._escape_xml(step.content[:500])}</action>')
+                if include_parts and step.metadata.get('part_numbers'):
+                    parts = ', '.join(step.metadata['part_numbers'])
+                    lines.append(f'    <required_parts>{parts}</required_parts>')
+                lines.append('  </step>')
+
+        # Procedure section (detailed steps)
+        if procedures:
+            for i, step in enumerate(procedures, 1):
+                lines.append(f'  <step type="procedure" sequence="{i}">')
+                lines.append(f'    <title>{self._escape_xml(step.title)}</title>')
+                if step.content:
+                    lines.append(f'    <instruction>{self._escape_xml(step.content[:500])}</instruction>')
+                lines.append('  </step>')
+
+        # Reference section (tables, visuals, info)
+        if other:
+            for step in other:
+                lines.append(f'  <step type="{step.step_type}">')
+                lines.append(f'    <title>{self._escape_xml(step.title)}</title>')
+                if step.content:
+                    lines.append(f'    <content>{self._escape_xml(step.content[:300])}</content>')
+                lines.append('  </step>')
+
+        lines.append('</troubleshooting_chain>')
+
+        return '\n'.join(lines)
+
+    def _escape_xml(self, text: str) -> str:
+        """Escape special XML characters in text"""
+        if not text:
+            return ""
+        return (text
+            .replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;')
+            .replace('"', '&quot;')
+            .replace("'", '&apos;'))
+
+    async def get_structured_troubleshooting_context(
+        self,
+        query: str,
+        mode: str = "semantic_astar",
+        max_hops: int = 4,
+        max_tokens: int = 4000
+    ) -> Optional[str]:
+        """
+        Get structured troubleshooting context for synthesis.
+
+        Automatically detects entry type (error code vs symptom) and
+        returns formatted causal chain.
+
+        Args:
+            query: User query (may contain error codes or symptoms)
+            mode: Traversal mode
+            max_hops: Maximum traversal depth
+            max_tokens: Token limit for output
+
+        Returns:
+            Structured XML-like troubleshooting context or None
+        """
+        if not self.is_available:
+            return None
+
+        # Try error code extraction first
+        error_codes = self._extract_error_codes(query)
+
+        if error_codes:
+            # Direct error code lookup
+            all_steps = []
+            for code in error_codes[:2]:  # Limit to 2 codes
+                steps = await self.query_troubleshooting_path(
+                    error_code=code,
+                    max_hops=max_hops,
+                    mode=mode
+                )
+                if steps:
+                    # Format each error code's chain
+                    chain = self.format_causal_chain_for_synthesis(
+                        steps=steps,
+                        error_code=code
+                    )
+                    all_steps.append(chain)
+
+            if all_steps:
+                context = '\n\n'.join(all_steps)
+                # Enforce token limit
+                if len(context) > max_tokens * 4:
+                    context = context[:max_tokens * 4] + '\n\n<!-- Truncated -->'
+                return context
+
+        # Fallback to symptom-based search
+        steps = await self.query_by_symptom(
+            symptom_text=query,
+            max_hops=max_hops,
+            mode=mode
+        )
+
+        if steps:
+            context = self.format_causal_chain_for_synthesis(steps=steps)
+            if len(context) > max_tokens * 4:
+                context = context[:max_tokens * 4] + '\n\n<!-- Truncated -->'
+            return context
+
+        return None
 
     # ============================================
     # STATISTICS & MONITORING
