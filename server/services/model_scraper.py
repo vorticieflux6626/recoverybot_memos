@@ -511,7 +511,7 @@ Example format: "Specialized for [primary task]. Excels at [capabilities]. [Trad
                     existing_spec = existing.scalar_one_or_none()
 
                     if existing_spec and existing_spec.last_scraped:
-                        age = datetime.now(timezone.utc) - existing_spec.last_scraped
+                        age = datetime.utcnow() - existing_spec.last_scraped
                         if age < timedelta(hours=self.CACHE_TTL_HOURS):
                             logger.debug(f"Skipping {base_model}: cache still valid")
                             continue
@@ -562,7 +562,7 @@ Example format: "Specialized for [primary task]. Excels at [capabilities]. [Trad
                         existing.vision = is_vision
                         existing.tags = scraped.get("tags", [])
                         existing.source_url = scraped.get("url")
-                        existing.last_scraped = datetime.now(timezone.utc)
+                        existing.last_scraped = datetime.utcnow()
                         existing.scrape_successful = scraped.get("success", False)
 
                         # Synthesize description if missing OR if resynthesize_all is True
@@ -615,7 +615,7 @@ Example format: "Specialized for [primary task]. Excels at [capabilities]. [Trad
                             vision=is_vision,
                             tags=scraped.get("tags", []),
                             source_url=scraped.get("url"),
-                            last_scraped=datetime.now(timezone.utc),
+                            last_scraped=datetime.utcnow(),
                             scrape_successful=scraped.get("success", False),
                         )
                         session.add(new_spec)
