@@ -199,6 +199,7 @@ from .self_reflection import (
     SupportLevel,
     TemporalFact,
     TemporalConflict,
+    CrossDomainIssue,
     create_self_reflection_agent,
     get_self_reflection_agent
 )
@@ -1099,6 +1100,27 @@ from .observability_dashboard import (
     DashboardStats,
     get_observability_dashboard,
     create_request_observability,
+)
+
+# Phase 48: Cross-Domain Hallucination Mitigation (January 2026)
+from .cross_domain_validator import (
+    CrossDomainValidator,
+    CrossDomainValidationResult,
+    ClaimValidationResult,
+    ExtractedClaim,
+    ValidationSeverity,
+    ClaimType,
+    get_cross_domain_validator,
+)
+
+from .entity_grounding import (
+    EntityGroundingAgent,
+    EntityGroundingResults,
+    GroundingResult,
+    ExtractedEntity,
+    GroundingStatus,
+    EntityType as GroundingEntityType,
+    get_entity_grounding_agent,
 )
 
 __all__ = [

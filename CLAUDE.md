@@ -1,6 +1,6 @@
 # memOS Server
 
-> **Updated**: 2026-01-04 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.87.0
+> **Updated**: 2026-01-04 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.88.0
 
 ## Quick Reference
 
@@ -239,6 +239,55 @@ technical_beam_width: int = 10              # Width (5-50)
 **Files Modified:**
 - `core/document_graph_service.py`: `query_by_symptom()`, `format_causal_chain_for_synthesis()`, `get_structured_troubleshooting_context()`
 - `agentic/orchestrator_universal.py`: PHASE 4.6, updated `_search_technical_docs()`, new FeatureConfig params
+
+### Cross-Domain Hallucination Mitigation (Phase 48, 2026-01-04)
+
+Multi-layered validation system to catch spurious cross-domain claims in industrial automation queries:
+
+**Problem Solved:**
+- False causal chains: "SRVO-068 robot alarm causes IMM hydraulic fluctuations" (impossible)
+- Fabricated entities: Invalid error codes, wrong part number formats
+- Spurious cross-domain links: Robot servo → Hydraulic → eDart (no physical connection)
+
+**Architecture:**
+| Layer | Component | Location | Purpose |
+|-------|-----------|----------|---------|
+| Schema | Cross-System Connection Registry | PDF Tools | Prevent invalid edges at write-time |
+| Schema | Part Number Pattern Registry | PDF Tools | Validate format before storage |
+| Agent | CrossDomainValidator | memOS | Validate claims at query-time |
+| Agent | EntityGroundingAgent | memOS | Verify entities via PDF API lookup |
+| Prompt | CROSS_DOMAIN_CONSTRAINTS | memOS | LLM-level guardrails in synthesis |
+
+**FeatureConfig Parameters:**
+```python
+enable_cross_domain_validation: bool = False  # ENHANCED/RESEARCH/FULL
+enable_entity_grounding: bool = False         # ENHANCED/RESEARCH/FULL
+cross_domain_severity_threshold: str = "warning"  # critical/warning/info
+```
+
+**Preset Integration:**
+| Preset | cross_domain_validation | entity_grounding | severity |
+|--------|------------------------|------------------|----------|
+| MINIMAL | false | false | - |
+| BALANCED | false | false | - |
+| ENHANCED | true | true | warning |
+| RESEARCH | true | true | critical |
+| FULL | true | true | critical |
+
+**Files Created:**
+- `agentic/cross_domain_validator.py`: CrossDomainValidator agent
+- `agentic/entity_grounding.py`: EntityGroundingAgent with pattern matching
+- `agentic/data/industrial_relationships.yaml`: 488-line validation corpus
+
+**Files Modified:**
+- `agentic/orchestrator_universal.py`: Feature flags, PHASE 9.5, pipeline integration
+- `agentic/synthesizer.py`: CROSS_DOMAIN_CONSTRAINTS prompt block
+- `agentic/self_reflection.py`: `_check_cross_domain_claims()` method
+
+**Test Results (2026-01-04):**
+- ENHANCED preset: ✅ Correctly rejected false cross-domain causation
+- BALANCED preset: ✅ Synthesis prompt constraints effective
+- Technical accuracy: ✅ SRVO-062/068 troubleshooting verified against FANUC docs
 
 ---
 

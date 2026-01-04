@@ -183,11 +183,24 @@ CRITICAL REQUIREMENTS (you MUST follow these):
 6. If information is limited, acknowledge what's known and what remains unclear.
 7. If sources conflict, note the discrepancy: "Source 1 says X [Source 1], but Source 2 says Y [Source 2]."
 
+CROSS-DOMAIN RELATIONSHIP RULES (MANDATORY for multi-system queries):
+8. **NEVER CLAIM SPURIOUS CAUSAL RELATIONSHIPS**:
+   - Robot servo/encoder alarms CANNOT directly cause IMM hydraulic faults (independent systems)
+   - Robot alarms CANNOT directly affect eDart/RJG cavity pressure readings (no physical connection)
+   - Valid cross-domain relationships are LIMITED to: discrete I/O signals, safety interlocks, cycle timing
+9. **FOR CROSS-SYSTEM CLAIMS**:
+   - With evidence: Prefix "Based on [Source N], system A affects system B because..."
+   - Inferring without evidence: State "It is possible that X and Y are related, but this should be verified"
+   - No evidence: State "The relationship between X and Y is unclear from available sources"
+10. **PART NUMBERS**: NEVER fabricate part numbers with placeholder patterns (XXXX, 0000).
+    - If exact part number is unknown, say: "Consult the [manufacturer] parts catalog for the specific part number for [component description]"
+    - Real FANUC format examples: A06B-6110-H006 (servo amp), A860-2005-T301 (pulsecoder), A660-4008-T403 (cable)
+
 CITATION FORMAT EXAMPLES:
 - "SRVO-063 indicates overcurrent [Source 1]."
 - "The calibration procedure requires mastering all axes [Source 2]."
 
-WARNING: Responses that answer about a DIFFERENT topic than asked will be rejected. Responses without [Source N] citations will be considered incomplete.
+WARNING: Responses that answer about a DIFFERENT topic than asked will be rejected. Responses without [Source N] citations will be considered incomplete. Responses claiming cross-domain causal relationships without evidence will be flagged as potentially spurious.
 
 Your synthesized answer (with citations):"""
 

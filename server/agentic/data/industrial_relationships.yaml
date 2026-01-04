@@ -1,0 +1,487 @@
+# Industrial Equipment Relationships Corpus
+# Phase 48: Cross-Domain Hallucination Mitigation
+#
+# This file defines valid and invalid cross-system relationships for
+# industrial automation equipment. Used by CrossDomainValidator to
+# catch spurious causal chains in LLM synthesis.
+#
+# Based on:
+# - ISA-95 Equipment Hierarchy Standard
+# - OPC UA Information Model Semantics
+# - Real-world manufacturing floor layouts
+#
+# Updated: 2026-01-04
+
+# =============================================================================
+# SYSTEM DEFINITIONS
+# =============================================================================
+systems:
+  fanuc_robot:
+    canonical_name: "FANUC Robot Controller"
+    aliases:
+      - fanuc
+      - robot
+      - r-30i
+      - r-30ia
+      - r-30ib
+      - robot_controller
+      - manipulator
+    components:
+      - controller
+      - servo_amplifier
+      - servo_amp
+      - pulsecoder
+      - encoder
+      - teach_pendant
+      - tp
+      - motor
+      - arm
+      - eoat  # End of arm tooling
+    error_code_prefixes:
+      - SRVO
+      - MOTN
+      - SYST
+      - INTP
+      - HOST
+      - FILE
+      - TOOL
+      - ROPE
+      - PRIO
+
+  injection_molding_machine:
+    canonical_name: "Injection Molding Machine"
+    aliases:
+      - imm
+      - molding_machine
+      - press
+      - krauss_maffei
+      - km
+      - engel
+      - arburg
+      - nissei
+      - toshiba
+      - sumitomo
+      - imm_controller
+    components:
+      - hydraulic_system
+      - hydraulic_pump
+      - hpu
+      - power_unit
+      - injection_unit
+      - screw
+      - barrel
+      - clamp_unit
+      - mold
+      - ejector
+      - heater_bands
+      - thermocouple
+    error_code_prefixes:
+      - E
+      - A
+      - W
+
+  process_monitoring:
+    canonical_name: "Process Monitoring System"
+    aliases:
+      - edart
+      - rjg
+      - kistler
+      - cavity_pressure
+      - process_monitor
+      - monitoring_system
+    components:
+      - pressure_sensor
+      - cavity_sensor
+      - nozzle_sensor
+      - data_acquisition
+      - daq
+      - amplifier
+      - charge_amplifier
+    error_code_prefixes:
+      - M
+      - S
+
+  plc:
+    canonical_name: "Programmable Logic Controller"
+    aliases:
+      - plc
+      - allen_bradley
+      - allen-bradley
+      - ab
+      - controllogix
+      - compactlogix
+      - siemens_s7
+      - s7-1500
+      - s7-1200
+      - omron
+      - mitsubishi
+    components:
+      - cpu
+      - io_module
+      - input_card
+      - output_card
+      - communication_module
+      - ethernet_module
+      - profinet
+      - ethernet_ip
+    error_code_prefixes:
+      - F
+      - E
+
+  hot_runner:
+    canonical_name: "Hot Runner System"
+    aliases:
+      - hot_runner
+      - hot_runner_controller
+      - moldmasters
+      - incoe
+      - synventive
+      - husky
+      - ewikon
+    components:
+      - manifold
+      - nozzle
+      - heater
+      - thermocouple
+      - valve_gate
+      - controller
+    error_code_prefixes:
+      - HR
+      - TC
+
+  servo_drive:
+    canonical_name: "Servo Drive/Amplifier"
+    aliases:
+      - servo_drive
+      - servo_amplifier
+      - servo_amp
+      - drive
+      - amplifier
+      - axis_drive
+    components:
+      - power_stage
+      - control_board
+      - feedback_interface
+      - encoder_interface
+      - brake_resistor
+
+  encoder:
+    canonical_name: "Encoder/Feedback Device"
+    aliases:
+      - encoder
+      - pulsecoder
+      - pulse_coder
+      - resolver
+      - feedback_device
+      - position_feedback
+    components:
+      - optical_disk
+      - reader_head
+      - signal_processor
+      - cable
+      - connector
+
+  hydraulic_system:
+    canonical_name: "Hydraulic System"
+    aliases:
+      - hydraulic
+      - hydraulic_system
+      - hpu
+      - hydraulic_power_unit
+      - pump
+      - hydraulic_pump
+    components:
+      - pump
+      - motor
+      - reservoir
+      - valve
+      - proportional_valve
+      - servo_valve
+      - filter
+      - accumulator
+      - cooler
+      - oil_cooler
+
+  conveyor:
+    canonical_name: "Conveyor System"
+    aliases:
+      - conveyor
+      - belt
+      - belt_conveyor
+      - material_handling
+    components:
+      - motor
+      - belt
+      - roller
+      - sensor
+      - photoeye
+      - vfd
+      - variable_frequency_drive
+
+# =============================================================================
+# VALID CROSS-SYSTEM RELATIONSHIPS
+# =============================================================================
+valid_relationships:
+  # Robot ↔ IMM Integration
+  - source: fanuc_robot
+    target: injection_molding_machine
+    connection_types:
+      - discrete_io
+      - safety_interlock
+      - fieldbus
+    description: "Robot and IMM coordinate via discrete I/O signals for cycle synchronization, part removal, and safety interlocks"
+    example_signals:
+      - "Mold open signal"
+      - "Part present signal"
+      - "Robot in mold signal"
+      - "Cycle complete handshake"
+
+  # IMM → Process Monitoring
+  - source: injection_molding_machine
+    target: process_monitoring
+    connection_types:
+      - analog_signal
+      - fieldbus
+    description: "IMM provides analog signals (pressure, temperature) to process monitoring systems"
+    example_signals:
+      - "Cavity pressure (0-10V or 4-20mA)"
+      - "Injection pressure"
+      - "Screw position"
+      - "Mold temperature"
+
+  # PLC ↔ Robot
+  - source: plc
+    target: fanuc_robot
+    connection_types:
+      - discrete_io
+      - fieldbus
+      - ethernet
+    description: "PLC can coordinate robot operations via discrete I/O or industrial Ethernet"
+
+  # PLC ↔ IMM
+  - source: plc
+    target: injection_molding_machine
+    connection_types:
+      - discrete_io
+      - fieldbus
+      - analog_signal
+    description: "PLC can integrate with IMM for cell-level automation"
+
+  # Hot Runner ↔ IMM
+  - source: hot_runner
+    target: injection_molding_machine
+    connection_types:
+      - discrete_io
+      - analog_signal
+      - serial
+    description: "Hot runner controller receives signals from IMM for zone enable/disable during cycle"
+
+  # Robot → Conveyor
+  - source: fanuc_robot
+    target: conveyor
+    connection_types:
+      - discrete_io
+    description: "Robot signals conveyor for part placement coordination"
+
+  # Internal: Servo ↔ Controller (within same system)
+  - source: servo_drive
+    target: fanuc_robot
+    connection_types:
+      - serial
+      - fieldbus
+    description: "Servo drives are internal to robot system - communicate via internal bus"
+
+  # Internal: Encoder → Controller (within same system)
+  - source: encoder
+    target: fanuc_robot
+    connection_types:
+      - serial
+    description: "Encoders are internal feedback to robot controller"
+
+# =============================================================================
+# INVALID CROSS-SYSTEM RELATIONSHIPS
+# =============================================================================
+invalid_relationships:
+  # Robot servo → IMM hydraulics (NO CONNECTION)
+  - source_system: servo_drive
+    target_system: hydraulic_system
+    reason: "No physical or electrical connection exists between robot servo amplifiers and IMM hydraulic systems. These are completely isolated subsystems."
+    severity: critical
+    hallucination_example: "Servo encoder alarm causes IMM hydraulic pressure fluctuations"
+
+  # Robot encoder → IMM hydraulics (NO CONNECTION)
+  - source_system: encoder
+    target_system: hydraulic_system
+    reason: "Robot encoders/pulsecoders have no connection to IMM hydraulic systems"
+    severity: critical
+    hallucination_example: "Pulsecoder fault leads to hydraulic instability"
+
+  # Robot encoder → IMM controller (NO CONNECTION)
+  - source_system: encoder
+    target_system: injection_molding_machine
+    reason: "Robot encoder feedback is internal to robot system only"
+    severity: critical
+    hallucination_example: "Encoder position error affects mold closing force"
+
+  # Robot encoder → Process monitoring (NO CONNECTION)
+  - source_system: encoder
+    target_system: process_monitoring
+    reason: "Robot encoder data is not shared with process monitoring systems"
+    severity: critical
+    hallucination_example: "Encoder drift causes cavity pressure reading errors"
+
+  # Servo drive → Process monitoring (NO CONNECTION)
+  - source_system: servo_drive
+    target_system: process_monitoring
+    reason: "Robot servo amplifiers are isolated from process monitoring equipment"
+    severity: critical
+    hallucination_example: "Servo alarm triggers eDart sensor recalibration"
+
+  # Robot controller → Hydraulics (NO DIRECT)
+  - source_system: fanuc_robot
+    target_system: hydraulic_system
+    reason: "Robot controller has no direct connection to IMM hydraulic system - only discrete I/O to IMM controller"
+    severity: warning
+    note: "Indirect effect through cycle timing is possible but not causal"
+
+  # Hot runner → Robot (NO CONNECTION)
+  - source_system: hot_runner
+    target_system: fanuc_robot
+    reason: "Hot runner systems do not communicate with robot controllers"
+    severity: critical
+    hallucination_example: "Hot runner zone fault causes robot position error"
+
+# =============================================================================
+# CAUSAL RULES
+# =============================================================================
+causal_rules:
+  # What robot alarms CAN affect
+  robot_alarm_effects:
+    affects:
+      - robot_motion
+      - robot_io_signals
+      - cycle_timing
+      - part_handling
+    does_not_affect:
+      - imm_hydraulic_pressure
+      - imm_injection_pressure
+      - cavity_pressure_readings
+      - hot_runner_temperatures
+      - mold_temperature
+      - process_monitoring_accuracy
+    note: "Robot alarms may cause CYCLE DELAYS (indirect timing effect) but do not directly affect other systems' internal parameters"
+
+  # What IMM alarms CAN affect
+  imm_alarm_effects:
+    affects:
+      - cycle_time
+      - part_quality
+      - robot_wait_time
+      - process_monitoring_readings  # Because IMM provides the signals
+    does_not_affect:
+      - robot_servo_accuracy
+      - robot_encoder_readings
+      - robot_internal_faults
+    note: "IMM faults affect process monitoring because monitoring reads IMM parameters"
+
+  # What servo faults CAN affect
+  servo_fault_effects:
+    affects:
+      - robot_motion
+      - axis_performance
+      - robot_alarms  # Servo fault causes robot alarm
+    does_not_affect:
+      - other_robot_axes  # Each axis is independent (mostly)
+      - external_systems
+
+  # What encoder faults CAN affect
+  encoder_fault_effects:
+    affects:
+      - servo_performance
+      - position_accuracy
+      - robot_alarms
+    does_not_affect:
+      - external_systems
+      - other_axes  # Each encoder is for one axis
+
+# =============================================================================
+# SYMPTOM-TO-SYSTEM MAPPING
+# =============================================================================
+symptom_mapping:
+  # Symptoms that should look at ROBOT
+  robot_symptoms:
+    - "robot not moving"
+    - "position error"
+    - "servo alarm"
+    - "motion error"
+    - "collision"
+    - "overload"
+    - "arm stuck"
+    - "teach pendant error"
+
+  # Symptoms that should look at IMM
+  imm_symptoms:
+    - "short shot"
+    - "flash"
+    - "burn marks"
+    - "sink marks"
+    - "warping"
+    - "hydraulic pressure"
+    - "clamp force"
+    - "injection speed"
+    - "barrel temperature"
+
+  # Symptoms that should look at PROCESS MONITORING
+  monitoring_symptoms:
+    - "cavity pressure variation"
+    - "process instability"
+    - "shot-to-shot variation"
+    - "sensor reading"
+    - "eDart alarm"
+    - "RJG fault"
+
+  # Symptoms that should look at HOT RUNNER
+  hot_runner_symptoms:
+    - "zone temperature"
+    - "heater failure"
+    - "thermocouple fault"
+    - "gate issue"
+    - "color streaks"  # Often hot runner related
+    - "nozzle freeze"
+
+# =============================================================================
+# COMMON HALLUCINATION PATTERNS
+# =============================================================================
+common_hallucinations:
+  - pattern: "servo alarm causes hydraulic"
+    correct: "Servo alarms are isolated to robot system; they cannot cause hydraulic issues"
+
+  - pattern: "encoder affects pressure"
+    correct: "Encoder feedback is internal to robot servo loop; it has no effect on pressure systems"
+
+  - pattern: "robot alarm causes part defect"
+    correct: "Robot alarms typically stop the cycle; part defects come from process parameters, not robot faults"
+
+  - pattern: "IMM fault causes robot position error"
+    correct: "IMM faults cannot affect robot position accuracy; they may cause timing delays only"
+
+  - pattern: "hot runner affects robot speed"
+    correct: "Hot runner systems are independent of robot control; no connection exists"
+
+# =============================================================================
+# METADATA
+# =============================================================================
+metadata:
+  version: "1.0.0"
+  created: "2026-01-04"
+  author: "Cross-Domain Hallucination Mitigation System"
+  standards_reference:
+    - "ISA-95 Equipment Hierarchy"
+    - "OPC UA Part 8: Data Access"
+    - "FANUC R-30iB Integration Manual"
+    - "Krauss-Maffei MC6 Communication Manual"
+  purpose: |
+    This corpus defines valid and invalid cross-system relationships in
+    industrial automation environments. It is used by the CrossDomainValidator
+    to detect and flag spurious causal claims that LLMs may hallucinate when
+    synthesizing information about multi-system troubleshooting scenarios.

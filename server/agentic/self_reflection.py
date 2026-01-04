@@ -24,6 +24,12 @@ import httpx
 from .metrics import get_performance_metrics
 from .context_limits import get_model_context_window
 from .gateway_client import get_gateway_client, LogicalModel, GatewayResponse
+from .cross_domain_validator import (
+    CrossDomainValidator,
+    CrossDomainValidationResult,
+    ValidationSeverity,
+    get_cross_domain_validator
+)
 
 logger = logging.getLogger("agentic.self_reflection")
 
@@ -103,6 +109,16 @@ class TemporalConflict:
 
 
 @dataclass
+class CrossDomainIssue:
+    """A cross-domain relationship issue detected in synthesis"""
+    claim_text: str
+    source_system: str
+    target_system: str
+    severity: str  # critical, warning, info
+    message: str
+
+
+@dataclass
 class ReflectionResult:
     """Result of Self-RAG reflection on synthesis"""
     relevance_score: float  # ISREL: 0-1
@@ -110,6 +126,7 @@ class ReflectionResult:
     usefulness_score: float  # ISUSE: 0-1
     temporal_conflicts: List[TemporalConflict] = field(default_factory=list)
     unsupported_claims: List[str] = field(default_factory=list)
+    cross_domain_issues: List[CrossDomainIssue] = field(default_factory=list)  # Phase 48
     needs_refinement: bool = False
     refinement_suggestions: List[str] = field(default_factory=list)
     overall_confidence: float = 0.5
@@ -130,6 +147,16 @@ class ReflectionResult:
                 for c in self.temporal_conflicts
             ],
             "unsupported_claims": self.unsupported_claims,
+            "cross_domain_issues": [
+                {
+                    "claim_text": i.claim_text,
+                    "source_system": i.source_system,
+                    "target_system": i.target_system,
+                    "severity": i.severity,
+                    "message": i.message
+                }
+                for i in self.cross_domain_issues
+            ],
             "needs_refinement": self.needs_refinement,
             "refinement_suggestions": self.refinement_suggestions,
             "overall_confidence": self.overall_confidence
@@ -188,9 +215,10 @@ class SelfReflectionAgent:
         relevance_task = self._check_relevance(query, synthesis, request_id, use_gateway)
         support_task = self._check_support(synthesis, sources, scraped_content, request_id, use_gateway)
         temporal_task = self._check_temporal_consistency(synthesis, sources)
+        cross_domain_task = self._check_cross_domain_claims(synthesis, request_id)
 
-        relevance_score, support_result, temporal_conflicts = await asyncio.gather(
-            relevance_task, support_task, temporal_task
+        relevance_score, support_result, temporal_conflicts, cross_domain_issues = await asyncio.gather(
+            relevance_task, support_task, temporal_task, cross_domain_task
         )
 
         support_level, unsupported_claims = support_result
@@ -199,11 +227,13 @@ class SelfReflectionAgent:
         usefulness_score = await self._check_usefulness(query, synthesis, request_id, use_gateway)
 
         # Determine if refinement is needed
+        has_critical_cross_domain = any(i.severity == "critical" for i in cross_domain_issues)
         needs_refinement = (
             relevance_score < 0.7 or
             support_level in [SupportLevel.NO_SUPPORT, SupportLevel.CONTRADICTED] or
             usefulness_score < 0.6 or
-            len(temporal_conflicts) > 0
+            len(temporal_conflicts) > 0 or
+            has_critical_cross_domain  # Phase 48: Cross-domain issues
         )
 
         # Generate refinement suggestions
@@ -218,11 +248,19 @@ class SelfReflectionAgent:
             )
         if relevance_score < 0.7:
             refinement_suggestions.append("Focus synthesis more directly on the query")
+        # Phase 48: Add cross-domain suggestions
+        if cross_domain_issues:
+            for issue in cross_domain_issues[:2]:  # Limit suggestions
+                refinement_suggestions.append(
+                    f"Remove spurious cross-domain claim: {issue.source_system} cannot directly affect {issue.target_system}"
+                )
 
-        # Calculate overall confidence
+        # Calculate overall confidence (penalize for cross-domain issues)
         confidence = self._calculate_confidence(
             relevance_score, support_level, usefulness_score, temporal_conflicts
         )
+        if has_critical_cross_domain:
+            confidence *= 0.7  # Reduce confidence for critical cross-domain issues
 
         return ReflectionResult(
             relevance_score=relevance_score,
@@ -230,10 +268,47 @@ class SelfReflectionAgent:
             usefulness_score=usefulness_score,
             temporal_conflicts=temporal_conflicts,
             unsupported_claims=unsupported_claims,
+            cross_domain_issues=cross_domain_issues,
             needs_refinement=needs_refinement,
             refinement_suggestions=refinement_suggestions,
             overall_confidence=confidence
         )
+
+    async def _check_cross_domain_claims(
+        self,
+        synthesis: str,
+        request_id: str = ""
+    ) -> List[CrossDomainIssue]:
+        """
+        Phase 48: Check for spurious cross-domain relationship claims.
+
+        Uses CrossDomainValidator to detect hallucinated causal chains
+        between physically isolated systems.
+        """
+        try:
+            validator = get_cross_domain_validator()
+            result = await validator.validate_synthesis(synthesis)
+
+            # Convert validation results to CrossDomainIssue objects
+            issues = []
+            for claim_result in result.claim_results:
+                if not claim_result.is_valid or claim_result.severity != ValidationSeverity.INFO:
+                    issues.append(CrossDomainIssue(
+                        claim_text=claim_result.claim.text,
+                        source_system=claim_result.claim.source_system,
+                        target_system=claim_result.claim.target_system,
+                        severity=claim_result.severity.value,
+                        message=claim_result.message
+                    ))
+
+            if issues:
+                logger.info(f"[{request_id}] Cross-domain check found {len(issues)} issues")
+
+            return issues
+
+        except Exception as e:
+            logger.warning(f"[{request_id}] Cross-domain check failed: {e}")
+            return []
 
     async def _check_relevance(
         self,

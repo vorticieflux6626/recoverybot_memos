@@ -33,7 +33,7 @@ import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, Dict, Any, List, Set
+from typing import Optional, Dict, Any, List, Set, Tuple
 from urllib.parse import urlparse
 import uuid
 
@@ -147,6 +147,14 @@ from .contrastive_retriever import (
 )
 from .scraper import VisionAnalyzer, DeepReader, JS_HEAVY_DOMAINS
 from .synthesizer import DEFAULT_THINKING_MODEL
+
+# Cross-Domain Hallucination Mitigation (Phase 48)
+from .cross_domain_validator import (
+    CrossDomainValidator,
+    CrossDomainValidationResult,
+    ValidationSeverity,
+    get_cross_domain_validator
+)
 
 # PDF Extraction Tools integration
 from core.document_graph_service import (
@@ -417,6 +425,12 @@ class FeatureConfig:
     technical_max_hops: int = 4                 # Traversal depth (2-6)
     technical_beam_width: int = 10              # Beam search width (5-50)
 
+    # Cross-Domain Hallucination Mitigation (Layer 3) - Phase 48
+    # Validates cross-system relationship claims to catch spurious causal chains
+    enable_cross_domain_validation: bool = False  # Validate cross-domain claims (servo→hydraulic INVALID)
+    enable_entity_grounding: bool = False         # Ground entities via PDF Tools API
+    cross_domain_severity_threshold: str = "warning"  # critical/warning/info
+
     # LLM Gateway (Layer 3) - Unified LLM routing
     enable_gateway_routing: bool = False   # Route LLM calls through gateway service
 
@@ -508,7 +522,11 @@ PRESET_CONFIGS = {
         enable_symptom_entry=True,  # Allow symptom-based entry
         enable_structured_causal_chain=True,  # XML-like output for synthesis
         technical_traversal_mode="semantic_astar",
-        technical_max_hops=4
+        technical_max_hops=4,
+        # Cross-Domain Hallucination Mitigation (Phase 48)
+        enable_cross_domain_validation=True,  # Validate cross-domain claims
+        enable_entity_grounding=True,         # Ground entities via PDF API
+        cross_domain_severity_threshold="warning"
     ),
     OrchestratorPreset.RESEARCH: FeatureConfig(
         # All enhanced features
@@ -572,7 +590,11 @@ PRESET_CONFIGS = {
         # G.6.5: Contrastive Retriever Training (R3)
         enable_contrastive_learning=True,  # Trial-and-feedback retrieval learning
         # Part L.5: Constraint Verification Gate
-        enable_constraint_verification=True  # Validate output against active directives
+        enable_constraint_verification=True,  # Validate output against active directives
+        # Cross-Domain Hallucination Mitigation (Phase 48)
+        enable_cross_domain_validation=True,   # Validate cross-domain claims
+        enable_entity_grounding=True,          # Ground entities via PDF API
+        cross_domain_severity_threshold="critical"  # Stricter for research
     ),
     OrchestratorPreset.FULL: FeatureConfig(
         # ALL features enabled
@@ -646,7 +668,11 @@ PRESET_CONFIGS = {
         # G.6.5: Contrastive Retriever Training (R3)
         enable_contrastive_learning=True,  # Trial-and-feedback retrieval learning
         # Part L.5: Constraint Verification Gate
-        enable_constraint_verification=True  # Validate output against active directives
+        enable_constraint_verification=True,  # Validate output against active directives
+        # Cross-Domain Hallucination Mitigation (Phase 48)
+        enable_cross_domain_validation=True,   # Validate cross-domain claims
+        enable_entity_grounding=True,          # Ground entities via PDF API
+        cross_domain_severity_threshold="critical"  # Maximum strictness for FULL
     )
 }
 
@@ -802,6 +828,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
         # G.6.5: Contrastive Retriever Training
         self._contrastive_retriever: Optional[ContrastiveRetriever] = None
+
+        # Phase 48: Cross-Domain Hallucination Mitigation
+        self._cross_domain_validator: Optional[CrossDomainValidator] = None
 
         # Graph visualization state for SSE events
         self._graph_state = UniversalGraphState()
@@ -1195,6 +1224,25 @@ class UniversalOrchestrator(BaseSearchPipeline):
             persistence_path = f"{self.db_path}/iteration_bandit_stats.json"
             self._iteration_bandit = get_iteration_bandit(persistence_path)
         return self._iteration_bandit
+
+    def _get_cross_domain_validator(self) -> CrossDomainValidator:
+        """Lazy initialize cross-domain validator for hallucination mitigation."""
+        if self._cross_domain_validator is None:
+            # Map severity threshold string to enum
+            severity_map = {
+                "critical": ValidationSeverity.CRITICAL,
+                "warning": ValidationSeverity.WARNING,
+                "info": ValidationSeverity.INFO,
+            }
+            threshold = severity_map.get(
+                self.config.cross_domain_severity_threshold,
+                ValidationSeverity.WARNING
+            )
+            self._cross_domain_validator = CrossDomainValidator(
+                pdf_api_url="http://localhost:8002",
+                severity_threshold=threshold
+            )
+        return self._cross_domain_validator
 
     def _create_refinement_state(
         self,
@@ -2739,6 +2787,17 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 thinking_tokens=500 if "deepseek" in DEFAULT_PIPELINE_CONFIG.synthesizer_model.lower() else 0
             )
 
+            # PHASE 6.5: Cross-Domain Validation (Phase 48)
+            # Validate synthesis for spurious cross-domain claims
+            if self.config.enable_cross_domain_validation and synthesis:
+                synthesis, cross_domain_result = await self._phase_cross_domain_validation(
+                    synthesis=synthesis,
+                    request_id=request_id,
+                    scratchpad=scratchpad.model_dump() if scratchpad else None
+                )
+                if cross_domain_result and cross_domain_result.critical_issues > 0:
+                    logger.info(f"[{request_id}] Synthesis revised to remove {cross_domain_result.critical_issues} spurious claims")
+
             synthesis_ms = int((time.time() - synthesis_start) * 1000)
 
             # Calculate confidence using heuristic baseline
@@ -3127,6 +3186,15 @@ class UniversalOrchestrator(BaseSearchPipeline):
                             synthesis = await self._phase_synthesis(
                                 request, state, all_scraped_content, search_trace, request_id
                             )
+
+                            # Cross-domain validation on re-synthesized content
+                            if self.config.enable_cross_domain_validation and synthesis:
+                                synthesis, _ = await self._phase_cross_domain_validation(
+                                    synthesis=synthesis,
+                                    request_id=request_id,
+                                    scratchpad=scratchpad.model_dump() if scratchpad else None
+                                )
+
                             synth_ms = int((time.time() - synth_start) * 1000)
                             await emitter.emit(graph_node_completed(request_id, "synthesize", True, graph, synth_ms))
 
@@ -3875,7 +3943,19 @@ class UniversalOrchestrator(BaseSearchPipeline):
             domain_context=domain_context
         )
 
-        # PHASE 9.5: Contradiction Detection
+        # PHASE 9.5a: Cross-Domain Validation (Phase 48)
+        if self.config.enable_cross_domain_validation and synthesis:
+            synthesis, cross_domain_result = await self._phase_cross_domain_validation(
+                synthesis=synthesis,
+                request_id=request_id,
+                scratchpad=scratchpad.model_dump() if scratchpad else None
+            )
+            if cross_domain_result:
+                if cross_domain_result.critical_issues > 0:
+                    enhancement_metadata["features_used"].append("cross_domain_validation")
+                    enhancement_metadata["cross_domain_issues"] = cross_domain_result.critical_issues
+
+        # PHASE 9.5b: Contradiction Detection
         contradictions = None
         if self.config.enable_contradiction_detection:
             contradictions = await self._phase_contradiction_detection(
@@ -4073,6 +4153,14 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         request, state, all_scraped_content, search_trace, request_id,
                         thought_context=thought_context, domain_context=domain_context
                     )
+
+                    # Cross-domain validation on re-synthesized content
+                    if self.config.enable_cross_domain_validation and synthesis:
+                        synthesis, _ = await self._phase_cross_domain_validation(
+                            synthesis=synthesis,
+                            request_id=request_id,
+                            scratchpad=scratchpad.model_dump() if scratchpad else None
+                        )
 
                     # Re-calculate confidence
                     sources = self._get_sources(state)
@@ -5306,6 +5394,69 @@ class UniversalOrchestrator(BaseSearchPipeline):
         })
         self._record_timing("synthesis", time.time() - start)
         return synthesis
+
+    async def _phase_cross_domain_validation(
+        self,
+        synthesis: str,
+        request_id: str,
+        scratchpad: Optional[Dict[str, Any]] = None
+    ) -> Tuple[str, Optional[CrossDomainValidationResult]]:
+        """
+        Phase 9.5: Cross-Domain Validation (Phase 48 Hallucination Mitigation)
+
+        Validates synthesis for spurious cross-domain relationship claims.
+        Catches hallucinations like:
+        - "Servo alarm causes IMM hydraulic fault" (no physical connection)
+        - "Robot error propagates to eDart monitoring" (isolated systems)
+
+        Returns:
+            Tuple of (possibly_revised_synthesis, validation_result)
+        """
+        if not self.config.enable_cross_domain_validation:
+            return synthesis, None
+
+        start = time.time()
+        logger.info(f"[{request_id}] Phase 9.5: Cross-domain validation starting...")
+
+        try:
+            validator = self._get_cross_domain_validator()
+            result = await validator.validate_synthesis(synthesis, scratchpad)
+
+            # Log findings
+            if result.critical_issues > 0:
+                logger.warning(
+                    f"[{request_id}] Cross-domain validation: {result.critical_issues} CRITICAL "
+                    f"hallucinations detected - synthesis will be revised"
+                )
+                for note in result.validation_notes:
+                    logger.warning(f"[{request_id}]   {note}")
+
+            elif result.warnings > 0:
+                logger.info(
+                    f"[{request_id}] Cross-domain validation: {result.warnings} warnings "
+                    f"(unverified relationships hedged)"
+                )
+
+            else:
+                logger.info(
+                    f"[{request_id}] Cross-domain validation: {result.total_claims} claims, "
+                    f"all valid - synthesis passed"
+                )
+
+            # Use revised text if available and there were critical issues
+            final_synthesis = synthesis
+            if result.revised_text and result.critical_issues > 0:
+                final_synthesis = result.revised_text
+                logger.info(f"[{request_id}] Synthesis revised to remove spurious claims")
+
+            self._record_timing("cross_domain_validation", time.time() - start)
+            return final_synthesis, result
+
+        except Exception as e:
+            logger.error(f"[{request_id}] Cross-domain validation failed: {e}")
+            self._record_timing("cross_domain_validation", time.time() - start)
+            # Don't block on validation failure - return original synthesis
+            return synthesis, None
 
     async def _phase_self_reflection(
         self,
