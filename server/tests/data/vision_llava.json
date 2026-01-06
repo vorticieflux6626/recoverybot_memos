@@ -1,0 +1,52 @@
+{
+  "timestamp": "2026-01-05T12:58:57.036318",
+  "ollama_version": "0.13.5",
+  "total_models": 1,
+  "tested_models": 1,
+  "test_duration_seconds": 19.71944832801819,
+  "results": [
+    {
+      "model_name": "llava:latest",
+      "family": "llava",
+      "available": true,
+      "size_gb": 0.0,
+      "tests_run": 3,
+      "tests_passed": 0,
+      "avg_latency_ms": 0.0,
+      "min_latency_ms": null,
+      "max_latency_ms": 0.0,
+      "json_parse_rate": 0.0,
+      "avg_confidence": 0.0,
+      "content_richness": 0.0,
+      "peak_vram_gb": 8.4423828125,
+      "errors": [
+        "general: HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}",
+        "technical: HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}",
+        "contact: HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+      ],
+      "raw_results": [
+        {
+          "prompt": "general",
+          "success": false,
+          "latency_ms": 3101.7818450927734,
+          "response_length": 0,
+          "error": "HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+        },
+        {
+          "prompt": "technical",
+          "success": false,
+          "latency_ms": 8297.355890274048,
+          "response_length": 0,
+          "error": "HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+        },
+        {
+          "prompt": "contact",
+          "success": false,
+          "latency_ms": 8177.844762802124,
+          "response_length": 0,
+          "error": "HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "timestamp": "2026-01-05T12:52:40.737685",
+  "ollama_version": "0.13.5",
+  "total_models": 1,
+  "tested_models": 1,
+  "test_duration_seconds": 33.353755235672,
+  "results": [
+    {
+      "model_name": "qwen3-vl:2b",
+      "family": "qwen3-vl",
+      "available": true,
+      "size_gb": 0.0,
+      "tests_run": 3,
+      "tests_passed": 2,
+      "avg_latency_ms": 11049.278338750204,
+      "min_latency_ms": 4506.3276290893555,
+      "max_latency_ms": 15454.970598220825,
+      "json_parse_rate": 0.6666666666666666,
+      "avg_confidence": 0.475,
+      "content_richness": 0.6052380952380952,
+      "peak_vram_gb": 6.6181640625,
+      "errors": [],
+      "raw_results": [
+        {
+          "prompt": "general",
+          "success": true,
+          "latency_ms": 15454.970598220825,
+          "response_length": 1374,
+          "parsed": true,
+          "richness": 0.8771428571428572
+        },
+        {
+          "prompt": "technical",
+          "success": true,
+          "latency_ms": 4506.3276290893555,
+          "response_length": 236,
+          "parsed": true,
+          "richness": 0.3333333333333333
+        },
+        {
+          "prompt": "contact",
+          "success": true,
+          "latency_ms": 13186.53678894043,
+          "response_length": 0,
+          "parsed": false,
+          "raw_response": ""
+        }
+      ]
+    }
+  ]
+}

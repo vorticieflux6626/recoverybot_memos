@@ -144,6 +144,10 @@ def get_model_context_window(model_name: str) -> int:
         "llama3.3:70b": 131072,
         "phi4-mini:3.8b": 131072,
         "mistral-small3.2:24b": 131072,
+        # Ministral models (128K)
+        "ministral-3:3b": 131072,
+        "ministral-3:8b": 131072,
+        "ministral-3:14b": 131072,
         # Vision models (256K)
         "qwen3-vl:8b": 256000,
         "qwen3-vl:32b": 256000,

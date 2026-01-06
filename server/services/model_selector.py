@@ -51,20 +51,112 @@ class ModelInfo:
         return ModelCapability.TEXT in self.capabilities
 
 
+# ============================================================================
+# Vision Model Test Results (2026-01-05)
+# ============================================================================
+# Models were tested with real screenshots for JSON extraction quality.
+# Quality tiers updated based on actual parse rate and content richness.
+#
+# RECOMMENDED (tested, working):
+#   - qwen2.5vl:7b      - 100% parse, 6.7s, best quality
+#   - granite3.2-vision - 100% parse, 2.9s, fastest
+#   - qwen3-vl:*        - 67% parse, 11.5s, huge context (256K)
+#   - llama3.2-vision   - 33% parse, 6.9s, large context (128K)
+#
+# NOT RECOMMENDED (broken on this system):
+#   - llava:*           - Model runner crash (CUDA/Ollama compatibility)
+#   - llava-llama3:*    - Model runner crash
+#   - minicpm-v:*       - Model runner crash
+#   - deepseek-ocr:*    - Produces garbage output
+# ============================================================================
+
+# Priority order for vision model selection (tested models first)
+VISION_MODEL_PRIORITY = [
+    # Tier 1: Best quality + speed balance (tested, 100% parse rate)
+    "qwen2.5vl:7b",
+    "qwen2.5vl:7b-q8_0",
+    "qwen2.5vl:7b-fp16",
+    "granite3.2-vision:2b",
+    "granite3.2-vision:2b-q8_0",
+    "granite3.2-vision:2b-fp16",
+    # Tier 2: Good quality, huge context (tested, 67% parse rate)
+    "qwen3-vl:8b-instruct-bf16",
+    "qwen3-vl:8b",
+    "qwen3-vl:4b-instruct-bf16",
+    "qwen3-vl:4b",
+    "qwen3-vl:2b-instruct-bf16",
+    "qwen3-vl:2b",
+    # Tier 3: Usable but inconsistent (tested, 33% parse rate)
+    "llama3.2-vision:11b-instruct-q8_0",
+    "llama3.2-vision:11b",
+    # Tier 4: Large models (untested, may work)
+    "qwen2.5vl:32b",
+    "qwen3-vl:32b",
+    "qwen3-vl:8b-thinking-bf16",
+    "qwen3-vl:4b-thinking-bf16",
+    "qwen3-vl:2b-thinking-bf16",
+]
+
+# Models known to be broken (excluded from selection)
+BROKEN_VISION_MODELS = {
+    "llava:latest",
+    "llava:7b",
+    "llava:13b",
+    "llava:7b-v1.6-mistral-fp16",
+    "llava:7b-v1.6-mistral-q8_0",
+    "llava-llama3:8b",
+    "minicpm-v:8b",
+    "minicpm-v:8b-2.6-fp16",
+    "minicpm-v:8b-2.6-q8_0",
+    "deepseek-ocr:3b",
+}
+
 # Known model patterns and their capabilities
+# Quality tiers updated based on test results (2026-01-05)
 MODEL_PATTERNS = {
-    # Vision-Language Models (ranked by quality)
-    r"qwen3-vl:32b": (ModelCapability.VISION, ModelCapability.TEXT, 5, 32768),
-    r"qwen2\.5vl:32b": (ModelCapability.VISION, ModelCapability.TEXT, 5, 32768),
-    r"qwen3-vl:8b": (ModelCapability.VISION, ModelCapability.TEXT, 4, 32768),
-    r"qwen2\.5vl:7b-fp16": (ModelCapability.VISION, ModelCapability.TEXT, 4, 32768),
-    r"qwen2\.5vl:7b-q8_0": (ModelCapability.VISION, ModelCapability.TEXT, 4, 32768),
-    r"llama3\.2-vision:11b": (ModelCapability.VISION, ModelCapability.TEXT, 4, 131072),
-    r"qwen2\.5vl:7b": (ModelCapability.VISION, ModelCapability.TEXT, 3, 32768),
-    r"minicpm-v:8b": (ModelCapability.VISION, ModelCapability.TEXT, 3, 8192),
-    r"qwen3-vl:4b": (ModelCapability.VISION, ModelCapability.TEXT, 2, 32768),
-    r"granite3\.2-vision:2b": (ModelCapability.VISION, ModelCapability.TEXT, 2, 8192),
-    r"qwen3-vl:2b": (ModelCapability.VISION, ModelCapability.TEXT, 1, 32768),
+    # =========================================================================
+    # VISION MODELS - Quality based on actual JSON extraction tests
+    # =========================================================================
+
+    # Qwen2.5-VL - BEST TESTED (100% parse rate, 6.7s avg)
+    r"qwen2\.5vl:32b": (ModelCapability.VISION, ModelCapability.TEXT, 5, 128000),
+    r"qwen2\.5vl:7b-fp16": (ModelCapability.VISION, ModelCapability.TEXT, 5, 128000),
+    r"qwen2\.5vl:7b-q8_0": (ModelCapability.VISION, ModelCapability.TEXT, 5, 128000),
+    r"qwen2\.5vl:7b": (ModelCapability.VISION, ModelCapability.TEXT, 5, 128000),
+
+    # Granite Vision - FASTEST TESTED (100% parse rate, 2.9s avg)
+    r"granite3\.2-vision:2b-fp16": (ModelCapability.VISION, ModelCapability.TEXT, 4, 16384),
+    r"granite3\.2-vision:2b-q8_0": (ModelCapability.VISION, ModelCapability.TEXT, 4, 16384),
+    r"granite3\.2-vision:2b": (ModelCapability.VISION, ModelCapability.TEXT, 4, 16384),
+
+    # Qwen3-VL - HUGE CONTEXT (67% parse rate, 256K context)
+    r"qwen3-vl:32b": (ModelCapability.VISION, ModelCapability.TEXT, 4, 262144),
+    r"qwen3-vl:8b-thinking-bf16": (ModelCapability.VISION, ModelCapability.REASONING, 4, 262144),
+    r"qwen3-vl:8b-instruct-bf16": (ModelCapability.VISION, ModelCapability.TEXT, 4, 262144),
+    r"qwen3-vl:8b": (ModelCapability.VISION, ModelCapability.TEXT, 4, 262144),
+    r"qwen3-vl:4b-thinking-bf16": (ModelCapability.VISION, ModelCapability.REASONING, 3, 262144),
+    r"qwen3-vl:4b-instruct-bf16": (ModelCapability.VISION, ModelCapability.TEXT, 3, 262144),
+    r"qwen3-vl:4b": (ModelCapability.VISION, ModelCapability.TEXT, 3, 262144),
+    r"qwen3-vl:2b-thinking-bf16": (ModelCapability.VISION, ModelCapability.REASONING, 3, 262144),
+    r"qwen3-vl:2b-instruct-bf16": (ModelCapability.VISION, ModelCapability.TEXT, 3, 262144),
+    r"qwen3-vl:2b": (ModelCapability.VISION, ModelCapability.TEXT, 3, 262144),
+
+    # Llama Vision - LARGE CONTEXT (33% parse rate, 128K context)
+    r"llama3\.2-vision:11b-instruct-q8_0": (ModelCapability.VISION, ModelCapability.TEXT, 3, 131072),
+    r"llama3\.2-vision:11b": (ModelCapability.VISION, ModelCapability.TEXT, 3, 131072),
+
+    # BROKEN MODELS - Listed for reference but excluded from selection (quality=0)
+    # These crash with "model runner has unexpectedly stopped" on this system
+    r"llava:7b-v1\.6-mistral-fp16": (ModelCapability.VISION, ModelCapability.TEXT, 0, 32768),
+    r"llava:7b-v1\.6-mistral-q8_0": (ModelCapability.VISION, ModelCapability.TEXT, 0, 32768),
+    r"llava-llama3:8b": (ModelCapability.VISION, ModelCapability.TEXT, 0, 8192),
+    r"llava:latest": (ModelCapability.VISION, ModelCapability.TEXT, 0, 32768),
+    r"llava:7b": (ModelCapability.VISION, ModelCapability.TEXT, 0, 32768),
+    r"llava:13b": (ModelCapability.VISION, ModelCapability.TEXT, 0, 32768),
+    r"minicpm-v:8b-2\.6-fp16": (ModelCapability.VISION, ModelCapability.TEXT, 0, 32768),
+    r"minicpm-v:8b-2\.6-q8_0": (ModelCapability.VISION, ModelCapability.TEXT, 0, 32768),
+    r"minicpm-v:8b": (ModelCapability.VISION, ModelCapability.TEXT, 0, 32768),
+    r"deepseek-ocr:3b": (ModelCapability.VISION, ModelCapability.TEXT, 0, 8192),  # Garbage output
 
     # Llama 4 MoE Models (Mixture of Experts - huge but efficient)
     r"llama4:128x17b": (ModelCapability.TEXT, ModelCapability.REASONING, 5, 1048576),  # 1M context!

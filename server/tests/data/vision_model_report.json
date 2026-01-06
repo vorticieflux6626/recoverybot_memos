@@ -1,0 +1,364 @@
+{
+  "timestamp": "2026-01-05T13:05:20.414734",
+  "ollama_version": "0.13.5",
+  "total_models": 8,
+  "tested_models": 8,
+  "test_duration_seconds": 172.18896627426147,
+  "results": [
+    {
+      "model_name": "qwen3-vl:2b",
+      "family": "qwen3-vl",
+      "available": true,
+      "size_gb": 0.0,
+      "context_limit": 262144,
+      "image_resized": false,
+      "tests_run": 3,
+      "tests_passed": 2,
+      "avg_latency_ms": 11583.959817886353,
+      "min_latency_ms": 6558.746099472046,
+      "max_latency_ms": 14976.629734039307,
+      "json_parse_rate": 0.6666666666666666,
+      "avg_confidence": 0.475,
+      "content_richness": 0.6052380952380952,
+      "peak_vram_gb": 8.2822265625,
+      "errors": [],
+      "raw_results": [
+        {
+          "prompt": "general",
+          "success": true,
+          "latency_ms": 14976.629734039307,
+          "response_length": 1470,
+          "parsed": true,
+          "richness": 0.8771428571428572
+        },
+        {
+          "prompt": "technical",
+          "success": true,
+          "latency_ms": 6558.746099472046,
+          "response_length": 224,
+          "parsed": true,
+          "richness": 0.3333333333333333
+        },
+        {
+          "prompt": "contact",
+          "success": true,
+          "latency_ms": 13216.503620147705,
+          "response_length": 0,
+          "parsed": false,
+          "raw_response": ""
+        }
+      ]
+    },
+    {
+      "model_name": "qwen2.5vl:7b",
+      "family": "qwen2.5vl",
+      "available": true,
+      "size_gb": 0.0,
+      "context_limit": 128000,
+      "image_resized": true,
+      "tests_run": 3,
+      "tests_passed": 3,
+      "avg_latency_ms": 6772.4582354227705,
+      "min_latency_ms": 1116.1444187164307,
+      "max_latency_ms": 17717.507123947144,
+      "json_parse_rate": 1.0,
+      "avg_confidence": 0.8833333333333333,
+      "content_richness": 0.5016402116402117,
+      "peak_vram_gb": 19.7685546875,
+      "errors": [],
+      "raw_results": [
+        {
+          "prompt": "general",
+          "success": true,
+          "latency_ms": 17717.507123947144,
+          "response_length": 1996,
+          "parsed": true,
+          "richness": 0.8771428571428572
+        },
+        {
+          "prompt": "technical",
+          "success": true,
+          "latency_ms": 1483.7231636047363,
+          "response_length": 307,
+          "parsed": true,
+          "richness": 0.38888888888888884
+        },
+        {
+          "prompt": "contact",
+          "success": true,
+          "latency_ms": 1116.1444187164307,
+          "response_length": 164,
+          "parsed": true,
+          "richness": 0.2388888888888889
+        }
+      ]
+    },
+    {
+      "model_name": "llama3.2-vision:11b",
+      "family": "llama3.2-vision",
+      "available": true,
+      "size_gb": 0.0,
+      "context_limit": 131072,
+      "image_resized": true,
+      "tests_run": 3,
+      "tests_passed": 1,
+      "avg_latency_ms": 6963.166793187459,
+      "min_latency_ms": 2814.4009113311768,
+      "max_latency_ms": 11275.97188949585,
+      "json_parse_rate": 0.3333333333333333,
+      "avg_confidence": 0.8,
+      "content_richness": 1.0,
+      "peak_vram_gb": 19.7685546875,
+      "errors": [],
+      "raw_results": [
+        {
+          "prompt": "general",
+          "success": true,
+          "latency_ms": 11275.97188949585,
+          "response_length": 1126,
+          "parsed": false,
+          "raw_response": "The image shows a screenshot of the FANUC website, which appears to be a product page for industrial robots. The page features a prominent yellow banner at the top with the company logo and navigation menu, followed by a large image of various robots in different colors and configurations.\n\nHere is a detailed description of the image:\n\n* **Header**\n\t+ Yellow banner with FANUC logo and navigation menu\n\t+ Navigation menu includes links to products, solutions, education, integrators, support, resou"
+        },
+        {
+          "prompt": "technical",
+          "success": true,
+          "latency_ms": 6799.127578735352,
+          "response_length": 1060,
+          "parsed": true,
+          "richness": 1.0
+        },
+        {
+          "prompt": "contact",
+          "success": true,
+          "latency_ms": 2814.4009113311768,
+          "response_length": 510,
+          "parsed": false,
+          "raw_response": "The contact information extracted from the screenshot is as follows:\n\n*   Organization: FANUC\n*   Phone Numbers: 888-FANUC-US\n*   Emails: Not found\n*   Physical Addresses: Not found\n*   Website URLs: https://www.fanuc.com/\n*   Confidence: 1.0\n\nThe confidence score is 1.0 because the phone number and website URL are clearly visible and easily extractable. The organization name is also easily extractable. The emails, physical addresses, and other contact information are not found in the provided s"
+        }
+      ]
+    },
+    {
+      "model_name": "llava:latest",
+      "family": "llava",
+      "available": true,
+      "size_gb": 0.0,
+      "context_limit": 32768,
+      "image_resized": true,
+      "tests_run": 3,
+      "tests_passed": 0,
+      "avg_latency_ms": 0.0,
+      "min_latency_ms": null,
+      "max_latency_ms": 0.0,
+      "json_parse_rate": 0.0,
+      "avg_confidence": 0.0,
+      "content_richness": 0.0,
+      "peak_vram_gb": 15.5810546875,
+      "errors": [
+        "general: HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}",
+        "technical: HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}",
+        "contact: HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+      ],
+      "raw_results": [
+        {
+          "prompt": "general",
+          "success": false,
+          "latency_ms": 3253.8163661956787,
+          "response_length": 0,
+          "error": "HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+        },
+        {
+          "prompt": "technical",
+          "success": false,
+          "latency_ms": 8015.08355140686,
+          "response_length": 0,
+          "error": "HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+        },
+        {
+          "prompt": "contact",
+          "success": false,
+          "latency_ms": 8261.754989624023,
+          "response_length": 0,
+          "error": "HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+        }
+      ]
+    },
+    {
+      "model_name": "llava-llama3:8b",
+      "family": "llava",
+      "available": true,
+      "size_gb": 0.0,
+      "context_limit": 8192,
+      "image_resized": true,
+      "tests_run": 3,
+      "tests_passed": 0,
+      "avg_latency_ms": 0.0,
+      "min_latency_ms": null,
+      "max_latency_ms": 0.0,
+      "json_parse_rate": 0.0,
+      "avg_confidence": 0.0,
+      "content_richness": 0.0,
+      "peak_vram_gb": 12.5830078125,
+      "errors": [
+        "general: HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}",
+        "technical: HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}",
+        "contact: HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+      ],
+      "raw_results": [
+        {
+          "prompt": "general",
+          "success": false,
+          "latency_ms": 9388.609647750854,
+          "response_length": 0,
+          "error": "HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+        },
+        {
+          "prompt": "technical",
+          "success": false,
+          "latency_ms": 9620.354175567627,
+          "response_length": 0,
+          "error": "HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+        },
+        {
+          "prompt": "contact",
+          "success": false,
+          "latency_ms": 9093.893766403198,
+          "response_length": 0,
+          "error": "HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+        }
+      ]
+    },
+    {
+      "model_name": "minicpm-v:8b",
+      "family": "minicpm-v",
+      "available": true,
+      "size_gb": 0.0,
+      "context_limit": 32768,
+      "image_resized": true,
+      "tests_run": 3,
+      "tests_passed": 0,
+      "avg_latency_ms": 0.0,
+      "min_latency_ms": null,
+      "max_latency_ms": 0.0,
+      "json_parse_rate": 0.0,
+      "avg_confidence": 0.0,
+      "content_richness": 0.0,
+      "peak_vram_gb": 12.2529296875,
+      "errors": [
+        "general: HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}",
+        "technical: HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}",
+        "contact: HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+      ],
+      "raw_results": [
+        {
+          "prompt": "general",
+          "success": false,
+          "latency_ms": 8793.69568824768,
+          "response_length": 0,
+          "error": "HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+        },
+        {
+          "prompt": "technical",
+          "success": false,
+          "latency_ms": 8734.647750854492,
+          "response_length": 0,
+          "error": "HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+        },
+        {
+          "prompt": "contact",
+          "success": false,
+          "latency_ms": 8901.753425598145,
+          "response_length": 0,
+          "error": "HTTP 500: {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}"
+        }
+      ]
+    },
+    {
+      "model_name": "granite3.2-vision:2b",
+      "family": "granite3.2-vision",
+      "available": true,
+      "size_gb": 0.0,
+      "context_limit": 16384,
+      "image_resized": true,
+      "tests_run": 3,
+      "tests_passed": 3,
+      "avg_latency_ms": 2978.3384799957275,
+      "min_latency_ms": 418.29705238342285,
+      "max_latency_ms": 8084.002256393433,
+      "json_parse_rate": 1.0,
+      "avg_confidence": 0.6166666666666667,
+      "content_richness": 0.34714285714285714,
+      "peak_vram_gb": 10.4873046875,
+      "errors": [],
+      "raw_results": [
+        {
+          "prompt": "general",
+          "success": true,
+          "latency_ms": 8084.002256393433,
+          "response_length": 397,
+          "parsed": true,
+          "richness": 0.6914285714285714
+        },
+        {
+          "prompt": "technical",
+          "success": true,
+          "latency_ms": 418.29705238342285,
+          "response_length": 135,
+          "parsed": true,
+          "richness": 0.16666666666666666
+        },
+        {
+          "prompt": "contact",
+          "success": true,
+          "latency_ms": 432.71613121032715,
+          "response_length": 128,
+          "parsed": true,
+          "richness": 0.18333333333333335
+        }
+      ]
+    },
+    {
+      "model_name": "deepseek-ocr:3b",
+      "family": "deepseek-ocr",
+      "available": true,
+      "size_gb": 0.0,
+      "context_limit": 8192,
+      "image_resized": true,
+      "tests_run": 3,
+      "tests_passed": 0,
+      "avg_latency_ms": 3803.91788482666,
+      "min_latency_ms": 1137.1791362762451,
+      "max_latency_ms": 9028.565168380737,
+      "json_parse_rate": 0.0,
+      "avg_confidence": 0.0,
+      "content_richness": 0.0,
+      "peak_vram_gb": 15.3837890625,
+      "errors": [],
+      "raw_results": [
+        {
+          "prompt": "general",
+          "success": true,
+          "latency_ms": 9028.565168380737,
+          "response_length": 0,
+          "parsed": false,
+          "raw_response": ""
+        },
+        {
+          "prompt": "technical",
+          "success": true,
+          "latency_ms": 1246.009349822998,
+          "response_length": 0,
+          "parsed": false,
+          "raw_response": ""
+        },
+        {
+          "prompt": "contact",
+          "success": true,
+          "latency_ms": 1137.1791362762451,
+          "response_length": 0,
+          "parsed": false,
+          "raw_response": ""
+        }
+      ]
+    }
+  ]
+}
