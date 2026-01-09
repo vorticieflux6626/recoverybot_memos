@@ -371,6 +371,103 @@ class EntityGroundingAgent:
             message="Part number format not recognized - verify with manufacturer"
         )
 
+    async def _ground_part_numbers_batch(
+        self,
+        entities: List[ExtractedEntity]
+    ) -> Dict[str, GroundingResult]:
+        """
+        Ground multiple part numbers in a single API call.
+
+        More efficient than validating one at a time when processing
+        synthesis output with multiple part number references.
+
+        Args:
+            entities: List of part number entities to validate
+
+        Returns:
+            Dict mapping entity text to GroundingResult
+        """
+        if not entities:
+            return {}
+
+        part_numbers = [e.text for e in entities]
+        entity_map = {e.text: e for e in entities}
+        results = {}
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(
+                    f"{self.pdf_api_url}/api/v1/validate/part-numbers/batch",
+                    json={"part_numbers": part_numbers}
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+
+                    # Handle unified response format
+                    if "data" in data:
+                        data = data["data"]
+
+                    validations = data.get("validations", {})
+
+                    for pn, validation in validations.items():
+                        entity = entity_map.get(pn)
+                        if not entity:
+                            continue
+
+                        is_valid = validation.get("is_valid", False)
+                        manufacturer = validation.get("manufacturer")
+                        component_type = validation.get("component_type")
+                        message = validation.get("message", "")
+                        confidence = validation.get("confidence", 0.5)
+
+                        if is_valid:
+                            results[pn] = GroundingResult(
+                                entity=entity,
+                                status=GroundingStatus.PATTERN_VALID,
+                                confidence=confidence,
+                                message=message,
+                                manufacturer=manufacturer,
+                                component_type=component_type
+                            )
+                        else:
+                            # Check if fabricated or just unknown
+                            if "fabricat" in message.lower() or "placeholder" in message.lower():
+                                results[pn] = GroundingResult(
+                                    entity=entity,
+                                    status=GroundingStatus.FABRICATED,
+                                    confidence=confidence,
+                                    message=message,
+                                    suggested_replacement="Consult manufacturer catalog"
+                                )
+                            else:
+                                results[pn] = GroundingResult(
+                                    entity=entity,
+                                    status=GroundingStatus.SUSPICIOUS,
+                                    confidence=confidence,
+                                    message=message
+                                )
+
+                    # Handle any part numbers not in response
+                    for pn, entity in entity_map.items():
+                        if pn not in results:
+                            results[pn] = self._ground_part_number_locally(entity)
+
+                    logger.info(f"Batch validated {len(results)} part numbers")
+                    return results
+                else:
+                    logger.warning(f"Batch validation returned {response.status_code}")
+
+        except httpx.ConnectError:
+            logger.warning(f"PDF Tools API unavailable for batch validation")
+        except Exception as e:
+            logger.error(f"Batch part number validation error: {e}")
+
+        # Fallback: validate each locally
+        for pn, entity in entity_map.items():
+            results[pn] = self._ground_part_number_locally(entity)
+        return results
+
     async def _ground_error_code(self, entity: ExtractedEntity) -> GroundingResult:
         """
         Ground an error code.
@@ -423,13 +520,15 @@ class EntityGroundingAgent:
 
     async def ground_entities(
         self,
-        text: str
+        text: str,
+        use_batch: bool = True
     ) -> EntityGroundingResults:
         """
         Ground all entities in a text.
 
         Args:
             text: Text to analyze for entities
+            use_batch: Use batch API for part numbers (more efficient)
 
         Returns:
             EntityGroundingResults with all findings
@@ -448,9 +547,32 @@ class EntityGroundingAgent:
                 grounding_notes=["No entities requiring grounding detected."]
             )
 
-        # Ground each entity
+        # Separate part numbers for batch processing
+        part_number_entities = [
+            e for e in entities
+            if e.entity_type == EntityType.PART_NUMBER
+            and not self._check_fabrication(e)  # Skip obvious fabrications
+        ]
+        other_entities = [
+            e for e in entities
+            if e.entity_type != EntityType.PART_NUMBER
+            or self._check_fabrication(e)
+        ]
+
         results = []
-        for entity in entities:
+
+        # Batch validate part numbers if enabled and multiple exist
+        if use_batch and len(part_number_entities) >= 2:
+            batch_results = await self._ground_part_numbers_batch(part_number_entities)
+            results.extend(batch_results.values())
+        else:
+            # Validate part numbers individually
+            for entity in part_number_entities:
+                result = await self.ground_entity(entity)
+                results.append(result)
+
+        # Ground other entities (error codes, fabricated items, etc.)
+        for entity in other_entities:
             result = await self.ground_entity(entity)
             results.append(result)
 

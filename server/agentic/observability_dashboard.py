@@ -8,13 +8,16 @@ Provides:
 - Cross-request statistics
 - Pipeline health metrics
 - Technician audit trail generation
+- **Database persistence for historical queries** (Added 2026-01-07)
 
 Created: 2026-01-02
+Updated: 2026-01-07 - Added database persistence for Agent Console
 """
 
 import logging
+import asyncio
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict
 
@@ -251,16 +254,26 @@ class ObservabilityDashboard:
         stats = dashboard.get_stats(last_hours=1)
         request = dashboard.get_request("req-123")
         recent = dashboard.get_recent_requests(limit=10)
+
+    Note: As of 2026-01-07, this class also persists data to PostgreSQL
+    for historical queries by the Agent Console.
     """
 
     def __init__(self, max_requests: int = 1000):
         self.max_requests = max_requests
         self._requests: Dict[str, RequestObservability] = {}
         self._request_order: List[str] = []  # For FIFO eviction
+        self._db_persist_enabled = True  # Can be disabled for testing
 
-    def store_request(self, obs: RequestObservability):
-        """Store a request's observability data."""
-        # Evict oldest if at capacity
+    def store_request(self, obs: RequestObservability, sse_events: Optional[List[Any]] = None):
+        """Store a request's observability data (in-memory and database).
+
+        Args:
+            obs: RequestObservability data from the agent pipeline
+            sse_events: Optional list of SearchEvent objects from EventEmitter.get_history()
+                       These contain the detailed SSE events (classifying_query, scraping_url, etc.)
+        """
+        # Evict oldest if at capacity (in-memory cache)
         while len(self._requests) >= self.max_requests and self._request_order:
             oldest_id = self._request_order.pop(0)
             self._requests.pop(oldest_id, None)
@@ -271,8 +284,326 @@ class ObservabilityDashboard:
         logger.info(
             f"[Dashboard] Stored request {obs.request_id}: "
             f"conf={obs.final_confidence:.2f}, duration={obs.total_duration_ms}ms, "
-            f"llm_calls={len(obs.llm_calls)}"
+            f"llm_calls={len(obs.llm_calls)}, sse_events={len(sse_events) if sse_events else 0}"
         )
+
+        # Persist to database using background thread (always works, sync or async context)
+        if self._db_persist_enabled:
+            import threading
+            try:
+                thread = threading.Thread(
+                    target=self._persist_to_database_sync,
+                    args=(obs, sse_events),
+                    daemon=True,
+                    name=f"persist-{obs.request_id[:8]}"
+                )
+                thread.start()
+                logger.info(f"[Dashboard] Queued persistence for {obs.request_id}")
+            except Exception as e:
+                logger.warning(f"[Dashboard] Could not queue persistence: {e}")
+
+    async def _persist_to_database(self, obs: RequestObservability):
+        """Persist observability data to PostgreSQL for historical queries."""
+        try:
+            from config.database import AsyncSessionLocal
+            from models.agent_run import AgentRun, AgentRunStatus
+
+            async with AsyncSessionLocal() as session:
+                # Check if already exists (update case)
+                from sqlalchemy import select
+                result = await session.execute(
+                    select(AgentRun).where(AgentRun.request_id == obs.request_id)
+                )
+                existing = result.scalar_one_or_none()
+
+                if existing:
+                    # Update existing record
+                    existing.status = AgentRunStatus.COMPLETED if obs.success else AgentRunStatus.FAILED
+                    existing.completed_at = datetime.now(timezone.utc)
+                    existing.duration_ms = obs.total_duration_ms
+                    existing.success = obs.success
+                    existing.error_message = obs.error_message
+                    existing.final_confidence = obs.final_confidence
+                    existing.confidence_level = obs.confidence_level
+                    existing.confidence_breakdown = obs.confidence_breakdown
+                    existing.llm_calls_count = len(obs.llm_calls)
+                    existing.total_llm_latency_ms = obs.total_llm_latency_ms
+                    existing.total_input_tokens = obs.total_input_tokens
+                    existing.total_output_tokens = obs.total_output_tokens
+                    existing.agents_executed = obs.agents_executed
+                    existing.features_enabled = obs.features_enabled
+                    existing.features_skipped = obs.features_skipped
+                    existing.decision_count = obs.decision_count
+                    existing.decisions = obs.decisions
+                    existing.context_transfers_count = len(obs.context_transfers)
+                    existing.total_tokens_transferred = obs.total_tokens_transferred
+                    existing.context_transfers = obs.context_transfers
+                    existing.llm_calls = obs.llm_calls
+                    existing.scratchpad_changes = obs.scratchpad_changes
+                    existing.findings_count = obs.findings_count
+                    existing.questions_answered = obs.questions_answered
+                    existing.technician_log_markdown = obs.technician_log_markdown
+                    existing.events = self._build_events_timeline(obs)
+                else:
+                    # Create new record
+                    agent_run = AgentRun(
+                        request_id=obs.request_id,
+                        query=obs.query,
+                        preset=obs.preset,
+                        status=AgentRunStatus.COMPLETED if obs.success else AgentRunStatus.FAILED,
+                        started_at=obs.timestamp,
+                        completed_at=datetime.now(timezone.utc),
+                        duration_ms=obs.total_duration_ms,
+                        success=obs.success,
+                        error_message=obs.error_message,
+                        final_confidence=obs.final_confidence,
+                        confidence_level=obs.confidence_level,
+                        confidence_breakdown=obs.confidence_breakdown,
+                        llm_calls_count=len(obs.llm_calls),
+                        total_llm_latency_ms=obs.total_llm_latency_ms,
+                        total_input_tokens=obs.total_input_tokens,
+                        total_output_tokens=obs.total_output_tokens,
+                        agents_executed=obs.agents_executed,
+                        features_enabled=obs.features_enabled,
+                        features_skipped=obs.features_skipped,
+                        decision_count=obs.decision_count,
+                        decisions=obs.decisions,
+                        context_transfers_count=len(obs.context_transfers),
+                        total_tokens_transferred=obs.total_tokens_transferred,
+                        context_transfers=obs.context_transfers,
+                        llm_calls=obs.llm_calls,
+                        scratchpad_changes=obs.scratchpad_changes,
+                        findings_count=obs.findings_count,
+                        questions_answered=obs.questions_answered,
+                        technician_log_markdown=obs.technician_log_markdown,
+                        events=self._build_events_timeline(obs),
+                    )
+                    session.add(agent_run)
+
+                await session.commit()
+                logger.debug(f"[Dashboard] Persisted request {obs.request_id} to database")
+
+        except Exception as e:
+            logger.error(f"[Dashboard] Failed to persist to database: {e}")
+
+    def _persist_to_database_sync(self, obs: RequestObservability, sse_events: Optional[List[Any]] = None):
+        """Synchronous database persistence using a fresh sync session.
+
+        Args:
+            obs: RequestObservability data
+            sse_events: Optional list of SearchEvent objects from EventEmitter.get_history()
+        """
+        try:
+            from config.database import SyncSessionLocal
+            from models.agent_run import AgentRun, AgentRunStatus
+            from sqlalchemy import select
+
+            # Build events timeline from SSE events if available, otherwise from obs
+            events_timeline = self._build_events_timeline(obs, sse_events)
+
+            with SyncSessionLocal() as session:
+                # Check if already exists (update case)
+                result = session.execute(
+                    select(AgentRun).where(AgentRun.request_id == obs.request_id)
+                )
+                existing = result.scalar_one_or_none()
+
+                if existing:
+                    # Update existing record
+                    existing.status = AgentRunStatus.COMPLETED if obs.success else AgentRunStatus.FAILED
+                    existing.completed_at = datetime.now(timezone.utc)
+                    existing.duration_ms = obs.total_duration_ms
+                    existing.success = obs.success
+                    existing.error_message = obs.error_message
+                    existing.final_confidence = obs.final_confidence
+                    existing.confidence_level = obs.confidence_level
+                    existing.confidence_breakdown = obs.confidence_breakdown
+                    existing.llm_calls_count = len(obs.llm_calls)
+                    existing.total_llm_latency_ms = obs.total_llm_latency_ms
+                    existing.total_input_tokens = obs.total_input_tokens
+                    existing.total_output_tokens = obs.total_output_tokens
+                    existing.agents_executed = obs.agents_executed
+                    existing.features_enabled = obs.features_enabled
+                    existing.features_skipped = obs.features_skipped
+                    existing.decision_count = obs.decision_count
+                    existing.decisions = obs.decisions
+                    existing.context_transfers_count = len(obs.context_transfers)
+                    existing.total_tokens_transferred = obs.total_tokens_transferred
+                    existing.context_transfers = obs.context_transfers
+                    existing.llm_calls = obs.llm_calls
+                    existing.scratchpad_changes = obs.scratchpad_changes
+                    existing.findings_count = obs.findings_count
+                    existing.questions_answered = obs.questions_answered
+                    existing.technician_log_markdown = obs.technician_log_markdown
+                    existing.events = events_timeline
+                else:
+                    # Create new record
+                    agent_run = AgentRun(
+                        request_id=obs.request_id,
+                        query=obs.query,
+                        preset=obs.preset,
+                        status=AgentRunStatus.COMPLETED if obs.success else AgentRunStatus.FAILED,
+                        started_at=obs.timestamp,
+                        completed_at=datetime.now(timezone.utc),
+                        duration_ms=obs.total_duration_ms,
+                        success=obs.success,
+                        error_message=obs.error_message,
+                        final_confidence=obs.final_confidence,
+                        confidence_level=obs.confidence_level,
+                        confidence_breakdown=obs.confidence_breakdown,
+                        llm_calls_count=len(obs.llm_calls),
+                        total_llm_latency_ms=obs.total_llm_latency_ms,
+                        total_input_tokens=obs.total_input_tokens,
+                        total_output_tokens=obs.total_output_tokens,
+                        agents_executed=obs.agents_executed,
+                        features_enabled=obs.features_enabled,
+                        features_skipped=obs.features_skipped,
+                        decision_count=obs.decision_count,
+                        decisions=obs.decisions,
+                        context_transfers_count=len(obs.context_transfers),
+                        total_tokens_transferred=obs.total_tokens_transferred,
+                        context_transfers=obs.context_transfers,
+                        llm_calls=obs.llm_calls,
+                        scratchpad_changes=obs.scratchpad_changes,
+                        findings_count=obs.findings_count,
+                        questions_answered=obs.questions_answered,
+                        technician_log_markdown=obs.technician_log_markdown,
+                        events=events_timeline,
+                    )
+                    session.add(agent_run)
+
+                session.commit()
+                logger.info(f"[Dashboard] Persisted request {obs.request_id} to database with {len(events_timeline)} events")
+
+        except Exception as e:
+            logger.error(f"[Dashboard] Sync persist failed: {e}", exc_info=True)
+
+    def _build_events_timeline(self, obs: RequestObservability, sse_events: Optional[List[Any]] = None) -> List[Dict[str, Any]]:
+        """Build a unified events timeline from SSE events or observability data.
+
+        If sse_events is provided (from EventEmitter.get_history()), use those as the
+        primary source since they contain detailed pipeline events (classifying_query,
+        scraping_url, verifying_claims, etc.). Otherwise fall back to obs data.
+
+        Args:
+            obs: RequestObservability data
+            sse_events: Optional list of SearchEvent objects from EventEmitter.get_history()
+
+        Returns:
+            List of event dictionaries for the timeline
+        """
+        events = []
+
+        # If we have SSE events from the event emitter, use them - they have all the detail
+        if sse_events:
+            for i, event in enumerate(sse_events):
+                try:
+                    # SearchEvent is a dataclass, convert to dict
+                    event_dict = {
+                        "type": event.event_type.value if hasattr(event.event_type, 'value') else str(event.event_type),
+                        "timestamp": event.timestamp,
+                        "message": event.message or "",
+                        "order": i,
+                        "data": {},
+                    }
+
+                    # Add optional fields if present
+                    if hasattr(event, 'query') and event.query:
+                        event_dict["data"]["query"] = event.query
+                    if hasattr(event, 'url') and event.url:
+                        event_dict["data"]["url"] = event.url
+                    if hasattr(event, 'url_index') and event.url_index:
+                        event_dict["data"]["url_index"] = event.url_index
+                    if hasattr(event, 'url_total') and event.url_total:
+                        event_dict["data"]["url_total"] = event.url_total
+                    if hasattr(event, 'results_count') and event.results_count is not None:
+                        event_dict["data"]["results_count"] = event.results_count
+                    if hasattr(event, 'sources_count') and event.sources_count is not None:
+                        event_dict["data"]["sources_count"] = event.sources_count
+                    if hasattr(event, 'progress_percent') and event.progress_percent is not None:
+                        event_dict["data"]["progress"] = event.progress_percent
+                    if hasattr(event, 'confidence') and event.confidence is not None:
+                        event_dict["data"]["confidence"] = event.confidence
+                    if hasattr(event, 'engines') and event.engines:
+                        event_dict["data"]["engines"] = event.engines
+                    if hasattr(event, 'iteration') and event.iteration is not None:
+                        event_dict["data"]["iteration"] = event.iteration
+                    if hasattr(event, 'max_iterations') and event.max_iterations is not None:
+                        event_dict["data"]["max_iterations"] = event.max_iterations
+                    if hasattr(event, 'graph_line') and event.graph_line:
+                        event_dict["data"]["graph_line"] = event.graph_line
+
+                    # Include any additional data from the event's data dict
+                    if hasattr(event, 'data') and event.data:
+                        event_dict["data"].update(event.data)
+
+                    events.append(event_dict)
+                except Exception as e:
+                    logger.warning(f"[Dashboard] Failed to serialize SSE event: {e}")
+                    continue
+
+            logger.debug(f"[Dashboard] Built timeline with {len(events)} SSE events")
+            return events
+
+        # Fallback: Build from observability summary data
+        # Add decisions as events
+        for i, decision in enumerate(obs.decisions):
+            events.append({
+                "type": "decision",
+                "timestamp": decision.get("timestamp", obs.timestamp.isoformat()),
+                "agent": decision.get("agent_name", decision.get("agent", "unknown")),
+                "action": decision.get("decision_type", "decision"),
+                "data": decision,
+                "order": i,
+            })
+
+        # Add LLM calls as events
+        for i, call in enumerate(obs.llm_calls):
+            events.append({
+                "type": "llm_call",
+                "timestamp": call.get("timestamp", obs.timestamp.isoformat()),
+                "agent": call.get("caller", "unknown"),
+                "action": "llm_call",
+                "data": {
+                    "model": call.get("model", "unknown"),
+                    "latency_ms": call.get("latency_ms", 0),
+                    "input_tokens": call.get("input_tokens", 0),
+                    "output_tokens": call.get("output_tokens", 0),
+                    "purpose": call.get("purpose", ""),
+                },
+                "order": len(obs.decisions) + i,
+            })
+
+        # Add context transfers as events
+        for i, transfer in enumerate(obs.context_transfers):
+            events.append({
+                "type": "context_transfer",
+                "timestamp": transfer.get("timestamp", obs.timestamp.isoformat()),
+                "agent": transfer.get("from_agent", "unknown"),
+                "action": "context_transfer",
+                "data": {
+                    "from": transfer.get("from_agent"),
+                    "to": transfer.get("to_agent"),
+                    "tokens": transfer.get("tokens_transferred", 0),
+                },
+                "order": len(obs.decisions) + len(obs.llm_calls) + i,
+            })
+
+        # Add scratchpad changes as events
+        for i, change in enumerate(obs.scratchpad_changes):
+            events.append({
+                "type": "scratchpad_change",
+                "timestamp": change.get("timestamp", obs.timestamp.isoformat()),
+                "agent": change.get("agent", "unknown"),
+                "action": change.get("change_type", "update"),
+                "data": change,
+                "order": len(obs.decisions) + len(obs.llm_calls) + len(obs.context_transfers) + i,
+            })
+
+        # Sort by order
+        events.sort(key=lambda e: e.get("order", 0))
+
+        return events
 
     def get_request(self, request_id: str) -> Optional[RequestObservability]:
         """Get observability data for a specific request."""

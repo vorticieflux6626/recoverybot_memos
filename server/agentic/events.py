@@ -743,7 +743,8 @@ def verifying_claims(request_id: str, claims_count: int) -> SearchEvent:
         event_type=EventType.VERIFYING_CLAIMS,
         request_id=request_id,
         message=f"Verifying {claims_count} claims...",
-        progress_percent=75
+        progress_percent=75,
+        data={"total": claims_count}  # Required for Android Tool Notification display
     )
 
 

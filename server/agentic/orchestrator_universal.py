@@ -19,7 +19,8 @@ Usage:
     orchestrator = UniversalOrchestrator.research()
 
     # Custom configuration
-    orchestrator = UniversalOrchestrator(
+    orchestrator = UniversalOrchestrator
+
         enable_hyde=True,
         enable_reasoning_dag=True,
         enable_parallel_execution=True
@@ -49,6 +50,7 @@ from .models import (
     WebSearchResult,
     QueryAnalysis
 )
+from . import events  # For SSE event emission in non-streaming path
 from .events import (
     EventEmitter, EventType, SearchEvent,
     get_graph_state, reset_graph_state,
@@ -252,6 +254,36 @@ from .meta_buffer import (
 from .reasoning_composer import (
     ReasoningComposer,
     get_reasoning_composer
+)
+
+# Observability components (P0-P3)
+from .decision_logger import (
+    DecisionLogger,
+    get_decision_logger,
+    DecisionType,
+    AgentName
+)
+from .llm_logger import (
+    LLMCallLogger,
+    get_llm_logger,
+    LLMOperation
+)
+from .context_tracker import (
+    ContextFlowTracker,
+    get_context_tracker
+)
+from .scratchpad_observer import (
+    ScratchpadObserver,
+    get_scratchpad_observer
+)
+from .confidence_logger import (
+    ConfidenceLogger,
+    get_confidence_logger
+)
+from .observability_dashboard import (
+    get_observability_dashboard,
+    ObservabilityAggregator,
+    create_request_observability
 )
 
 logger = logging.getLogger("agentic.orchestrator_universal")
@@ -718,10 +750,12 @@ class UniversalOrchestrator(BaseSearchPipeline):
         # Determine configuration with logging
         if config is not None:
             self.config = config
+            self.preset = preset or OrchestratorPreset.BALANCED  # Track preset even with explicit config
             logger.info("UniversalOrchestrator initialized with explicit FeatureConfig")
         elif preset is not None:
             if preset in PRESET_CONFIGS:
                 self.config = PRESET_CONFIGS[preset]
+                self.preset = preset
                 enabled_count = sum(
                     1 for field in self.config.__dataclass_fields__
                     if field.startswith("enable_") and getattr(self.config, field, False)
@@ -729,6 +763,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 logger.info(f"UniversalOrchestrator initialized with preset '{preset.value}' ({enabled_count} features enabled)")
             else:
                 self.config = PRESET_CONFIGS[OrchestratorPreset.BALANCED]
+                self.preset = OrchestratorPreset.BALANCED
                 logger.warning(
                     f"Unknown preset '{preset}', falling back to BALANCED. "
                     f"Available presets: {[p.value for p in OrchestratorPreset]}"
@@ -736,6 +771,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
         else:
             # Default to balanced
             self.config = PRESET_CONFIGS[OrchestratorPreset.BALANCED]
+            self.preset = OrchestratorPreset.BALANCED
             logger.info("UniversalOrchestrator initialized with default BALANCED preset")
 
         # Apply any feature overrides with logging
@@ -933,10 +969,12 @@ class UniversalOrchestrator(BaseSearchPipeline):
         model: str,
         task: str,
         agent_phase: str,
-        prompt: str = ""
+        prompt: str = "",
+        llm_logger: Optional[Any] = None
     ) -> float:
         """
         Emit LLM call start event if debug mode enabled.
+        Also tracks in llm_logger if provided for observability metrics.
         Returns start timestamp for duration calculation.
         """
         start_time = time.time()
@@ -956,6 +994,19 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 context_window=context_window,
                 prompt_preview=prompt[:200] if prompt else ""
             ))
+
+        # Track in llm_logger for observability metrics
+        if llm_logger:
+            call = llm_logger.track_call_sync(
+                agent_name=agent_phase,
+                operation=task,
+                model=model,
+                prompt=prompt,
+                prompt_template=task
+            )
+            # Store call for finalization in _emit_llm_complete
+            setattr(self, f'_pending_llm_call_{request_id}_{task}', call)
+
         return start_time
 
     async def _emit_llm_complete(
@@ -969,7 +1020,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
         output: str = "",
         input_prompt: str = "",
         cache_hit: bool = False,
-        thinking_tokens: int = 0
+        thinking_tokens: int = 0,
+        llm_logger: Optional[Any] = None
     ):
         """Emit LLM call complete event if debug mode enabled."""
         if self.config.enable_llm_debug:
@@ -994,6 +1046,14 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 cache_hit=cache_hit,
                 thinking_tokens=thinking_tokens
             ))
+
+        # Finalize LLM call in logger for observability metrics
+        if llm_logger:
+            call_attr = f'_pending_llm_call_{request_id}_{task}'
+            call = getattr(self, call_attr, None)
+            if call:
+                llm_logger.finalize_call_sync(call, response=output, parse_success=True)
+                delattr(self, call_attr)
 
     # ===== Lazy Component Initialization =====
 
@@ -1692,7 +1752,51 @@ class UniversalOrchestrator(BaseSearchPipeline):
                             logger.debug(f"Symptom-based context: {len(context)} chars")
                             return context
 
-            # Priority 3: Use enhanced Federation API context (includes HSEA, cross-domain)
+            # Priority 3: Check for injection molding defects and use IMM troubleshooting
+            imm_defects = ["flash", "sink", "warp", "void", "short shot", "burn", "jetting", "flow mark"]
+            query_lower = query.lower()
+            detected_defect = next((d for d in imm_defects if d in query_lower), None)
+            if detected_defect:
+                imm_result = await doc_service.imm_troubleshoot(
+                    defect=detected_defect,
+                    include_related=True,
+                    max_results=5
+                )
+                if imm_result and imm_result.get("paths"):
+                    context_parts = [f"## IMM Defect Troubleshooting: {detected_defect.title()}\n"]
+                    for i, path in enumerate(imm_result.get("paths", [])[:3], 1):
+                        context_parts.append(f"### Path {i}")
+                        for step in path.get("steps", []):
+                            context_parts.append(f"- {step.get('type', 'step')}: {step.get('content', '')[:200]}")
+                        context_parts.append("")
+                    if imm_result.get("related_defects"):
+                        context_parts.append("**Related defects:** " + ", ".join(imm_result["related_defects"]))
+                    logger.debug(f"IMM troubleshoot context: {len(context_parts)} sections")
+                    return "\n".join(context_parts)
+
+            # Priority 4: Use HSEA three-stratum search for precise retrieval
+            hsea_results = await doc_service.hsea_search(
+                query=query,
+                top_k=5,
+                min_score=0.3
+            )
+            if hsea_results:
+                context_parts = ["## Technical Knowledge (HSEA Three-Stratum)\n"]
+                for i, r in enumerate(hsea_results[:5], 1):
+                    context_parts.append(f"### [{i}] {r.get('title', 'Unknown')}")
+                    context_parts.append(f"**Type:** {r.get('node_type', 'unknown')} | **Score:** {r.get('score', 0):.3f}")
+                    if r.get("systemic_score"):
+                        context_parts.append(
+                            f"*Strata scores: systemic={r.get('systemic_score', 0):.2f}, "
+                            f"structural={r.get('structural_score', 0):.2f}, "
+                            f"substantive={r.get('substantive_score', 0):.2f}*"
+                        )
+                    preview = r.get("content_preview") or r.get("content", "")[:300]
+                    context_parts.append(f"{preview}...\n")
+                logger.debug(f"HSEA search context: {len(hsea_results)} results")
+                return "\n".join(context_parts)
+
+            # Priority 5: Use enhanced Federation API context (includes cross-domain)
             context = await doc_service.get_enhanced_context_for_rag(
                 query=query,
                 max_tokens=4000
@@ -1945,6 +2049,15 @@ class UniversalOrchestrator(BaseSearchPipeline):
         logger.info(f"[{request_id}] Starting UNIVERSAL search: {request.query[:50]}...")
         logger.info(f"[{request_id}] Features: {self._get_enabled_features()}")
 
+        # Initialize observability loggers (P0-P3)
+        options = getattr(request, 'options', None) or {}
+        verbose_mode = options.get("verbose_logging", False)
+        decision_logger = get_decision_logger(request_id, None, verbose=verbose_mode)
+        llm_logger = get_llm_logger(request_id, None, verbose=verbose_mode)
+        context_tracker = get_context_tracker(request_id)
+        scratchpad_observer = get_scratchpad_observer(request_id, None, verbose=verbose_mode)
+        obs_aggregator = ObservabilityAggregator(request_id, request.query, self.preset.value)
+
         # Track metrics if enabled
         if self.config.enable_metrics:
             metrics = self._get_metrics()
@@ -1969,8 +2082,14 @@ class UniversalOrchestrator(BaseSearchPipeline):
             await graph_cache.start_workflow(request_id, request.query)
 
         try:
-            # Execute search pipeline
-            response = await self._execute_pipeline(request, request_id, start_time)
+            # Execute search pipeline with observability loggers
+            response = await self._execute_pipeline(
+                request, request_id, start_time,
+                llm_logger=llm_logger,
+                decision_logger=decision_logger,
+                context_tracker=context_tracker,
+                scratchpad_observer=scratchpad_observer
+            )
 
             # Store in cache
             if self.config.enable_content_cache:
@@ -1985,6 +2104,32 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 execution_time = int((time.time() - start_time) * 1000)
                 metrics.complete_query(request_id, response.data.confidence_score)
 
+            # ===== OBSERVABILITY: Store request data (non-streaming) =====
+            try:
+                # Add data from all observability loggers
+                obs_aggregator.add_decisions(decision_logger.decisions)
+                obs_aggregator.add_context_flow(context_tracker.get_flow_summary())
+                obs_aggregator.add_llm_calls(llm_logger.get_call_summary())
+                obs_aggregator.add_scratchpad(scratchpad_observer.get_change_summary())
+
+                for feature_name in self.config.__dataclass_fields__.keys():
+                    if feature_name.startswith("enable_"):
+                        enabled = getattr(self.config, feature_name, False)
+                        obs_aggregator.add_feature_status(feature_name, enabled)
+
+                obs_record = obs_aggregator.finalize(
+                    success=response.success if hasattr(response, 'success') else True,
+                    duration_ms=int((time.time() - start_time) * 1000),
+                    error=None
+                )
+                dashboard = get_observability_dashboard()
+                # Get SSE event history from the event emitter if available
+                sse_events = self.event_emitter.get_history() if self.event_emitter else None
+                dashboard.store_request(obs_record, sse_events=sse_events)
+                logger.info(f"[{request_id}] Observability stored (non-streaming): decisions={len(decision_logger.decisions)}, llm_calls={llm_logger.get_call_summary().get('total_calls', 0)}, sse_events={len(sse_events) if sse_events else 0}")
+            except Exception as obs_err:
+                logger.warning(f"[{request_id}] Observability failed: {obs_err}")
+
             return response
 
         except Exception as e:
@@ -1992,6 +2137,23 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
             if self.config.enable_graph_cache:
                 await graph_cache.end_workflow(request_id, success=False)
+
+            # ===== OBSERVABILITY: Store failed request (non-streaming) =====
+            try:
+                obs_aggregator.add_decisions(decision_logger.decisions)
+                obs_aggregator.add_context_flow(context_tracker.get_flow_summary())
+                obs_aggregator.add_llm_calls(llm_logger.get_call_summary())
+                obs_aggregator.add_scratchpad(scratchpad_observer.get_change_summary())
+                obs_record = obs_aggregator.finalize(
+                    success=False,
+                    duration_ms=int((time.time() - start_time) * 1000),
+                    error=str(e)
+                )
+                dashboard = get_observability_dashboard()
+                sse_events = self.event_emitter.get_history() if self.event_emitter else None
+                dashboard.store_request(obs_record, sse_events=sse_events)
+            except Exception as obs_err:
+                logger.warning(f"[{request_id}] Failed request observability failed: {obs_err}")
 
             return self.build_error_response(
                 str(e),
@@ -2028,6 +2190,15 @@ class UniversalOrchestrator(BaseSearchPipeline):
         # Initialize graph state for visualization
         reset_graph_state()
         graph = get_graph_state()
+
+        # Initialize observability loggers (P0-P3)
+        options = getattr(request, 'options', None) or {}
+        verbose_mode = options.get("verbose_logging", False)
+        decision_logger = get_decision_logger(request_id, emitter, verbose=verbose_mode)
+        llm_logger = get_llm_logger(request_id, emitter, verbose=verbose_mode)
+        context_tracker = get_context_tracker(request_id)
+        scratchpad_observer = get_scratchpad_observer(request_id, emitter, verbose=verbose_mode)
+        obs_aggregator = ObservabilityAggregator(request_id, request.query, self.preset.value)
 
         # Track metrics if enabled
         if self.config.enable_metrics:
@@ -2073,11 +2244,12 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     model=DEFAULT_PIPELINE_CONFIG.analyzer_model,
                     task="query_analysis",
                     agent_phase="PHASE_1_ANALYZE",
-                    prompt=request.query
+                    prompt=request.query,
+                    llm_logger=llm_logger
                 )
 
                 query_analysis = await self._phase_query_analysis(
-                    request, state, search_trace, request_id
+                    request, state, search_trace, request_id, llm_logger=llm_logger
                 )
 
                 # LLM Debug: Complete query analysis tracking
@@ -2091,7 +2263,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     agent_phase="PHASE_1_ANALYZE",
                     start_time=llm_start,
                     output=analysis_summary,
-                    input_prompt=request.query
+                    input_prompt=request.query,
+                    llm_logger=llm_logger
                 )
 
                 await emitter.emit(events.query_analyzed(
@@ -2099,6 +2272,25 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     query_analysis.requires_search if query_analysis else True,
                     query_analysis.query_type if query_analysis else "research"
                 ))
+
+                # ===== OBSERVABILITY: Log query analysis decision =====
+                await decision_logger.log_decision(
+                    agent_name=AgentName.ANALYZER,
+                    decision_type=DecisionType.CLASSIFICATION,
+                    decision_made=f"query_type={query_analysis.query_type if query_analysis else 'research'}",
+                    reasoning=f"Analyzed query: requires_search={query_analysis.requires_search if query_analysis else True}, "
+                              f"complexity={getattr(query_analysis, 'complexity', 'unknown')}",
+                    alternatives=["factual", "research", "creative", "troubleshooting", "code"],
+                    confidence=getattr(query_analysis, 'confidence', 0.8) if query_analysis else 0.5,
+                    context_size_tokens=len(request.query) // 4
+                )
+                # Track context flow: input -> analyzer
+                context_tracker.record_transfer(
+                    source="input",
+                    target="analyzer",
+                    content=request.query,
+                    context_type="query"
+                )
 
             analyze_ms = int((time.time() - analyze_start) * 1000)
             await emitter.emit(graph_node_completed(request_id, "analyze", True, graph, analyze_ms))
@@ -2123,6 +2315,21 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         f"[{request_id}] DyLAN: complexity={dylan_complexity.complexity.value}, "
                         f"skippable={[a.value for a in dylan_complexity.skippable_agents]} ({dylan_ms}ms)"
                     )
+
+                    # ===== OBSERVABILITY: Log DyLAN complexity decision =====
+                    await decision_logger.log_decision(
+                        agent_name=AgentName.DYLAN,
+                        decision_type=DecisionType.CLASSIFICATION,
+                        decision_made=f"complexity={dylan_complexity.complexity.value}",
+                        reasoning=dylan_complexity.reasoning[:300] if dylan_complexity.reasoning else "No reasoning provided",
+                        alternatives=["LOW", "MEDIUM", "HIGH", "VERY_HIGH"],
+                        confidence=0.85,
+                        metadata={
+                            "skippable_agents": [a.value for a in dylan_complexity.skippable_agents],
+                            "classification_ms": dylan_ms
+                        }
+                    )
+
                 except Exception as e:
                     logger.warning(f"[{request_id}] DyLAN classification failed: {e}")
 
@@ -2244,7 +2451,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 # Direct answer uses default synthesizer model
                 await emitter.emit(events.synthesizing(request_id, 0, model=DEFAULT_PIPELINE_CONFIG.synthesizer_model))
                 return await self._handle_direct_answer(
-                    request, query_analysis, request_id, start_time
+                    request, query_analysis, request_id, start_time,
+                    decision_logger=decision_logger, llm_logger=llm_logger
                 )
 
             # PHASE 2: Search Planning
@@ -2376,7 +2584,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         model=DEFAULT_PIPELINE_CONFIG.evaluator_model,
                         task="crag_evaluation",
                         agent_phase="PHASE_3.5_CRAG",
-                        prompt=crag_prompt
+                        prompt=crag_prompt,
+                        llm_logger=llm_logger
                     )
 
                     crag_result = await self._phase_crag_evaluation(
@@ -2394,7 +2603,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         agent_phase="PHASE_3.5_CRAG",
                         start_time=llm_start,
                         output=crag_output,
-                        input_prompt=crag_prompt
+                        input_prompt=crag_prompt,
+                        llm_logger=llm_logger
                     )
 
                     crag_ms = int((time.time() - crag_start) * 1000)
@@ -2406,6 +2616,31 @@ class UniversalOrchestrator(BaseSearchPipeline):
                             crag_result.relevance_score,
                             crag_result.recommended_action.value if hasattr(crag_result.recommended_action, 'value') else str(crag_result.recommended_action)
                         ))
+
+                        # ===== OBSERVABILITY: Log CRAG evaluation decision =====
+                        action_value = crag_result.recommended_action.value if hasattr(crag_result.recommended_action, 'value') else str(crag_result.recommended_action)
+                        await decision_logger.log_decision(
+                            agent_name=AgentName.CRAG,
+                            decision_type=DecisionType.EVALUATION,
+                            decision_made=f"action={action_value}",
+                            reasoning=f"Quality={crag_result.quality.value}, relevance_score={crag_result.relevance_score:.3f}. "
+                                      f"Evaluated {len(state.raw_results)} results.",
+                            alternatives=["PROCEED", "REFINE_QUERY", "WEB_FALLBACK", "DECOMPOSE"],
+                            confidence=crag_result.relevance_score,
+                            metadata={
+                                "quality": crag_result.quality.value,
+                                "relevance_score": crag_result.relevance_score,
+                                "refined_queries_count": len(crag_result.refined_queries) if crag_result.refined_queries else 0,
+                                "crag_ms": crag_ms
+                            }
+                        )
+                        # Track context flow: search -> CRAG
+                        context_tracker.record_transfer(
+                            source="searcher",
+                            target="crag",
+                            content=state.raw_results,
+                            context_type="search_results"
+                        )
                         if crag_result.refined_queries:
                             await emitter.emit(events.crag_refining(request_id, crag_result.refined_queries))
                             # Integrate with Query Tree for parallel exploration
@@ -2536,10 +2771,11 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     model=DEFAULT_PIPELINE_CONFIG.verifier_model,
                     task="claim_verification",
                     agent_phase="PHASE_5_VERIFY",
-                    prompt=verify_prompt
+                    prompt=verify_prompt,
+                    llm_logger=llm_logger
                 )
 
-                verification_result = await self._phase_verification(state, scraped_content, search_trace, request_id)
+                verification_result = await self._phase_verification(state, scraped_content, search_trace, request_id, llm_logger=llm_logger)
 
                 # LLM Debug: Complete verification tracking
                 verify_output = ""
@@ -2554,7 +2790,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     agent_phase="PHASE_5_VERIFY",
                     start_time=llm_start,
                     output=verify_output,
-                    input_prompt=verify_prompt
+                    input_prompt=verify_prompt,
+                    llm_logger=llm_logger
                 )
 
                 verify_ms = int((time.time() - verify_start) * 1000)
@@ -2767,12 +3004,14 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 model=DEFAULT_PIPELINE_CONFIG.synthesizer_model,
                 task="synthesis",
                 agent_phase="PHASE_6_SYNTHESIZE",
-                prompt=synthesis_prompt
+                prompt=synthesis_prompt,
+                llm_logger=llm_logger
             )
 
             synthesis = await self._phase_synthesis(
                 request, state, scraped_content, search_trace, request_id,
-                thought_context=thought_context
+                thought_context=thought_context,
+                llm_logger=llm_logger
             )
 
             # LLM Debug: Complete synthesis tracking
@@ -2784,7 +3023,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 start_time=llm_start,
                 output=synthesis[:500] if synthesis else "",
                 input_prompt=synthesis_prompt,
-                thinking_tokens=500 if "deepseek" in DEFAULT_PIPELINE_CONFIG.synthesizer_model.lower() else 0
+                thinking_tokens=500 if "deepseek" in DEFAULT_PIPELINE_CONFIG.synthesizer_model.lower() else 0,
+                llm_logger=llm_logger
             )
 
             # PHASE 6.5: Cross-Domain Validation (Phase 48)
@@ -2824,6 +3064,31 @@ class UniversalOrchestrator(BaseSearchPipeline):
             ))
             await emitter.emit(graph_node_completed(request_id, "synthesize", True, graph, synthesis_ms))
 
+            # ===== OBSERVABILITY: Log synthesis decision =====
+            await decision_logger.log_decision(
+                agent_name=AgentName.SYNTHESIZER,
+                decision_type=DecisionType.ACTION,
+                decision_made=f"model={synthesis_model}, length={len(synthesis) if synthesis else 0}",
+                reasoning=f"Synthesized from {len(scraped_content)} scraped sources, {len(sources)} total sources. "
+                          f"Confidence={confidence:.3f}, source_diversity={source_diversity:.2f}",
+                alternatives=["qwen3:8b", "deepseek-r1:8b", "llama3.3:70b"],
+                confidence=confidence,
+                metadata={
+                    "synthesis_model": synthesis_model,
+                    "synthesis_length": len(synthesis) if synthesis else 0,
+                    "scraped_sources": len(scraped_content),
+                    "source_diversity": source_diversity,
+                    "synthesis_ms": synthesis_ms
+                }
+            )
+            # Track context flow: scraper -> synthesizer
+            context_tracker.record_transfer(
+                source="scraper",
+                target="synthesizer",
+                content=scraped_content,
+                context_type="scraped_content"
+            )
+
             # PHASE 7: Self-RAG Reflection (if enabled)
             # Check DyLAN skip decision for REFLECTOR
             reflection_result = None
@@ -2855,7 +3120,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     model=DEFAULT_PIPELINE_CONFIG.evaluator_model,
                     task="self_reflection",
                     agent_phase="PHASE_7_REFLECT",
-                    prompt=reflect_prompt
+                    prompt=reflect_prompt,
+                    llm_logger=llm_logger
                 )
 
                 reflection_result = await self._phase_self_reflection(
@@ -2873,7 +3139,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     agent_phase="PHASE_7_REFLECT",
                     start_time=llm_start,
                     output=reflect_output,
-                    input_prompt=reflect_prompt
+                    input_prompt=reflect_prompt,
+                    llm_logger=llm_logger
                 )
 
                 reflect_ms = int((time.time() - reflect_start) * 1000)
@@ -2890,6 +3157,32 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         reflection_result.usefulness_score,
                         reflection_result.temporal_conflicts
                     ))
+
+                    # ===== OBSERVABILITY: Log Self-RAG reflection decision =====
+                    await decision_logger.log_decision(
+                        agent_name=AgentName.SELF_RAG,
+                        decision_type=DecisionType.EVALUATION,
+                        decision_made=f"needs_refinement={reflection_result.needs_refinement}",
+                        reasoning=f"Relevance={reflection_result.relevance_score:.3f}, support={support_level}, "
+                                  f"usefulness={reflection_result.usefulness_score:.3f}, "
+                                  f"temporal_conflicts={reflection_result.temporal_conflicts}",
+                        alternatives=["proceed", "refine", "revise_claims"],
+                        confidence=reflection_result.relevance_score,
+                        metadata={
+                            "relevance_score": reflection_result.relevance_score,
+                            "support_level": support_level,
+                            "usefulness_score": reflection_result.usefulness_score,
+                            "temporal_conflicts": reflection_result.temporal_conflicts,
+                            "needs_refinement": reflection_result.needs_refinement
+                        }
+                    )
+                    # Track context flow: synthesizer -> self_rag
+                    context_tracker.record_transfer(
+                        source="synthesizer",
+                        target="self_rag",
+                        content=synthesis,
+                        context_type="synthesis"
+                    )
 
                     # Blend confidence with reflection
                     reflection_conf = reflection_result.overall_confidence if hasattr(reflection_result, 'overall_confidence') else reflection_result.relevance_score
@@ -2918,7 +3211,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         model=DEFAULT_PIPELINE_CONFIG.evaluator_model,
                         task="ragas_evaluation",
                         agent_phase="PHASE_7.2_RAGAS",
-                        prompt=ragas_prompt
+                        prompt=ragas_prompt,
+                        llm_logger=llm_logger
                     )
 
                     ragas_result = await self._phase_ragas_evaluation(
@@ -2936,7 +3230,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         agent_phase="PHASE_7.2_RAGAS",
                         start_time=llm_start,
                         output=ragas_output,
-                        input_prompt=ragas_prompt
+                        input_prompt=ragas_prompt,
+                        llm_logger=llm_logger
                     )
 
                     ragas_ms = int((time.time() - ragas_start) * 1000)
@@ -3184,7 +3479,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                             await emitter.emit(graph_node_entered(request_id, "synthesize", graph))
                             synth_start = time.time()
                             synthesis = await self._phase_synthesis(
-                                request, state, all_scraped_content, search_trace, request_id
+                                request, state, all_scraped_content, search_trace, request_id,
+                                llm_logger=llm_logger
                             )
 
                             # Cross-domain validation on re-synthesized content
@@ -3444,6 +3740,43 @@ class UniversalOrchestrator(BaseSearchPipeline):
             # Final graph complete
             await emitter.emit(graph_node_completed(request_id, "complete", True, graph, execution_time_ms))
 
+            # ===== OBSERVABILITY AGGREGATION (P0-P3) =====
+            try:
+                # Add collected data from observability loggers
+                obs_aggregator.add_decisions(decision_logger.decisions)
+                obs_aggregator.add_context_flow(context_tracker.get_flow_summary())
+                obs_aggregator.add_llm_calls(llm_logger.get_call_summary())
+                obs_aggregator.add_scratchpad(scratchpad_observer.get_change_summary())
+
+                # Add confidence breakdown if available
+                if hasattr(response, 'confidence') and response.confidence:
+                    obs_aggregator.add_confidence({
+                        "final_confidence": response.confidence,
+                        "confidence_level": response.confidence_level.value if hasattr(response, 'confidence_level') else "unknown"
+                    })
+
+                # Track features enabled/skipped
+                for feature_name in self.config.__dataclass_fields__.keys():
+                    if feature_name.startswith("enable_"):
+                        enabled = getattr(self.config, feature_name, False)
+                        obs_aggregator.add_feature_status(feature_name, enabled)
+
+                # Finalize with outcome
+                obs_record = obs_aggregator.finalize(
+                    success=response.success if hasattr(response, 'success') else True,
+                    duration_ms=execution_time_ms,
+                    error=None
+                )
+
+                # Store in observability dashboard with SSE events for detailed timeline
+                dashboard = get_observability_dashboard()
+                sse_events = emitter.get_history() if emitter else None
+                dashboard.store_request(obs_record, sse_events=sse_events)
+                logger.info(f"[{request_id}] Observability stored: decisions={len(decision_logger.decisions)}, llm_calls={len(llm_logger.calls)}, sse_events={len(sse_events) if sse_events else 0}")
+
+            except Exception as obs_err:
+                logger.warning(f"[{request_id}] Observability aggregation failed: {obs_err}")
+
             return response
 
         except Exception as e:
@@ -3451,6 +3784,24 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
             if graph_cache:
                 await graph_cache.end_workflow(request_id, success=False)
+
+            # ===== OBSERVABILITY: Store failed request data =====
+            try:
+                obs_aggregator.add_decisions(decision_logger.decisions)
+                obs_aggregator.add_context_flow(context_tracker.get_flow_summary())
+                obs_aggregator.add_llm_calls(llm_logger.get_call_summary())
+                obs_aggregator.add_scratchpad(scratchpad_observer.get_change_summary())
+
+                obs_record = obs_aggregator.finalize(
+                    success=False,
+                    duration_ms=int((time.time() - start_time) * 1000),
+                    error=str(e)
+                )
+                dashboard = get_observability_dashboard()
+                sse_events = emitter.get_history() if emitter else None
+                dashboard.store_request(obs_record, sse_events=sse_events)
+            except Exception as obs_err:
+                logger.warning(f"[{request_id}] Failed request observability failed: {obs_err}")
 
             return self.build_error_response(
                 str(e),
@@ -3462,7 +3813,11 @@ class UniversalOrchestrator(BaseSearchPipeline):
         self,
         request: SearchRequest,
         request_id: str,
-        start_time: float
+        start_time: float,
+        llm_logger: Optional[Any] = None,
+        decision_logger: Optional[Any] = None,
+        context_tracker: Optional[Any] = None,
+        scratchpad_observer: Optional[Any] = None
     ) -> SearchResponse:
         """Execute the main search pipeline with all enabled features."""
 
@@ -3506,12 +3861,38 @@ class UniversalOrchestrator(BaseSearchPipeline):
         query_analysis = None
         if self.config.enable_query_analysis and request.analyze_query:
             query_analysis = await self._phase_query_analysis(
-                request, state, search_trace, request_id
+                request, state, search_trace, request_id, llm_logger=llm_logger
             )
+
+            # ===== OBSERVABILITY: Log query analysis decision (non-streaming) =====
+            if decision_logger and query_analysis:
+                try:
+                    await decision_logger.log_decision(
+                        agent_name=AgentName.ANALYZER,
+                        decision_type=DecisionType.CLASSIFICATION,
+                        decision_made=f"query_type={query_analysis.query_type}",
+                        reasoning=f"requires_search={query_analysis.requires_search}, complexity={getattr(query_analysis, 'complexity', 'unknown')}",
+                        alternatives=["factual", "research", "creative", "troubleshooting", "code"],
+                        confidence=getattr(query_analysis, 'confidence', 0.8),
+                        context_size_tokens=len(request.query) // 4
+                    )
+                except Exception as obs_err:
+                    logger.debug(f"[{request_id}] Decision logging failed: {obs_err}")
+
+            # Track context flow: input -> analyzer
+            if context_tracker:
+                context_tracker.record_transfer(
+                    source="input",
+                    target="analyzer",
+                    content=request.query,
+                    context_type="query"
+                )
+
             if query_analysis and not query_analysis.requires_search:
                 # Direct answer, no search needed
                 return await self._handle_direct_answer(
-                    request, query_analysis, request_id, start_time
+                    request, query_analysis, request_id, start_time,
+                    decision_logger=decision_logger, llm_logger=llm_logger
                 )
 
         # PHASE 1.4: DyLAN Query Complexity Classification (G.6.2)
@@ -3528,6 +3909,21 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     f"[{request_id}] DyLAN: complexity={dylan_complexity.complexity.value}, "
                     f"skippable={enhancement_metadata['skippable_agents']}"
                 )
+
+                # ===== OBSERVABILITY: Log DyLAN complexity decision (non-streaming) =====
+                if decision_logger:
+                    await decision_logger.log_decision(
+                        agent_name=AgentName.DYLAN,
+                        decision_type=DecisionType.CLASSIFICATION,
+                        decision_made=f"complexity={dylan_complexity.complexity.value}",
+                        reasoning=dylan_complexity.reasoning[:300] if dylan_complexity.reasoning else "No reasoning provided",
+                        alternatives=["LOW", "MEDIUM", "HIGH", "VERY_HIGH"],
+                        confidence=0.85,
+                        metadata={
+                            "skippable_agents": [a.value for a in dylan_complexity.skippable_agents]
+                        }
+                    )
+
             except Exception as e:
                 logger.warning(f"[{request_id}] DyLAN classification failed: {e}")
 
@@ -3596,10 +3992,39 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 enhancement_metadata["agents_used"] = multi_agent_results.get("agents", [])
 
         # PHASE 4: Search Execution
+        search_start = time.time()
         await self._phase_search_execution(
             request, state, scratchpad, search_trace, request_id,
             pre_act_plan=pre_act_plan
         )
+        search_ms = int((time.time() - search_start) * 1000)
+
+        # ===== OBSERVABILITY: Log search execution decision (non-streaming) =====
+        if decision_logger:
+            try:
+                result_count = len(state.search_results) if state.search_results else 0
+                await decision_logger.log_decision(
+                    agent_name=AgentName.SEARCHER,
+                    decision_type=DecisionType.SEARCH,
+                    decision_made=f"executed_search",
+                    reasoning=f"Found {result_count} results in {search_ms}ms",
+                    confidence=0.9 if result_count > 0 else 0.5,
+                    metadata={
+                        "result_count": result_count,
+                        "search_ms": search_ms
+                    }
+                )
+            except Exception as obs_err:
+                logger.debug(f"[{request_id}] Decision logging failed: {obs_err}")
+
+        # Track context flow: query -> searcher
+        if context_tracker:
+            context_tracker.record_transfer(
+                source="analyzer",
+                target="searcher",
+                content=request.query,
+                context_type="search_query"
+            )
 
         # PHASE 4.5: Domain Corpus Augmentation (if enabled)
         domain_context = None
@@ -3676,9 +4101,37 @@ class UniversalOrchestrator(BaseSearchPipeline):
             enhancement_metadata["features_used"].append("mixed_precision")
 
         # PHASE 7: Content Scraping
+        scrape_start = time.time()
         scraped_content = await self._phase_content_scraping(
             request, state, scratchpad, search_trace, request_id
         )
+        scrape_ms = int((time.time() - scrape_start) * 1000)
+
+        # ===== OBSERVABILITY: Log scraping decision (non-streaming) =====
+        if decision_logger:
+            try:
+                await decision_logger.log_decision(
+                    agent_name=AgentName.SCRAPER,
+                    decision_type=DecisionType.SCRAPING,
+                    decision_made="content_extracted",
+                    reasoning=f"Scraped {len(scraped_content) if scraped_content else 0} documents in {scrape_ms}ms",
+                    confidence=0.9 if scraped_content else 0.3,
+                    metadata={
+                        "document_count": len(scraped_content) if scraped_content else 0,
+                        "scrape_ms": scrape_ms
+                    }
+                )
+            except Exception as obs_err:
+                logger.debug(f"[{request_id}] Decision logging failed: {obs_err}")
+
+        # Track context flow: search_results -> scraper
+        if context_tracker:
+            context_tracker.record_transfer(
+                source="searcher",
+                target="scraper",
+                content=f"{len(state.search_results) if state.search_results else 0} URLs",
+                context_type="search_results"
+            )
 
         # PHASE 7.5: Deep Reading (extract detailed info from scraped content)
         if self.config.enable_deep_reading and scraped_content:
@@ -3856,9 +4309,55 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 enhancement_metadata["skipped_agents"].append("verifier")
 
         if self.config.enable_verification and not skip_verification:
+            # ===== SSE EVENT: Emit verifying_claims (non-streaming path) =====
+            if self.event_emitter:
+                await self.event_emitter.emit(events.verifying_claims(
+                    request_id, len(scraped_content) if scraped_content else 0
+                ))
+
+            verify_start = time.time()
             verification_result = await self._phase_verification(
-                state, scraped_content, search_trace, request_id
+                state, scraped_content, search_trace, request_id,
+                llm_logger=llm_logger
             )
+            verify_ms = int((time.time() - verify_start) * 1000)
+
+            # ===== SSE EVENT: Emit claims_verified (non-streaming path) =====
+            if self.event_emitter and verification_result:
+                verified_count = getattr(verification_result, 'verified_count', 0)
+                total_claims = getattr(verification_result, 'total_claims', len(scraped_content) if scraped_content else 0)
+                await self.event_emitter.emit(events.claims_verified(
+                    request_id, verified_count, total_claims
+                ))
+
+            # ===== OBSERVABILITY: Log verification decision (non-streaming) =====
+            if decision_logger:
+                try:
+                    verified_count = getattr(verification_result, 'verified_count', 0) if verification_result else 0
+                    total_claims = getattr(verification_result, 'total_claims', 0) if verification_result else 0
+                    await decision_logger.log_decision(
+                        agent_name=AgentName.VERIFIER,
+                        decision_type=DecisionType.VERIFICATION,
+                        decision_made="claims_verified",
+                        reasoning=f"Verified {verified_count}/{total_claims} claims in {verify_ms}ms",
+                        confidence=getattr(verification_result, 'confidence', 0.5) if verification_result else 0.5,
+                        metadata={
+                            "verified_count": verified_count,
+                            "total_claims": total_claims,
+                            "verify_ms": verify_ms
+                        }
+                    )
+                except Exception as obs_err:
+                    logger.debug(f"[{request_id}] Decision logging failed: {obs_err}")
+
+            # Track context flow: scraped_content -> verifier
+            if context_tracker:
+                context_tracker.record_transfer(
+                    source="scraper",
+                    target="verifier",
+                    content=f"{len(scraped_content) if scraped_content else 0} documents",
+                    context_type="scraped_content"
+                )
 
             # P0.4: Agent notes communication - verifier → synthesizer
             # Add recommendations based on verification results
@@ -3937,11 +4436,61 @@ class UniversalOrchestrator(BaseSearchPipeline):
             enhanced_thought_context = "\n".join(context_parts) + ("\n\n" + enhanced_thought_context if enhanced_thought_context else "")
             enhanced_thought_context = enhanced_thought_context.strip()
 
+        # ===== SSE EVENT: Emit synthesizing (non-streaming path) =====
+        if self.event_emitter:
+            await self.event_emitter.emit(events.synthesizing(
+                request_id, len(scraped_content) if scraped_content else 0,
+                model=DEFAULT_PIPELINE_CONFIG.synthesis_model
+            ))
+
+        synth_start = time.time()
         synthesis = await self._phase_synthesis(
             request, state, scraped_content, search_trace, request_id,
             thought_context=enhanced_thought_context if enhanced_thought_context else None,
-            domain_context=domain_context
+            domain_context=domain_context,
+            llm_logger=llm_logger
         )
+        synth_ms = int((time.time() - synth_start) * 1000)
+
+        # ===== SSE EVENT: Emit synthesis_complete (non-streaming path) =====
+        if self.event_emitter:
+            # Calculate confidence for the event
+            sources = self._get_sources(state)
+            heuristic_conf = self.calculate_heuristic_confidence(
+                sources=sources,
+                synthesis=synthesis or "",
+                query=request.query,
+                max_sources=request.max_sources
+            )
+            await self.event_emitter.emit(events.synthesis_complete(
+                request_id, len(synthesis) if synthesis else 0, heuristic_conf
+            ))
+
+        # ===== OBSERVABILITY: Log synthesis decision (non-streaming) =====
+        if decision_logger:
+            try:
+                await decision_logger.log_decision(
+                    agent_name=AgentName.SYNTHESIZER,
+                    decision_type=DecisionType.SYNTHESIS,
+                    decision_made="generate_response",
+                    reasoning=f"Synthesized from {len(scraped_content) if scraped_content else 0} sources in {synth_ms}ms",
+                    confidence=0.85,
+                    metadata={
+                        "source_count": len(scraped_content) if scraped_content else 0,
+                        "synthesis_ms": synth_ms
+                    }
+                )
+            except Exception as obs_err:
+                logger.debug(f"[{request_id}] Decision logging failed: {obs_err}")
+
+        # Track context flow: scraped_content -> synthesizer
+        if context_tracker:
+            context_tracker.record_transfer(
+                source="scraper",
+                target="synthesizer",
+                content=f"{len(scraped_content) if scraped_content else 0} sources",
+                context_type="scraped_content"
+            )
 
         # PHASE 9.5a: Cross-Domain Validation (Phase 48)
         if self.config.enable_cross_domain_validation and synthesis:
@@ -4151,7 +4700,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     # Re-synthesize
                     synthesis = await self._phase_synthesis(
                         request, state, all_scraped_content, search_trace, request_id,
-                        thought_context=thought_context, domain_context=domain_context
+                        thought_context=thought_context, domain_context=domain_context,
+                        llm_logger=llm_logger
                     )
 
                     # Cross-domain validation on re-synthesized content
@@ -4378,7 +4928,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
         request: SearchRequest,
         state: SearchState,
         search_trace: List[Dict],
-        request_id: str
+        request_id: str,
+        llm_logger: Optional[Any] = None
     ) -> Optional[QueryAnalysis]:
         """Phase 1: Query analysis."""
         start = time.time()
@@ -4394,9 +4945,27 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 graph_line=self._graph_state.to_line()
             )
 
-            analysis = await self.analyzer.analyze(
-                request.query, request.context, request_id=request_id
-            )
+            # Track analyzer LLM call for observability
+            if llm_logger:
+                async with llm_logger.track_call(
+                    agent_name="analyzer",
+                    operation="analysis",
+                    model=DEFAULT_PIPELINE_CONFIG.analyzer_model,
+                    prompt=f"Query: {request.query}",
+                    prompt_template="analyze_query",
+                    metadata={"context_provided": bool(request.context)}
+                ) as llm_call:
+                    analysis = await self.analyzer.analyze(
+                        request.query, request.context, request_id=request_id
+                    )
+                    llm_call.finalize(
+                        response=str(analysis)[:500] if analysis else "",
+                        parse_success=bool(analysis)
+                    )
+            else:
+                analysis = await self.analyzer.analyze(
+                    request.query, request.context, request_id=request_id
+                )
             state.query_analysis = analysis
 
             # GAP-3 fix: Propagate directives to top-level state fields
@@ -5139,7 +5708,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
         state: SearchState,
         scraped_content: List[str],
         search_trace: List[Dict],
-        request_id: str
+        request_id: str,
+        llm_logger: Optional[Any] = None
     ):
         """Phase 8: Verification."""
         start = time.time()
@@ -5170,13 +5740,41 @@ class UniversalOrchestrator(BaseSearchPipeline):
             # Extract claims from scraped content
             claims = []
             for content in scraped_content[:5]:
-                extracted = await self.verifier.extract_claims(content[:2000])
+                # Track claim extraction LLM call
+                if llm_logger:
+                    async with llm_logger.track_call(
+                        agent_name="verifier",
+                        operation="extraction",
+                        model=DEFAULT_PIPELINE_CONFIG.verifier_model,
+                        prompt=f"Extract claims from content ({len(content)} chars)",
+                        prompt_template="extract_claims"
+                    ) as llm_call:
+                        extracted = await self.verifier.extract_claims(content[:2000])
+                        llm_call.finalize(response=str(extracted)[:200], parse_success=bool(extracted))
+                else:
+                    extracted = await self.verifier.extract_claims(content[:2000])
                 claims.extend(extracted[:5])
 
             if claims:
                 # Pass WebSearchResult objects, not raw content strings
                 sources_for_verification = state.raw_results[:5]
-                verification_results = await self.verifier.verify(claims[:10], sources_for_verification)
+                # Track verification LLM call
+                if llm_logger:
+                    async with llm_logger.track_call(
+                        agent_name="verifier",
+                        operation="verification",
+                        model=DEFAULT_PIPELINE_CONFIG.verifier_model,
+                        prompt=f"Verify {len(claims)} claims against {len(sources_for_verification)} sources",
+                        prompt_template="verify_claims",
+                        metadata={"claims_count": len(claims), "sources_count": len(sources_for_verification)}
+                    ) as llm_call:
+                        verification_results = await self.verifier.verify(claims[:10], sources_for_verification)
+                        llm_call.finalize(
+                            response=str(verification_results)[:200] if verification_results else "",
+                            parse_success=bool(verification_results)
+                        )
+                else:
+                    verification_results = await self.verifier.verify(claims[:10], sources_for_verification)
 
                 # Calculate aggregate confidence from list of VerificationResult
                 if verification_results:
@@ -5238,7 +5836,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
         search_trace: List[Dict],
         request_id: str,
         thought_context: Optional[str] = None,
-        domain_context: Optional[str] = None
+        domain_context: Optional[str] = None,
+        llm_logger: Optional[Any] = None
     ) -> str:
         """Phase 9: Synthesis."""
         start = time.time()
@@ -5303,15 +5902,38 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
         # Use synthesize_with_content for full content synthesis
         # NOTE: model_override was determined earlier, before emitting synthesizing event
-        synthesis = await self.synthesizer.synthesize_with_content(
-            query=request.query,
-            search_results=search_results,
-            scraped_content=scraped_content_dicts,
-            verifications=None,  # Verifications handled separately if enabled
-            context={"additional_context": additional_context} if additional_context else None,
-            model_override=model_override,  # Directive propagation: use thinking model when needed
-            request_id=request_id
-        )
+        # Track LLM call for observability
+        synth_model = model_override or DEFAULT_PIPELINE_CONFIG.synthesizer_model
+        synth_prompt = f"Query: {request.query}\nSources: {len(scraped_content_dicts)}"
+        if llm_logger:
+            async with llm_logger.track_call(
+                agent_name="synthesizer",
+                operation="synthesis",
+                model=synth_model,
+                prompt=synth_prompt,
+                prompt_template="synthesize_with_content",
+                metadata={"sources_count": len(scraped_content_dicts)}
+            ) as llm_call:
+                synthesis = await self.synthesizer.synthesize_with_content(
+                    query=request.query,
+                    search_results=search_results,
+                    scraped_content=scraped_content_dicts,
+                    verifications=None,  # Verifications handled separately if enabled
+                    context={"additional_context": additional_context} if additional_context else None,
+                    model_override=model_override,  # Directive propagation: use thinking model when needed
+                    request_id=request_id
+                )
+                llm_call.finalize(response=synthesis[:500] if synthesis else "", parse_success=bool(synthesis))
+        else:
+            synthesis = await self.synthesizer.synthesize_with_content(
+                query=request.query,
+                search_results=search_results,
+                scraped_content=scraped_content_dicts,
+                verifications=None,  # Verifications handled separately if enabled
+                context={"additional_context": additional_context} if additional_context else None,
+                model_override=model_override,  # Directive propagation: use thinking model when needed
+                request_id=request_id
+            )
 
         # FLARE integration: Check for uncertainty and retrieve more if needed
         if self.config.enable_flare_retrieval and synthesis:
@@ -5351,15 +5973,36 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         "content": content
                     })
                 # Re-synthesize with augmented context (use same model_override for consistency)
-                synthesis = await self.synthesizer.synthesize_with_content(
-                    query=request.query,
-                    search_results=search_results,
-                    scraped_content=scraped_content_dicts,
-                    verifications=None,
-                    context={"additional_context": additional_context} if additional_context else None,
-                    model_override=model_override,  # Directive propagation: use same thinking model
-                    request_id=request_id
-                )
+                # Track FLARE re-synthesis LLM call
+                if llm_logger:
+                    async with llm_logger.track_call(
+                        agent_name="synthesizer",
+                        operation="flare_synthesis",
+                        model=synth_model,
+                        prompt=f"Query: {request.query}\nSources: {len(scraped_content_dicts)} (FLARE augmented)",
+                        prompt_template="synthesize_with_content_flare",
+                        metadata={"sources_count": len(scraped_content_dicts), "flare_docs": len(additional_docs)}
+                    ) as llm_call:
+                        synthesis = await self.synthesizer.synthesize_with_content(
+                            query=request.query,
+                            search_results=search_results,
+                            scraped_content=scraped_content_dicts,
+                            verifications=None,
+                            context={"additional_context": additional_context} if additional_context else None,
+                            model_override=model_override,  # Directive propagation: use same thinking model
+                            request_id=request_id
+                        )
+                        llm_call.finalize(response=synthesis[:500] if synthesis else "", parse_success=bool(synthesis))
+                else:
+                    synthesis = await self.synthesizer.synthesize_with_content(
+                        query=request.query,
+                        search_results=search_results,
+                        scraped_content=scraped_content_dicts,
+                        verifications=None,
+                        context={"additional_context": additional_context} if additional_context else None,
+                        model_override=model_override,  # Directive propagation: use same thinking model
+                        request_id=request_id
+                    )
                 logger.info(f"[{request_id}] FLARE-augmented synthesis complete")
 
         # Calculate and log context utilization
@@ -5409,6 +6052,10 @@ class UniversalOrchestrator(BaseSearchPipeline):
         - "Servo alarm causes IMM hydraulic fault" (no physical connection)
         - "Robot error propagates to eDart monitoring" (isolated systems)
 
+        Enhanced 2026-01-06: Uses causal chain validation for multi-hop claims.
+        More efficient than pair-by-pair validation when synthesis contains
+        reasoning like "A causes B which leads to C".
+
         Returns:
             Tuple of (possibly_revised_synthesis, validation_result)
         """
@@ -5420,6 +6067,20 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
         try:
             validator = self._get_cross_domain_validator()
+
+            # First, check for multi-hop causal chains (more efficient)
+            causal_chains = validator.extract_causal_chains(synthesis)
+            chain_results = []
+            for chain in causal_chains:
+                if len(chain) >= 3:  # Only validate chains with 3+ systems
+                    chain_result = await validator.validate_causal_chain(chain)
+                    if not chain_result.is_valid:
+                        chain_results.append(chain_result)
+                        logger.warning(
+                            f"[{request_id}] Invalid causal chain detected: {' → '.join(chain)}"
+                        )
+
+            # Then validate individual claims
             result = await validator.validate_synthesis(synthesis, scratchpad)
 
             # Log findings
@@ -5625,9 +6286,25 @@ class UniversalOrchestrator(BaseSearchPipeline):
         request: SearchRequest,
         analysis: QueryAnalysis,
         request_id: str,
-        start_time: float
+        start_time: float,
+        decision_logger: Optional[Any] = None,
+        llm_logger: Optional[Any] = None
     ) -> SearchResponse:
         """Handle queries that don't need search."""
+        # ===== OBSERVABILITY: Log direct answer routing decision =====
+        if decision_logger:
+            try:
+                await decision_logger.log_decision(
+                    agent_name=AgentName.GATEWAY,
+                    decision_type=DecisionType.ROUTING,
+                    decision_made="direct_answer",
+                    reasoning=f"Query does not require search: {analysis.search_reasoning[:200] if analysis.search_reasoning else 'N/A'}",
+                    alternatives=["web_search", "agentic_search", "direct_answer"],
+                    confidence=analysis.confidence
+                )
+            except Exception as obs_err:
+                logger.debug(f"[{request_id}] Decision logging failed: {obs_err}")
+
         # Determine if thinking model is needed based on directive propagation (GAP-1 fix)
         model_override = None
         if analysis.requires_thinking_model:
@@ -5639,6 +6316,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
         # For no-search queries, use the basic synthesize with empty results
         # Just create a simple response without web search
+        synth_start = time.time()
         synthesis = await self.synthesizer.synthesize(
             query=request.query,
             search_results=[],  # No search results
@@ -5650,6 +6328,22 @@ class UniversalOrchestrator(BaseSearchPipeline):
             request_id=request_id,
             model_override=model_override  # Directive propagation: use thinking model when needed
         )
+        synth_ms = int((time.time() - synth_start) * 1000)
+
+        # ===== OBSERVABILITY: Log direct synthesis LLM call =====
+        if llm_logger:
+            try:
+                llm_logger.log_call(
+                    agent="synthesizer",
+                    operation="direct_synthesis",
+                    model=model_override or DEFAULT_PIPELINE_CONFIG.synthesis_model,
+                    input_tokens=len(request.query) // 4,
+                    output_tokens=len(synthesis.text) // 4 if synthesis and synthesis.text else 0,
+                    latency_ms=synth_ms
+                )
+            except Exception as obs_err:
+                logger.debug(f"[{request_id}] LLM logging failed: {obs_err}")
+
         return self.build_response(
             synthesis=synthesis,
             sources=[],

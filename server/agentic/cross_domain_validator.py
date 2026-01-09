@@ -517,6 +517,210 @@ class CrossDomainValidator:
 
         return revised
 
+    async def validate_causal_chain(
+        self,
+        chain: List[str],
+        claim_text: str = ""
+    ) -> ClaimValidationResult:
+        """
+        Validate an entire causal chain via PDF Tools API.
+
+        More efficient than validating pair-by-pair when synthesis
+        contains multi-hop reasoning like "A causes B causes C".
+
+        Args:
+            chain: List of system types in causal order
+                   e.g., ["servo_drive", "robot_controller", "imm_controller"]
+            claim_text: Original claim text for context
+
+        Returns:
+            ClaimValidationResult with chain-level validation
+        """
+        if len(chain) < 2:
+            return ClaimValidationResult(
+                claim=ExtractedClaim(
+                    text=claim_text,
+                    claim_type=ClaimType.CAUSAL,
+                    source_system=chain[0] if chain else "",
+                    target_system="",
+                    start_pos=0,
+                    end_pos=len(claim_text)
+                ),
+                is_valid=True,
+                severity=ValidationSeverity.INFO,
+                message="Single system - no cross-domain validation needed",
+                confidence=1.0
+            )
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(
+                    f"{self.pdf_api_url}/api/v1/validate/causal-chain",
+                    json={"chain": chain}
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+
+                    # Handle unified response format
+                    if "data" in data:
+                        data = data["data"]
+
+                    is_valid = data.get("is_valid", False)
+                    message = data.get("message", "")
+                    invalid_links = data.get("invalid_links", [])
+                    confidence = data.get("confidence", 0.5)
+
+                    # Create a synthetic claim for the full chain
+                    claim = ExtractedClaim(
+                        text=claim_text or f"{' → '.join(chain)}",
+                        claim_type=ClaimType.CAUSAL,
+                        source_system=chain[0],
+                        target_system=chain[-1],
+                        start_pos=0,
+                        end_pos=len(claim_text) if claim_text else len(chain) * 20
+                    )
+
+                    if is_valid:
+                        return ClaimValidationResult(
+                            claim=claim,
+                            is_valid=True,
+                            severity=ValidationSeverity.INFO,
+                            message=f"Valid causal chain: {message}",
+                            confidence=confidence
+                        )
+                    else:
+                        # Build message about invalid links
+                        invalid_msg = "; ".join([
+                            f"{link.get('from')} → {link.get('to')}: {link.get('reason', 'no connection')}"
+                            for link in invalid_links
+                        ])
+                        return ClaimValidationResult(
+                            claim=claim,
+                            is_valid=False,
+                            severity=ValidationSeverity.CRITICAL,
+                            message=f"INVALID causal chain: {invalid_msg}",
+                            suggested_revision=self._generate_chain_revision(chain, invalid_links),
+                            confidence=confidence
+                        )
+                else:
+                    logger.warning(f"Causal chain validation returned {response.status_code}")
+
+        except httpx.ConnectError:
+            logger.warning(f"PDF Tools API unavailable for chain validation")
+        except Exception as e:
+            logger.error(f"Causal chain validation error: {e}")
+
+        # Fallback: validate each link locally
+        return await self._validate_chain_locally(chain, claim_text)
+
+    async def _validate_chain_locally(
+        self,
+        chain: List[str],
+        claim_text: str
+    ) -> ClaimValidationResult:
+        """Local fallback for chain validation when API unavailable."""
+        invalid_links = []
+
+        for i in range(len(chain) - 1):
+            source = chain[i]
+            target = chain[i + 1]
+
+            # Create synthetic claim for this link
+            link_claim = ExtractedClaim(
+                text=f"{source} → {target}",
+                claim_type=ClaimType.CAUSAL,
+                source_system=source,
+                target_system=target,
+                start_pos=0,
+                end_pos=0
+            )
+
+            result = self._validate_claim_locally(link_claim)
+            if not result.is_valid:
+                invalid_links.append({
+                    "from": source,
+                    "to": target,
+                    "reason": result.message
+                })
+
+        claim = ExtractedClaim(
+            text=claim_text or f"{' → '.join(chain)}",
+            claim_type=ClaimType.CAUSAL,
+            source_system=chain[0],
+            target_system=chain[-1],
+            start_pos=0,
+            end_pos=len(claim_text) if claim_text else len(chain) * 20
+        )
+
+        if invalid_links:
+            invalid_msg = "; ".join([
+                f"{link['from']} → {link['to']}: {link['reason']}"
+                for link in invalid_links
+            ])
+            return ClaimValidationResult(
+                claim=claim,
+                is_valid=False,
+                severity=ValidationSeverity.CRITICAL,
+                message=f"INVALID causal chain: {invalid_msg}",
+                suggested_revision=self._generate_chain_revision(chain, invalid_links),
+                confidence=0.8
+            )
+
+        return ClaimValidationResult(
+            claim=claim,
+            is_valid=True,
+            severity=ValidationSeverity.INFO,
+            message="Causal chain validated locally",
+            confidence=0.7
+        )
+
+    def _generate_chain_revision(
+        self,
+        chain: List[str],
+        invalid_links: List[Dict[str, str]]
+    ) -> str:
+        """Generate revision suggestion for invalid causal chain."""
+        invalid_systems = set()
+        for link in invalid_links:
+            invalid_systems.add(link.get("from", ""))
+            invalid_systems.add(link.get("to", ""))
+
+        return (
+            f"The causal chain {' → '.join(chain)} contains invalid connections. "
+            f"The following systems are not directly connected: {', '.join(invalid_systems)}. "
+            "Each system should be troubleshot independently. Check integration documentation "
+            "for valid communication paths between these systems."
+        )
+
+    def extract_causal_chains(self, text: str) -> List[List[str]]:
+        """
+        Extract multi-hop causal chains from text.
+
+        Finds patterns like "A causes B which leads to C"
+        and returns as chains: [["A", "B", "C"]]
+        """
+        chains = []
+
+        # Pattern for chained causation (X causes Y which causes Z)
+        chain_patterns = [
+            r"(.+?)\s+(?:causes?|leading\s+to|triggering)\s+(.+?)\s+(?:which\s+)?(?:causes?|leads?\s+to|triggers?|results?\s+in)\s+(.+?)(?:\.|,|$)",
+            r"(.+?)\s*→\s*(.+?)\s*→\s*(.+?)(?:\.|,|$)",
+        ]
+
+        for pattern in chain_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                chain = []
+                for group in match.groups():
+                    system = self._detect_system_type(group)
+                    if system:
+                        chain.append(system)
+
+                if len(chain) >= 2:
+                    chains.append(chain)
+
+        return chains
+
     async def validate_synthesis(
         self,
         synthesis: str,

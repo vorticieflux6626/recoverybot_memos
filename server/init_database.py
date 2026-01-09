@@ -17,6 +17,7 @@ from models.memory import Memory, MemoryType, MemoryPrivacyLevel
 from models.user import UserMemorySettings
 from models.quest import Quest, QuestTask, UserQuest, UserTask, Achievement, UserAchievement, UserQuestStats
 from models.ollama_model import OllamaModelSpec
+from models.agent_run import AgentRun  # Agent observability persistence
 from config.database import db_manager, Base, async_engine
 from config.settings import get_settings
 
@@ -54,7 +55,8 @@ async def create_database_schema():
             logger.info(f"   - Achievement model: {Achievement.__tablename__}")
             logger.info(f"   - UserAchievement model: {UserAchievement.__tablename__}")
             logger.info(f"   - UserQuestStats model: {UserQuestStats.__tablename__}")
-            
+            logger.info(f"   - AgentRun model: {AgentRun.__tablename__}")
+
             # Create all tables
             await conn.run_sync(Base.metadata.create_all)
             

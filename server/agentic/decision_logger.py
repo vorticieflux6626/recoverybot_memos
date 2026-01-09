@@ -25,16 +25,22 @@ logger = logging.getLogger(__name__)
 class DecisionType(str, Enum):
     """Types of decisions agents can make."""
     CLASSIFICATION = "classification"  # Routing, categorization
+    ROUTING = "routing"  # Pipeline/path selection
     ACTION = "action"  # Executing an operation
     SKIP = "skip"  # Deciding not to act
     FALLBACK = "fallback"  # Using alternative path
     REFINEMENT = "refinement"  # Improving previous output
     HALT = "halt"  # Stopping iteration
     EVALUATION = "evaluation"  # Quality assessment
+    SEARCH = "search"  # Search execution
+    SCRAPING = "scraping"  # Content extraction
+    VERIFICATION = "verification"  # Claim verification
+    SYNTHESIS = "synthesis"  # Response generation
 
 
 class AgentName(str, Enum):
     """Known agent names in the pipeline."""
+    GATEWAY = "gateway"
     QUERY_CLASSIFIER = "query_classifier"
     ANALYZER = "analyzer"
     SEARCHER = "searcher"

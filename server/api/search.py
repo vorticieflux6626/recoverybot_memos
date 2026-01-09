@@ -63,10 +63,7 @@ from agentic.events import (
     EventType,
     SearchEvent
 )
-from agentic.observability_dashboard import (
-    get_observability_dashboard,
-    create_request_observability
-)
+from agentic.observability_dashboard import get_observability_dashboard
 from agentic.query_classifier import (
     QueryClassifier,
     QueryClassification,
@@ -98,46 +95,6 @@ class ClassifyResponse(BaseModel):
     reasoning: str
 
 router = APIRouter(prefix="/api/v1/search", tags=["Search"])
-
-
-# =============================================================================
-# OBSERVABILITY CAPTURE HELPER
-# =============================================================================
-
-def _capture_observability(
-    request_id: str,
-    query: str,
-    preset: str,
-    pipeline: str,
-    success: bool,
-    duration_ms: int,
-    confidence: float = 0.0,
-    error: str = None
-):
-    """
-    Capture request observability data for the Unified Dashboard.
-
-    Called at the end of each pipeline execution to record the request
-    in the observability dashboard for monitoring and debugging.
-    """
-    try:
-        dashboard = get_observability_dashboard()
-        obs = create_request_observability(request_id, query, preset)
-        obs.success = success
-        obs.total_duration_ms = duration_ms
-        obs.final_confidence = confidence
-        obs.confidence_level = (
-            "high" if confidence >= 0.8 else
-            "medium" if confidence >= 0.6 else
-            "low" if confidence >= 0.4 else
-            "very_low"
-        )
-        obs.error_message = error
-        obs.agents_executed = [pipeline]  # Basic tracking
-        dashboard.store_request(obs)
-        logger.debug(f"[{request_id}] Observability captured: {pipeline}, conf={confidence:.2f}")
-    except Exception as e:
-        logger.warning(f"[{request_id}] Failed to capture observability: {e}")
 
 
 # =============================================================================
@@ -5177,16 +5134,57 @@ async def _execute_direct_answer(
         }
     ))
 
-    # Capture observability for dashboard
-    _capture_observability(
-        request_id=request_id,
-        query=request.query,
-        preset=request.preset,
-        pipeline="direct_answer",
-        success=True,
-        duration_ms=duration_ms,
-        confidence=0.9
-    )
+    # ===== OBSERVABILITY: Store direct_answer pipeline data =====
+    # Direct answer bypasses orchestrator, so we capture observability here
+    try:
+        from agentic.observability_dashboard import (
+            get_observability_dashboard,
+            ObservabilityAggregator
+        )
+        from agentic.decision_logger import AgentName, DecisionType
+
+        # Create observability aggregator
+        obs_aggregator = ObservabilityAggregator(request_id, request.query, "direct_answer")
+
+        # Add LLM call data (use correct field names for ObservabilityAggregator)
+        input_tokens = result.get("prompt_eval_count", len(request.query) // 4)
+        output_tokens = result.get("eval_count", len(answer) // 4)
+        obs_aggregator.add_llm_calls({
+            "total_latency_ms": duration_ms,
+            "total_input_tokens": input_tokens,
+            "total_output_tokens": output_tokens,
+            "call_chain": [{
+                "agent": "synthesizer",
+                "operation": "direct_synthesis",
+                "model": request.model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "latency_ms": duration_ms
+            }]
+        })
+
+        # Add decision data (use string values, not enum class names)
+        obs_aggregator.add_decisions([{
+            "agent_name": AgentName.GATEWAY.value,
+            "decision_type": DecisionType.ROUTING.value,
+            "decision_made": "direct_answer",
+            "reasoning": "Direct factual question - no search required",
+            "confidence": 0.9,
+            "timestamp": time.time()
+        }])
+
+        # Finalize and store
+        obs_record = obs_aggregator.finalize(
+            success=True,
+            duration_ms=duration_ms,
+            error=None
+        )
+        dashboard = get_observability_dashboard()
+        sse_events = emitter.get_history() if emitter else None
+        dashboard.store_request(obs_record, sse_events=sse_events)
+        logger.info(f"[{request_id}] Observability stored (direct_answer gateway): llm_calls=1, duration={duration_ms}ms")
+    except Exception as obs_err:
+        logger.warning(f"[{request_id}] Observability capture failed: {obs_err}")
 
 
 async def _execute_simple_search(
@@ -5271,16 +5269,7 @@ async def _execute_simple_search(
         graph_line=graph_state.to_line_simple()
     ))
 
-    # Capture observability for dashboard
-    _capture_observability(
-        request_id=request_id,
-        query=request.query,
-        preset=preset,
-        pipeline="web_search",
-        success=True,
-        duration_ms=execution_time_ms,
-        confidence=confidence
-    )
+    # Note: Observability is captured by orchestrator.search() - no duplicate capture needed
 
 
 async def _execute_agentic_pipeline(
@@ -5405,16 +5394,7 @@ async def _execute_agentic_pipeline(
         graph_line=graph_state.to_line_simple()
     ))
 
-    # Capture observability for dashboard
-    _capture_observability(
-        request_id=request_id,
-        query=request.query,
-        preset=preset,
-        pipeline="agentic_search",
-        success=True,
-        duration_ms=execution_time_ms,
-        confidence=confidence
-    )
+    # Note: Observability is captured by orchestrator.search() - no duplicate capture needed
 
 
 # =============================================================================

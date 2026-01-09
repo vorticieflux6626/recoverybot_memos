@@ -1055,6 +1055,141 @@ class DocumentGraphService:
             logger.error(f"HSEA troubleshoot failed: {e}")
             return None
 
+    async def hsea_search(
+        self,
+        query: str,
+        strata: Optional[List[str]] = None,
+        entity_types: Optional[List[str]] = None,
+        top_k: int = 10,
+        min_score: float = 0.0
+    ) -> List[Dict[str, Any]]:
+        """
+        HSEA (Hierarchical Stratified Embedding Architecture) semantic search.
+
+        Uses three-stratum embeddings for more precise retrieval:
+        - Systemic (128d): Category-level, high-level concepts (~0.2ms)
+        - Structural (256d): Relationship-level, contextual (~0.3ms)
+        - Substantive (768d): Full precision, detailed content (~0.2ms)
+
+        Args:
+            query: Search query
+            strata: Which strata to use (default: all three)
+            entity_types: Filter by entity types (error_code, remedy, etc.)
+            top_k: Number of results to return
+            min_score: Minimum relevance score threshold
+
+        Returns:
+            List of search results with stratum-specific scores
+        """
+        if not self.is_available:
+            return []
+
+        cache_key = self._cache_key("hsea_search", query, str(strata), top_k)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            request_body = {
+                "query": query,
+                "top_k": top_k,
+                "min_score": min_score
+            }
+            if strata:
+                request_body["strata"] = strata
+            if entity_types:
+                request_body["entity_types"] = entity_types
+
+            response = await self.client.post(
+                "/api/v1/search/hsea",
+                json=request_body
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            results = data.get("data", {}).get("results", [])
+            self._set_cached(cache_key, results)
+
+            logger.info(f"HSEA search '{query[:30]}...' returned {len(results)} results")
+            return results
+
+        except Exception as e:
+            logger.error(f"HSEA search failed: {e}")
+            return []
+
+    async def hsea_strata_info(self) -> Dict[str, Any]:
+        """
+        Get HSEA stratum configuration and statistics.
+
+        Returns:
+            Dict with stratum info (dimensions, coverage, latency)
+        """
+        if not self.is_available:
+            return {}
+
+        cache_key = self._cache_key("hsea_strata_info")
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            response = await self.client.get("/api/v1/search/hsea/strata/info")
+            response.raise_for_status()
+            data = response.json()
+
+            result = data.get("data", {})
+            self._set_cached(cache_key, result, ttl=3600)  # 1 hour cache
+            return result
+
+        except Exception as e:
+            logger.error(f"Get HSEA strata info failed: {e}")
+            return {}
+
+    async def hsea_export_entities(
+        self,
+        entity_types: Optional[List[str]] = None,
+        include_embeddings: bool = False,
+        limit: int = 1000
+    ) -> Dict[str, Any]:
+        """
+        Export entities from HSEA index for local caching.
+
+        Used to sync PDF Tools entities to memOS for faster local lookups.
+
+        Args:
+            entity_types: Filter by entity types
+            include_embeddings: Include embedding vectors (large!)
+            limit: Maximum entities to export
+
+        Returns:
+            Dict with entities and metadata
+        """
+        if not self.is_available:
+            return {"entities": [], "total": 0}
+
+        try:
+            params = {
+                "include_embeddings": str(include_embeddings).lower(),
+                "limit": limit
+            }
+            if entity_types:
+                params["entity_types"] = ",".join(entity_types)
+
+            response = await self.client.get(
+                "/api/v1/search/hsea/export/entities",
+                params=params
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            result = data.get("data", {})
+            logger.info(f"Exported {len(result.get('entities', []))} entities from HSEA")
+            return result
+
+        except Exception as e:
+            logger.error(f"HSEA entity export failed: {e}")
+            return {"entities": [], "total": 0}
+
     async def get_similar_errors(
         self,
         error_code: str,
@@ -1154,6 +1289,323 @@ class DocumentGraphService:
         except Exception as e:
             logger.error(f"Get IMM defect failed: {e}")
             return None
+
+    async def get_facets(
+        self,
+        query: Optional[str] = None
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get faceted search filters with counts.
+
+        Returns dynamic filter values for UI filtering:
+        - robot_models: [{value: "r-30ib", count: 1523}, ...]
+        - categories: [{value: "srvo", count: 6107}, ...]
+        - document_types: [{value: "manual", count: 45}, ...]
+        - severity_levels: [{value: "alarm", count: 2341}, ...]
+
+        Args:
+            query: Optional query to scope facet counts
+
+        Returns:
+            Dict mapping facet name to list of values with counts
+        """
+        if not self.is_available:
+            return {}
+
+        cache_key = self._cache_key("facets", query or "")
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            params = {}
+            if query:
+                params["query"] = query
+
+            response = await self.client.get("/search/facets", params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            result = data.get("data", data)  # Handle both formats
+            self._set_cached(cache_key, result, ttl=600)  # 10 min cache
+
+            logger.info(f"Got facets: {list(result.keys())}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Get facets failed: {e}")
+            return {}
+
+    async def get_search_suggestions(
+        self,
+        query: str,
+        limit: int = 10
+    ) -> List[str]:
+        """
+        Get autocomplete suggestions for search query.
+
+        Args:
+            query: Partial query string
+            limit: Maximum suggestions to return
+
+        Returns:
+            List of suggested completions
+        """
+        if not self.is_available or len(query) < 2:
+            return []
+
+        try:
+            # Try POST first (some APIs prefer this for suggestions)
+            try:
+                response = await self.client.post(
+                    "/search/suggest",
+                    json={"query": query, "limit": limit}
+                )
+                response.raise_for_status()
+            except (httpx.HTTPStatusError, Exception):
+                # Fallback to GET with different param names
+                response = await self.client.get(
+                    "/search/suggest",
+                    params={"q": query, "max_results": limit}
+                )
+                response.raise_for_status()
+
+            data = response.json()
+
+            # Handle various response formats
+            if isinstance(data, list):
+                return data[:limit]
+            elif isinstance(data, dict):
+                if "data" in data:
+                    inner = data["data"]
+                    if isinstance(inner, list):
+                        return inner[:limit]
+                    return inner.get("suggestions", [])[:limit]
+                return data.get("suggestions", [])[:limit]
+            return []
+
+        except Exception as e:
+            logger.debug(f"Get suggestions failed: {e}")
+            return []
+
+    async def imm_troubleshoot(
+        self,
+        defect: str,
+        include_related: bool = True,
+        max_results: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Get diagnostic paths for injection molding defects.
+
+        Args:
+            defect: Defect name (e.g., 'flash', 'sink marks', 'warpage')
+            include_related: Include related defects and causes
+            max_results: Maximum diagnostic paths
+
+        Returns:
+            Dict with diagnostic paths, causes, and remedies
+        """
+        if not self.is_available:
+            return {}
+
+        cache_key = self._cache_key("imm_troubleshoot", defect)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            response = await self.client.post(
+                "/api/v1/imm/troubleshoot",
+                json={
+                    "defect": defect,
+                    "include_related": include_related,
+                    "max_results": max_results
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            result = data.get("data", {})
+            self._set_cached(cache_key, result)
+
+            logger.info(f"IMM troubleshoot for '{defect}': {len(result.get('paths', []))} paths")
+            return result
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.info(f"Defect not found: {defect}")
+                return {}
+            logger.error(f"IMM troubleshoot error: {e.response.status_code}")
+            return {}
+        except Exception as e:
+            logger.error(f"IMM troubleshoot failed: {e}")
+            return {}
+
+    async def get_imm_entities(
+        self,
+        entity_type: Optional[str] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        List IMM entities (defects, components, process variables).
+
+        Args:
+            entity_type: Filter by type (defect, component, material, etc.)
+            limit: Maximum entities to return
+
+        Returns:
+            List of IMM entities
+        """
+        if not self.is_available:
+            return []
+
+        try:
+            params = {"limit": limit}
+            if entity_type:
+                params["entity_type"] = entity_type
+
+            response = await self.client.get("/api/v1/imm/entities", params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            # Handle both list and dict response formats
+            if isinstance(data, list):
+                return data
+            elif isinstance(data, dict):
+                # Try unified format first, then direct entities key
+                if "data" in data:
+                    inner = data["data"]
+                    if isinstance(inner, list):
+                        return inner
+                    return inner.get("entities", [])
+                return data.get("entities", [])
+            return []
+
+        except Exception as e:
+            logger.error(f"Get IMM entities failed: {e}")
+            return []
+
+    async def get_graph_stats(self) -> Dict[str, Any]:
+        """
+        Get graph statistics for health monitoring.
+
+        Returns:
+            Dict with node/edge counts, type distributions, coverage
+        """
+        if not self.is_available:
+            return {}
+
+        cache_key = self._cache_key("graph_stats")
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            response = await self.client.get("/graph/stats")
+            response.raise_for_status()
+            data = response.json()
+
+            result = data.get("data", data)
+
+            # Normalize field names (API may use num_* or total_*)
+            if "num_nodes" in result and "total_nodes" not in result:
+                result["total_nodes"] = result["num_nodes"]
+            if "num_edges" in result and "total_edges" not in result:
+                result["total_edges"] = result["num_edges"]
+
+            self._set_cached(cache_key, result, ttl=300)  # 5 min cache
+
+            logger.info(
+                f"Graph stats: {result.get('total_nodes', 0):,} nodes, "
+                f"{result.get('total_edges', 0):,} edges"
+            )
+            return result
+
+        except Exception as e:
+            logger.error(f"Get graph stats failed: {e}")
+            return {}
+
+    async def get_subgraph(
+        self,
+        start_node_id: str,
+        max_depth: int = 2,
+        max_nodes: int = 50,
+        edge_types: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Extract a BFS subgraph around a starting node.
+
+        Useful for focused context retrieval around a specific
+        error code or component.
+
+        Args:
+            start_node_id: Starting node for BFS (e.g., "SRVO-063" or "error_code:SRVO-063")
+            max_depth: Maximum traversal depth
+            max_nodes: Maximum nodes in subgraph
+            edge_types: Filter by edge types
+
+        Returns:
+            Dict with nodes and edges of subgraph
+        """
+        if not self.is_available:
+            return {"nodes": [], "edges": []}
+
+        try:
+            # Try different request body formats
+            request_bodies = [
+                # Format 1: node_id field
+                {
+                    "node_id": start_node_id,
+                    "max_depth": max_depth,
+                    "max_nodes": max_nodes
+                },
+                # Format 2: start_node_id field
+                {
+                    "start_node_id": start_node_id,
+                    "max_depth": max_depth,
+                    "max_nodes": max_nodes
+                },
+                # Format 3: Just the error code without prefix
+                {
+                    "node_id": start_node_id.split(":")[-1] if ":" in start_node_id else start_node_id,
+                    "max_depth": max_depth,
+                    "max_nodes": max_nodes
+                },
+            ]
+
+            if edge_types:
+                for body in request_bodies:
+                    body["edge_types"] = edge_types
+
+            result = {"nodes": [], "edges": []}
+
+            for request_body in request_bodies:
+                try:
+                    response = await self.client.post("/graph/subgraph", json=request_body)
+                    if response.status_code == 200:
+                        data = response.json()
+                        result = data.get("data", data)
+                        if result.get("nodes") or result.get("edges"):
+                            break
+                except Exception:
+                    continue
+
+            logger.info(
+                f"Subgraph from {start_node_id}: "
+                f"{len(result.get('nodes', []))} nodes, "
+                f"{len(result.get('edges', []))} edges"
+            )
+            return result
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.info(f"Node not found: {start_node_id}")
+                return {"nodes": [], "edges": []}
+            logger.error(f"Get subgraph error: {e.response.status_code}")
+            return {"nodes": [], "edges": []}
+        except Exception as e:
+            logger.error(f"Get subgraph failed: {e}")
+            return {"nodes": [], "edges": []}
 
     async def get_enhanced_context_for_rag(
         self,
