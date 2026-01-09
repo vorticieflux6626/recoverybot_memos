@@ -4002,7 +4002,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
         # ===== OBSERVABILITY: Log search execution decision (non-streaming) =====
         if decision_logger:
             try:
-                result_count = len(state.search_results) if state.search_results else 0
+                result_count = len(state.raw_results) if state.raw_results else 0
                 await decision_logger.log_decision(
                     agent_name=AgentName.SEARCHER,
                     decision_type=DecisionType.SEARCH,
@@ -4129,7 +4129,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
             context_tracker.record_transfer(
                 source="searcher",
                 target="scraper",
-                content=f"{len(state.search_results) if state.search_results else 0} URLs",
+                content=f"{len(state.raw_results) if state.raw_results else 0} URLs",
                 context_type="search_results"
             )
 
@@ -4440,7 +4440,7 @@ class UniversalOrchestrator(BaseSearchPipeline):
         if self.event_emitter:
             await self.event_emitter.emit(events.synthesizing(
                 request_id, len(scraped_content) if scraped_content else 0,
-                model=DEFAULT_PIPELINE_CONFIG.synthesis_model
+                model=DEFAULT_PIPELINE_CONFIG.synthesizer_model
             ))
 
         synth_start = time.time()
