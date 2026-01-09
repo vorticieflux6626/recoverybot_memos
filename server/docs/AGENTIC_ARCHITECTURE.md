@@ -430,6 +430,110 @@ async def store_search_memory(
 3. **Rate Limiting**: Per-user limits on agentic search operations
 4. **Audit Logging**: Track all search queries and results for compliance
 
+## NOTES:
+## The following are added by sparkone admin, excerpts from claude code chat regarding how the URL searching and scraping process works. It seems that we could expose the parameters
+## of the existing process for configuration by the user, or intelligent use by an LLM, in a multi-step approach to gathering the context data to proceed. Or perhaps use a small suitable
+## LLM.
+
+● URL Selection Process Analysis
+
+  Key Finding: Heuristic-Based, Not LLM-Based
+
+  The pipeline uses zero LLM calls for URL selection. Speed and determinism are prioritized over AI-based relevance evaluation.
+
+  7-Stage Selection Pipeline
+
+  Search Results (SearXNG)
+      ↓
+  1. Query Classification (regex patterns)
+      ↓
+  2. Domain Trust Scoring (+0.25 premium, +0.15 trusted)
+      ↓
+  3. Query-Domain Alignment (+0.30 for category match)
+      ↓
+  4. Keyword Relevance Filter (≥15% overlap)
+      ↓
+  5. Multi-Engine Bonus (+5% per extra engine)
+      ↓
+  6. Sort by Combined Score
+      ↓
+  7. Take top N (preset-dependent: 5/10/15)
+
+  Scoring Components
+  ┌────────────────────┬──────────┬──────────────────────────────────────────────────────────┐
+  │     Component      │  Boost   │                          Source                          │
+  ├────────────────────┼──────────┼──────────────────────────────────────────────────────────┤
+  │ Base score         │ 0.0-0.9  │ SearXNG relevance                                        │
+  ├────────────────────┼──────────┼──────────────────────────────────────────────────────────┤
+  │ Premium domain     │ +0.25    │ 62 curated domains (arxiv.org, fanuc.eu, manualslib.com) │
+  ├────────────────────┼──────────┼──────────────────────────────────────────────────────────┤
+  │ Trusted domain     │ +0.15    │ 316 industrial domains                                   │
+  ├────────────────────┼──────────┼──────────────────────────────────────────────────────────┤
+  │ Category alignment │ +0.30    │ Query type matches domain category                       │
+  ├────────────────────┼──────────┼──────────────────────────────────────────────────────────┤
+  │ Multi-engine       │ +5% each │ Result appears in multiple engines                       │
+  └────────────────────┴──────────┴──────────────────────────────────────────────────────────┘
+  Domain Categories (12 total)
+
+  The system has 316+ trusted domains organized by category:
+  ┌───────────────┬───────────────────────────────────┬────────────────────────────────────┐
+  │   Category    │          Example Domains          │            Query Match             │
+  ├───────────────┼───────────────────────────────────┼────────────────────────────────────┤
+  │ FANUC         │ fanuc.eu, fanucamerica.com        │ SRVO-, MOTN-, A06B-*               │
+  ├───────────────┼───────────────────────────────────┼────────────────────────────────────┤
+  │ Allen-Bradley │ literature.rockwellautomation.com │ 1756-*, PLC, Logix                 │
+  ├───────────────┼───────────────────────────────────┼────────────────────────────────────┤
+  │ Siemens       │ support.industry.siemens.com      │ 6ES7*, S7-*, TIA Portal            │
+  ├───────────────┼───────────────────────────────────┼────────────────────────────────────┤
+  │ IMM           │ engel.at, arburg.com, husky.co    │ barrel, screw, clamp, plasticizing │
+  ├───────────────┼───────────────────────────────────┼────────────────────────────────────┤
+  │ Sensors       │ bannerengineering.com, sick.com   │ proximity, photoelectric           │
+  ├───────────────┼───────────────────────────────────┼────────────────────────────────────┤
+  │ Hot Runners   │ moldmasters.com, husky.co         │ nozzle, manifold, heater           │
+  └───────────────┴───────────────────────────────────┴────────────────────────────────────┘
+  Keyword Relevance Filter
+
+  # Minimum 15% keyword overlap required
+  # Includes stemming and hyphenated codes
+  query: "SRVO-063 encoder alarm"
+  result_title: "FANUC Servo Alarm SRVO-063 Troubleshooting"
+
+  keywords_in_query = {"srvo", "063", "encoder", "alarm"}
+  keywords_in_result = {"fanuc", "servo", "alarm", "srvo", "063", "troubleshooting"}
+  overlap = {"srvo", "063", "alarm"} = 3/4 = 75% ✓ (passes filter)
+
+  URLs Selected Per Preset
+  ┌──────────┬────────────────────┬───────────────────┐
+  │  Preset  │ max_urls_to_scrape │     Rationale     │
+  ├──────────┼────────────────────┼───────────────────┤
+  │ MINIMAL  │ 5                  │ Fast response     │
+  ├──────────┼────────────────────┼───────────────────┤
+  │ BALANCED │ 10                 │ Default quality   │
+  ├──────────┼────────────────────┼───────────────────┤
+  │ ENHANCED │ 10                 │ Same as balanced  │
+  ├──────────┼────────────────────┼───────────────────┤
+  │ RESEARCH │ 15                 │ Thorough coverage │
+  ├──────────┼────────────────────┼───────────────────┤
+  │ FULL     │ 15                 │ Maximum coverage  │
+  └──────────┴────────────────────┴───────────────────┘
+  Why No LLM for URL Selection?
+
+  1. Latency: LLM call adds 2-5s per evaluation
+  2. Cost: 10 URLs × LLM call = significant overhead
+  3. Determinism: Heuristics are reproducible and debuggable
+  4. Domain expertise: Curated trust lists encode industrial knowledge
+  5. Keyword filter: Catches obvious mismatches cheaply
+
+  Where LLM IS Used (Post-Scrape)
+
+  The LLM enters the pipeline after content is scraped:
+
+  - CRAG Evaluator: Assesses retrieved content quality
+  - Synthesizer: Generates final answer from scraped content
+  - Self-Reflection: Validates synthesis quality
+
+  This design scrapes first (fast, cheap), then evaluates content quality with LLM (expensive, but fewer items).
+
 ---
 
 *Last Updated: 2026-01-02 by Claude Code*

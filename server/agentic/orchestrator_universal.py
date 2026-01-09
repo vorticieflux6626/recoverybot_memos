@@ -1764,11 +1764,39 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 )
                 if imm_result and imm_result.get("paths"):
                     context_parts = [f"## IMM Defect Troubleshooting: {detected_defect.title()}\n"]
-                    for i, path in enumerate(imm_result.get("paths", [])[:3], 1):
-                        context_parts.append(f"### Path {i}")
-                        for step in path.get("steps", []):
-                            context_parts.append(f"- {step.get('type', 'step')}: {step.get('content', '')[:200]}")
+                    for i, path in enumerate(imm_result.get("paths", [])[:5], 1):
+                        context_parts.append(f"### Path {i} (Score: {path.get('score', 0):.2f})")
+                        # PDF Tools API returns: node_ids, node_types, node_labels, edge_types, explanation
+                        # Build path description from node labels and types
+                        node_labels = path.get("node_labels", [])
+                        node_types = path.get("node_types", [])
+                        edge_types = path.get("edge_types", [])
+                        explanation = path.get("explanation", "")
+
+                        # Format path as: type: label -> edge -> type: label
+                        if node_labels and node_types:
+                            path_steps = []
+                            for j, (label, ntype) in enumerate(zip(node_labels, node_types)):
+                                step_str = f"**{ntype}**: {label}"
+                                path_steps.append(step_str)
+                                if j < len(edge_types):
+                                    path_steps.append(f"  →[{edge_types[j]}]→")
+                            context_parts.append(" ".join(path_steps))
+
+                        if explanation:
+                            context_parts.append(f"*{explanation}*")
                         context_parts.append("")
+
+                    # Add process parameters if available
+                    if imm_result.get("process_parameters"):
+                        context_parts.append("### Relevant Process Parameters")
+                        for param in imm_result.get("process_parameters", [])[:5]:
+                            if isinstance(param, dict):
+                                context_parts.append(f"- **{param.get('name', 'Unknown')}**: {param.get('description', '')[:100]}")
+                            else:
+                                context_parts.append(f"- {param}")
+                        context_parts.append("")
+
                     if imm_result.get("related_defects"):
                         context_parts.append("**Related defects:** " + ", ".join(imm_result["related_defects"]))
                     logger.debug(f"IMM troubleshoot context: {len(context_parts)} sections")

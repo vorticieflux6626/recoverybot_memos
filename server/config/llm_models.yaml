@@ -1,0 +1,369 @@
+# =============================================================================
+# LLM Model Configuration for Agentic Pipeline
+# =============================================================================
+# This file centralizes all LLM model assignments for the memOS agentic search
+# pipeline. Changes here affect the entire system's model usage.
+#
+# Location: /home/sparkone/sdd/Recovery_Bot/memOS/server/config/llm_models.yaml
+# Dashboard Access: GET/PUT /api/v1/config/llm-models
+#
+# Model Selection Criteria:
+#   - Speed: Lower latency = faster pipeline (important for interactive use)
+#   - Quality: Higher accuracy = better results (important for synthesis)
+#   - VRAM: Lower usage = can run more concurrent models
+#   - Cost: Smaller models = less computational overhead
+#
+# Recommended Models by Task Type:
+#   - Fast classification: ministral-3:3b, gemma3:4b, qwen3:4b
+#   - Quality synthesis: qwen3:8b, ministral-3:8b
+#   - Complex reasoning: deepseek-r1:14b, phi4-reasoning:14b
+#   - Embeddings: qwen3-embedding, nomic-embed-text
+# =============================================================================
+
+version: "1.0.0"
+last_updated: "2026-01-09"
+
+# Ollama server configuration
+ollama:
+  url: "http://localhost:11434"
+  default_timeout: 120
+  keep_alive: "30m"
+
+# =============================================================================
+# PIPELINE STAGE MODELS
+# These are the primary models used at each stage of the agentic pipeline
+# =============================================================================
+
+pipeline:
+  # Query Analysis - determines query type, complexity, search strategy
+  analyzer:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.3
+    max_tokens: 1024
+    description: "Query analysis, classification, search planning"
+    notes: "Needs good reasoning for accurate query classification"
+
+  # URL Evaluation - determines which search results to scrape
+  url_evaluator:
+    model: "ministral-3:3b"  # 8.7x faster than qwen3:8b, same accuracy
+    context_window: 32000
+    temperature: 0.3
+    max_tokens: 2048
+    description: "Evaluate search result relevance for scraping"
+    notes: "Simple classification task - fast model is sufficient"
+
+  # Content Coverage - evaluates if scraped content answers the query
+  coverage_evaluator:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.2
+    max_tokens: 1024
+    description: "Assess content coverage and identify gaps"
+    notes: "Needs to compare content against multiple questions"
+
+  # Search Planner - creates multi-phase search plans
+  planner:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.4
+    max_tokens: 1024
+    description: "Generate search plans with decomposed questions"
+    notes: "Needs reasoning ability for query decomposition"
+
+  # Content Synthesis - generates final answers
+  synthesizer:
+    model: "ministral-3:3b"
+    context_window: 32000
+    temperature: 0.6
+    max_tokens: 4096
+    description: "Synthesize final response from sources"
+    notes: "Scored 0.848 in benchmarks, good balance of speed/quality"
+
+  # Complex Reasoning - for troubleshooting, root cause analysis
+  thinking:
+    model: "ministral-3:3b"
+    context_window: 32000
+    temperature: 0.6
+    max_tokens: 8192
+    description: "Extended reasoning for complex queries"
+    notes: "Used when requires_thinking_model=true"
+
+  # CRAG Retrieval Evaluator
+  retrieval_evaluator:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.2
+    max_tokens: 1024
+    description: "Evaluate retrieval quality (CRAG)"
+    notes: "Needs accurate relevance assessment"
+
+  # Self-Reflection - post-synthesis quality check
+  self_reflection:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.3
+    max_tokens: 1024
+    description: "Post-synthesis quality evaluation"
+    notes: "Checks for hallucinations, accuracy, completeness"
+
+  # Verification - fact checking
+  verifier:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.2
+    max_tokens: 1024
+    description: "Verify claims against sources"
+    notes: "Needs precise comparison capability"
+
+# =============================================================================
+# UTILITY MODELS
+# Specialized models for specific tasks
+# =============================================================================
+
+utility:
+  # Entity Extraction - GSW-style entity tracking
+  entity_extractor:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.3
+    max_tokens: 2048
+    description: "Extract entities from content"
+
+  # Query Tree Decomposition
+  query_decomposer:
+    model: "gemma3:4b"
+    context_window: 131072
+    temperature: 0.4
+    max_tokens: 1024
+    description: "Decompose queries into sub-queries"
+    notes: "Fast model for simple decomposition"
+
+  # Information Bottleneck Scoring
+  relevance_scorer:
+    model: "gemma3:4b"
+    context_window: 131072
+    temperature: 0.2
+    max_tokens: 512
+    description: "Score passage relevance"
+    notes: "Simple scoring task - fast model preferred"
+
+  # FLARE Uncertainty Detection
+  uncertainty_detector:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.3
+    max_tokens: 512
+    description: "Detect uncertainty in synthesis"
+    notes: "Triggers proactive retrieval"
+
+  # Experience Distillation
+  experience_distiller:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.4
+    max_tokens: 2048
+    description: "Distill search experiences into templates"
+
+  # Prompt Compression
+  prompt_compressor:
+    model: "qwen2.5:0.5b"
+    context_window: 32000
+    temperature: 0.1
+    max_tokens: 256
+    description: "Score tokens for compression"
+    notes: "Tiny model for fast scoring"
+
+  # RAPTOR Summarization
+  raptor_summarizer:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.5
+    max_tokens: 1024
+    description: "Hierarchical document summarization"
+
+  # NanoGraphRAG Extraction
+  graph_extractor:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.3
+    max_tokens: 2048
+    description: "Extract entities and relations for graph"
+
+  # Graph Summary Generation
+  graph_summarizer:
+    model: "gemma3:4b"
+    context_window: 131072
+    temperature: 0.5
+    max_tokens: 1024
+    description: "Summarize graph communities"
+    notes: "Fast model for bulk summarization"
+
+  # Cross-Domain Validation
+  cross_domain_validator:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.2
+    max_tokens: 1024
+    description: "Validate cross-domain claims"
+
+  # Entity Grounding
+  entity_grounder:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.2
+    max_tokens: 1024
+    description: "Verify entity references against sources"
+
+# =============================================================================
+# EMBEDDING MODELS
+# =============================================================================
+
+embeddings:
+  # Primary embedding model
+  primary:
+    model: "qwen3-embedding:latest"
+    dimensions: 1024
+    description: "Primary text embeddings"
+
+  # Semantic cache embeddings
+  cache:
+    model: "nomic-embed-text"
+    dimensions: 768
+    description: "Fast embeddings for semantic cache"
+
+  # Shadow embeddings (challenger)
+  shadow:
+    model: "qwen3-embedding:0.6b"
+    dimensions: 512
+    description: "Lightweight challenger for A/B testing"
+
+# =============================================================================
+# CORPUS BUILDING MODELS
+# Used for offline document processing
+# =============================================================================
+
+corpus:
+  # PLC/Automation corpus extraction
+  plc_extractor:
+    model: "qwen3:8b"
+    temperature: 0.3
+    max_tokens: 2048
+    description: "Extract fault codes and procedures from PLC docs"
+
+  # IMM corpus extraction
+  imm_extractor:
+    model: "gemma3:4b"
+    temperature: 0.3
+    max_tokens: 2048
+    description: "Extract injection molding machine info"
+    notes: "Fast model for bulk extraction"
+
+  # Domain corpus processing
+  domain_extractor:
+    model: "qwen3:8b"
+    temperature: 0.3
+    max_tokens: 2048
+    description: "General domain document extraction"
+
+# =============================================================================
+# PRESETS
+# Quick model assignment profiles for different use cases
+# =============================================================================
+
+presets:
+  # Maximum speed - use smallest viable models
+  speed:
+    pipeline.analyzer: "gemma3:4b"
+    pipeline.url_evaluator: "ministral-3:3b"
+    pipeline.coverage_evaluator: "gemma3:4b"
+    pipeline.planner: "gemma3:4b"
+    pipeline.synthesizer: "ministral-3:3b"
+    pipeline.thinking: "ministral-3:3b"
+    pipeline.retrieval_evaluator: "gemma3:4b"
+    pipeline.self_reflection: "gemma3:4b"
+    pipeline.verifier: "gemma3:4b"
+
+  # Maximum quality - use largest available models
+  quality:
+    pipeline.analyzer: "qwen3:14b"
+    pipeline.url_evaluator: "qwen3:8b"
+    pipeline.coverage_evaluator: "qwen3:14b"
+    pipeline.planner: "qwen3:14b"
+    pipeline.synthesizer: "qwen3:14b"
+    pipeline.thinking: "deepseek-r1:14b-qwen-distill-q8_0"
+    pipeline.retrieval_evaluator: "qwen3:14b"
+    pipeline.self_reflection: "qwen3:14b"
+    pipeline.verifier: "qwen3:14b"
+
+  # Balanced (default) - production recommendations
+  balanced:
+    pipeline.analyzer: "qwen3:8b"
+    pipeline.url_evaluator: "ministral-3:3b"
+    pipeline.coverage_evaluator: "qwen3:8b"
+    pipeline.planner: "qwen3:8b"
+    pipeline.synthesizer: "ministral-3:3b"
+    pipeline.thinking: "ministral-3:3b"
+    pipeline.retrieval_evaluator: "qwen3:8b"
+    pipeline.self_reflection: "qwen3:8b"
+    pipeline.verifier: "qwen3:8b"
+
+  # Low VRAM - for constrained environments
+  low_vram:
+    pipeline.analyzer: "gemma3:4b"
+    pipeline.url_evaluator: "gemma3:4b"
+    pipeline.coverage_evaluator: "gemma3:4b"
+    pipeline.planner: "gemma3:4b"
+    pipeline.synthesizer: "gemma3:4b"
+    pipeline.thinking: "gemma3:4b"
+    pipeline.retrieval_evaluator: "gemma3:4b"
+    pipeline.self_reflection: "gemma3:4b"
+    pipeline.verifier: "gemma3:4b"
+
+# =============================================================================
+# BENCHMARK RESULTS REFERENCE
+# From tests/data/model_benchmarks.db
+# =============================================================================
+
+benchmarks:
+  synthesis:
+    - model: "gemma3:4b"
+      avg_duration_ms: 14305
+      ttfs_ms: 4175
+      success_rate: 1.0
+      vram_gb: 3.3
+
+    - model: "ministral-3:3b"
+      avg_duration_ms: 14907
+      ttfs_ms: 4190
+      success_rate: 1.0
+      vram_gb: 3.0
+
+    - model: "qwen3:8b"
+      avg_duration_ms: 28344
+      ttfs_ms: 13033
+      success_rate: 1.0
+      vram_gb: 5.2
+
+    - model: "gemma3:12b"
+      avg_duration_ms: 33544
+      ttfs_ms: 6454
+      success_rate: 1.0
+      vram_gb: 8.1
+
+    - model: "deepseek-r1:14b-qwen-distill-q8_0"
+      avg_duration_ms: 48595
+      ttfs_ms: 35573
+      success_rate: 1.0
+      vram_gb: 14.0
+
+  url_evaluation:
+    - model: "ministral-3:3b"
+      avg_duration_ms: 4156
+      success_rate: 1.0
+      note: "8.7x faster than qwen3:8b"
+
+    - model: "qwen3:8b"
+      avg_duration_ms: 36078
+      success_rate: 0.67
+      note: "Slower, enters thinking mode despite /no_think"

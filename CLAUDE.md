@@ -9,6 +9,7 @@
 | **Activate venv** | `cd server && source venv/bin/activate` | **REQUIRED first!** |
 | Start Server | `uvicorn main:app --host 0.0.0.0 --port 8001` | After venv activation |
 | Run Tests | `pytest tests/ -v` | After venv activation |
+| **Test Search** | `./test_search.sh "query" [preset]` | Pipeline testing with auto-timeout |
 | DB Migration | `alembic upgrade head` | After venv activation |
 | Format Code | `ruff format .` | After venv activation |
 | Lint Code | `ruff check .` | After venv activation |
@@ -96,6 +97,41 @@ pytest tests/integration/ -v
 - `tests/unit/` - Isolated unit tests
 - `tests/integration/` - Cross-component tests
 - `tests/contracts/` - API contract validation (via root tests/)
+
+### Search Pipeline Testing
+
+Use `test_search.sh` for reliable search pipeline testing with intelligent timeouts:
+
+```bash
+# Basic usage (BALANCED preset, auto-timeout)
+./test_search.sh "What is injection molding?"
+
+# With specific preset
+./test_search.sh "SRVO-063 encoder error" ENHANCED
+
+# Verbose mode (shows progress)
+./test_search.sh "short shots PA66 mold temperature" RESEARCH --verbose
+
+# JSON output for scripting
+./test_search.sh "query" MINIMAL --json
+```
+
+**Timeout Calculation by Preset:**
+
+| Preset | Base Timeout | Per 10 Words | Typical Query |
+|--------|-------------|--------------|---------------|
+| MINIMAL | 60s | +10s | 70-90s |
+| BALANCED | 120s | +15s | 135-165s |
+| ENHANCED | 180s | +20s | 200-240s |
+| RESEARCH | 300s | +30s | 330-390s |
+| FULL | 420s | +40s | 460-540s |
+
+The script:
+- Validates server availability before running
+- Shows progress from server logs (with `--verbose`)
+- Parses and formats results with confidence scores
+- Highlights if `technical_docs` feature is active
+- Checks for IMM-specific terms in synthesis
 
 ## MCP Code Intelligence
 

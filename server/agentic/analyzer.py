@@ -364,8 +364,14 @@ Respond with a JSON object:
 For complex queries, plan more iterations. For simple queries, fewer.
 Return ONLY the JSON object, no other text."""
 
-    async def _call_ollama(self, prompt: str, request_id: str = "") -> str:
-        """Call Ollama API for LLM inference with context utilization tracking"""
+    async def _call_ollama(self, prompt: str, request_id: str = "", num_predict: int = 1024) -> str:
+        """Call Ollama API for LLM inference with context utilization tracking
+
+        Args:
+            prompt: The prompt to send to the LLM
+            request_id: Request ID for tracking context utilization
+            num_predict: Maximum tokens to generate (default 1024, use 2048 for larger outputs)
+        """
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 f"{self.ollama_url}/api/generate",
@@ -375,7 +381,7 @@ Return ONLY the JSON object, no other text."""
                     "stream": False,
                     "options": {
                         "temperature": 0.3,
-                        "num_predict": 1024
+                        "num_predict": num_predict
                     }
                 }
             )
@@ -688,10 +694,10 @@ Return a JSON array of objects for URLs WORTH SCRAPING (only include relevant on
 ]
 
 Only include URLs with HIGH or MEDIUM relevance. Skip low relevance or irrelevant results.
-Return ONLY the JSON array, no other text."""
+Return ONLY the JSON array, no other text. /no_think"""
 
         try:
-            result = await self._call_ollama(prompt)
+            result = await self._call_ollama(prompt, num_predict=2048)
 
             # Parse JSON response
             json_match = re.search(r'\[.*\]', result, re.DOTALL)
