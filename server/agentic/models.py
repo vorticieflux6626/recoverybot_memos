@@ -260,6 +260,11 @@ class SearchState(BaseModel):
     search_phases_completed: List[str] = Field(default_factory=list)
     current_phase: str = "initial"
 
+    # Scraping tracking for observability
+    urls_attempted: List[str] = Field(default_factory=list, description="URLs that were attempted to scrape")
+    urls_scraped: List[str] = Field(default_factory=list, description="URLs that were successfully scraped")
+    urls_failed: List[str] = Field(default_factory=list, description="URLs that failed to scrape")
+
     def add_results(self, results: List[WebSearchResult]):
         """Add search results to state"""
         for result in results:

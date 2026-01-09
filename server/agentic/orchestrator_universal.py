@@ -4114,15 +4114,24 @@ class UniversalOrchestrator(BaseSearchPipeline):
         # ===== OBSERVABILITY: Log scraping decision (non-streaming) =====
         if decision_logger:
             try:
+                urls_attempted = list(state.urls_attempted) if state.urls_attempted else []
+                urls_scraped = list(state.urls_scraped) if state.urls_scraped else []
+                urls_failed = list(state.urls_failed) if state.urls_failed else []
                 await decision_logger.log_decision(
                     agent_name=AgentName.SCRAPER,
                     decision_type=DecisionType.SCRAPING,
                     decision_made="content_extracted",
-                    reasoning=f"Scraped {len(scraped_content) if scraped_content else 0} documents in {scrape_ms}ms",
-                    confidence=0.9 if scraped_content else 0.3,
+                    reasoning=f"Scraped {len(urls_scraped)}/{len(urls_attempted)} URLs ({len(urls_failed)} failed) in {scrape_ms}ms",
+                    confidence=0.9 if urls_scraped else 0.3,
                     metadata={
                         "document_count": len(scraped_content) if scraped_content else 0,
-                        "scrape_ms": scrape_ms
+                        "scrape_ms": scrape_ms,
+                        "urls_attempted_count": len(urls_attempted),
+                        "urls_scraped_count": len(urls_scraped),
+                        "urls_failed_count": len(urls_failed),
+                        "urls_attempted": urls_attempted,
+                        "urls_scraped": urls_scraped,
+                        "urls_failed": urls_failed
                     }
                 )
             except Exception as obs_err:
@@ -5604,6 +5613,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
         ttl_manager = get_ttl_cache_manager()
 
         for i, url in enumerate(urls_to_scrape):
+            # Track URL as attempted for observability
+            state.urls_attempted.append(url)
+
             # Detect if this URL is from a JS-heavy domain that may need VL scraping
             try:
                 parsed = urlparse(url)
@@ -5639,6 +5651,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 if result.get("success") and result.get("content"):
                     content = result["content"]
                     scraped_content.append(content[:request.max_content_per_source])
+                    # Track successful scrape for observability
+                    state.urls_scraped.append(url)
 
                     # Check if VL scraping was used (JS-heavy page detection)
                     if result.get("content_type") == "vl_extracted":
@@ -5667,6 +5681,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 else:
                     error_msg = result.get('error', 'No content returned')
                     logger.debug(f"[{request_id}] Scrape returned no content for {url[:60]}: {error_msg}")
+                    # Track failed scrape for observability
+                    state.urls_failed.append(url)
                     # Emit VL scraping failed if we expected VL scraping
                     if is_js_heavy:
                         if hasattr(self, 'emitter') and self.emitter:
@@ -5678,6 +5694,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         logger.warning(f"[{request_id}] VL scraping failed for {url[:60]}: {error_msg}")
             except Exception as e:
                 logger.warning(f"[{request_id}] Failed to scrape {url[:60]}: {e}")
+                # Track failed scrape for observability
+                state.urls_failed.append(url)
                 # Emit VL scraping failed if we expected VL scraping
                 if is_js_heavy:
                     if hasattr(self, 'emitter') and self.emitter:
