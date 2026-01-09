@@ -4003,15 +4003,19 @@ class UniversalOrchestrator(BaseSearchPipeline):
         if decision_logger:
             try:
                 result_count = len(state.raw_results) if state.raw_results else 0
+                executed_queries = list(state.executed_queries) if state.executed_queries else []
+                query_count = len(executed_queries)
                 await decision_logger.log_decision(
                     agent_name=AgentName.SEARCHER,
                     decision_type=DecisionType.SEARCH,
                     decision_made=f"executed_search",
-                    reasoning=f"Found {result_count} results in {search_ms}ms",
+                    reasoning=f"Searched {query_count} queries, found {result_count} results in {search_ms}ms",
                     confidence=0.9 if result_count > 0 else 0.5,
                     metadata={
                         "result_count": result_count,
-                        "search_ms": search_ms
+                        "search_ms": search_ms,
+                        "query_count": query_count,
+                        "queries": executed_queries
                     }
                 )
             except Exception as obs_err:
