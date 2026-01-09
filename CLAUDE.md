@@ -16,6 +16,43 @@
 | Ollama Config | `source setup_ollama_optimization.sh && systemctl restart ollama` | Apply optimizations |
 | **LLM Config** | `curl localhost:8001/api/v1/config/llm-models` | View model assignments |
 | Apply Preset | `curl -X POST localhost:8001/api/v1/config/llm-models/presets/speed` | speed/quality/balanced |
+| **Prompt Config** | `from agentic.prompt_config import get_prompt_config` | Central prompt access |
+
+## Configuration System
+
+### Central Configuration Files
+
+| File | Purpose | Key Functions |
+|------|---------|---------------|
+| `config/llm_models.yaml` | LLM model assignments | `get_llm_config()` |
+| `config/prompts.yaml` | All agent prompts | `get_prompt_config()` |
+| `config/settings.py` | Server settings | `get_settings()` |
+
+### Prompt Configuration (`config/prompts.yaml`)
+
+All LLM prompts are centralized in `config/prompts.yaml`. Access via:
+
+```python
+from agentic.prompt_config import get_prompt_config
+
+config = get_prompt_config()
+
+# Access specific prompts
+synth_prompt = config.agent_prompts.synthesizer.main
+cod_instruction = config.instructions.chain_of_draft
+template = config.templates.search_query_generation
+
+# Format with variables
+prompt = synth_prompt.format(query=query, results_text=results)
+```
+
+**Structure:**
+- `instructions`: Shared snippets (chain-of-draft, citation requirements)
+- `system_prompts`: Core system prefixes
+- `agent_prompts`: Per-agent prompts (analyzer, synthesizer, verifier, etc.)
+- `templates`: Reusable templates with `{placeholders}`
+
+**Environment Override:** Set `MEMOS_PROMPTS_CONFIG=/path/to/prompts.yaml`
 
 ## Critical Rules
 

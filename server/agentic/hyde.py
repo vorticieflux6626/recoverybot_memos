@@ -38,6 +38,7 @@ import numpy as np
 import httpx
 
 from .llm_config import get_llm_config
+from .prompt_config import get_prompt_config
 
 logger = logging.getLogger(__name__)
 
@@ -98,55 +99,36 @@ class HyDEResult:
 
 
 # =============================================================================
-# HyDE Prompts
+# HyDE Prompts (loaded from central config)
 # =============================================================================
 
-HYDE_PROMPTS = {
-    DocumentType.ANSWER: """Given the following question, generate a hypothetical answer document
-that would perfectly answer this question. Write as if this is the actual answer from a reliable source.
+def _get_hyde_prompts() -> Dict[DocumentType, str]:
+    """Get HyDE prompts from central config."""
+    config = get_prompt_config()
+    hyde = config.agent_prompts.hyde
+    return {
+        DocumentType.ANSWER: hyde.answer,
+        DocumentType.PASSAGE: hyde.passage,
+        DocumentType.EXPLANATION: hyde.explanation,
+        DocumentType.SUMMARY: hyde.explanation,  # Reuse explanation for summary
+        DocumentType.TECHNICAL: hyde.technical,
+    }
 
-Question: {query}
 
-Generate a detailed, factual answer (about 100-150 words):""",
+def _get_multi_hyde_prompt() -> str:
+    """Get multi-HyDE prompt from central config."""
+    return get_prompt_config().agent_prompts.hyde.multi
 
-    DocumentType.PASSAGE: """Given the following search query, generate a relevant passage that would
-appear in a document that answers this query. Write as if you're quoting from an authoritative source.
 
-Query: {query}
+def _get_hyde_chain_of_draft() -> str:
+    """Get chain-of-draft instruction from central config."""
+    return get_prompt_config().instructions.chain_of_draft
 
-Generate a relevant passage (about 100-150 words):""",
 
-    DocumentType.EXPLANATION: """Given the following question, write a detailed explanation that
-thoroughly addresses all aspects of the question. Include relevant context and examples.
-
-Question: {query}
-
-Provide a comprehensive explanation (about 150-200 words):""",
-
-    DocumentType.SUMMARY: """Given the following topic/query, write a summary of the key information
-that would be found in documents about this topic.
-
-Query: {query}
-
-Write an informative summary (about 100-150 words):""",
-
-    DocumentType.TECHNICAL: """Given the following technical query, generate a passage that would
-appear in technical documentation addressing this query. Include specific details, steps, or specifications.
-
-Query: {query}
-
-Generate technical documentation (about 100-150 words):"""
-}
-
-MULTI_HYDE_PROMPT = """Given the following query, generate {n} different hypothetical document passages
-that would each answer this query from different angles or perspectives.
-
-Query: {query}
-
-Generate {n} diverse passages, each about 80-100 words. Number them 1 through {n}:"""
-
-CHAIN_OF_DRAFT_INSTRUCTION = """Think step by step, but keep only a minimum draft for each thinking step.
-Focus on generating factual, detailed content that would appear in real documents."""
+# Backward-compatible module-level access
+HYDE_PROMPTS = property(lambda self: _get_hyde_prompts())
+MULTI_HYDE_PROMPT = property(lambda self: _get_multi_hyde_prompt())
+CHAIN_OF_DRAFT_INSTRUCTION = property(lambda self: _get_hyde_chain_of_draft())
 
 
 # =============================================================================
@@ -205,11 +187,12 @@ class HyDEExpander:
             Generated hypothetical document text
         """
         doc_type = document_type or self.config.document_type
-        prompt_template = HYDE_PROMPTS.get(doc_type, HYDE_PROMPTS[DocumentType.PASSAGE])
+        hyde_prompts = _get_hyde_prompts()
+        prompt_template = hyde_prompts.get(doc_type, hyde_prompts[DocumentType.PASSAGE])
         prompt = prompt_template.format(query=query)
 
         if self.config.chain_of_draft:
-            prompt = CHAIN_OF_DRAFT_INSTRUCTION + "\n\n" + prompt
+            prompt = _get_hyde_chain_of_draft() + "\n\n" + prompt
 
         client = await self._get_client()
 
@@ -250,10 +233,10 @@ class HyDEExpander:
         Returns:
             List of hypothetical documents
         """
-        prompt = MULTI_HYDE_PROMPT.format(query=query, n=n)
+        prompt = _get_multi_hyde_prompt().format(query=query, n=n)
 
         if self.config.chain_of_draft:
-            prompt = CHAIN_OF_DRAFT_INSTRUCTION + "\n\n" + prompt
+            prompt = _get_hyde_chain_of_draft() + "\n\n" + prompt
 
         client = await self._get_client()
 

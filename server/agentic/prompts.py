@@ -8,174 +8,117 @@ DESIGN PRINCIPLES:
 
 Based on KV_CACHE_IMPLEMENTATION_PLAN.md Phase 1.4
 Ref: Anthropic Multi-Agent Research System patterns
+
+NOTE: All prompts are now loaded from config/prompts.yaml via prompt_config.py.
+This file provides backward-compatible access to the central configuration.
 """
 
 from typing import Optional, Dict
 
+# Import central prompt configuration
+from .prompt_config import get_prompt_config
+
+
+# =============================================================================
+# Backward-Compatible Exports (read from central config)
+# =============================================================================
+
+def _get_core_system_prefix() -> str:
+    """Get core system prefix from central config."""
+    return get_prompt_config().system_prompts.core_prefix
+
+
+def _get_chain_of_draft() -> str:
+    """Get chain-of-draft instruction from central config."""
+    return get_prompt_config().instructions.chain_of_draft
+
+
+# Lazy-loaded properties for backward compatibility
+# These read from prompts.yaml on first access
+class _PromptProxy:
+    """Proxy object that loads prompts from central config on access."""
+
+    @property
+    def CORE_SYSTEM_PREFIX(self) -> str:
+        return get_prompt_config().system_prompts.core_prefix
+
+    @property
+    def CHAIN_OF_DRAFT_INSTRUCTION(self) -> str:
+        return get_prompt_config().instructions.chain_of_draft
+
+    @property
+    def ANALYZER_SUFFIX(self) -> str:
+        config = get_prompt_config()
+        return f"\n{config.agent_prompts.analyzer.system}"
+
+    @property
+    def PLANNER_SUFFIX(self) -> str:
+        config = get_prompt_config()
+        return f"\n{config.agent_prompts.planner.system}"
+
+    @property
+    def SYNTHESIZER_SUFFIX(self) -> str:
+        config = get_prompt_config()
+        return f"\n{config.agent_prompts.synthesizer.system}"
+
+    @property
+    def VERIFIER_SUFFIX(self) -> str:
+        config = get_prompt_config()
+        return f"\n{config.agent_prompts.verifier.system}"
+
+    @property
+    def COVERAGE_SUFFIX(self) -> str:
+        # Coverage evaluator uses sufficient_context prompts
+        config = get_prompt_config()
+        return f"\n{config.agent_prompts.sufficient_context.evaluation}"
+
+    @property
+    def URL_EVALUATOR_SUFFIX(self) -> str:
+        config = get_prompt_config()
+        return f"\n{config.agent_prompts.analyzer.url_evaluation}"
+
+_proxy = _PromptProxy()
 
 # Core system prompt (shared across all agents ~1000 tokens)
 # This prefix is STATIC and identical across all requests - maximizes KV cache hits
-CORE_SYSTEM_PREFIX = """You are an AI research and problem-solving assistant.
-Your role is to help users find accurate information, solve complex problems,
-and provide well-reasoned analysis on any topic.
+CORE_SYSTEM_PREFIX = property(lambda self: _proxy.CORE_SYSTEM_PREFIX)
 
-Core Principles:
-- Accuracy: Prioritize factual, verifiable information with citations
-- Clarity: Explain complex topics in accessible terms
-- Thoroughness: Provide comprehensive answers with relevant context
-- Objectivity: Present balanced perspectives on contested topics
-- Actionability: Give practical, implementable guidance when applicable
+# For backward compatibility, expose as module-level constants
+# These are evaluated when the module loads
+def __getattr__(name: str):
+    """Module-level attribute access for backward compatibility."""
+    if name == "CORE_SYSTEM_PREFIX":
+        return _proxy.CORE_SYSTEM_PREFIX
+    elif name == "CHAIN_OF_DRAFT_INSTRUCTION":
+        return _proxy.CHAIN_OF_DRAFT_INSTRUCTION
+    elif name == "ANALYZER_SUFFIX":
+        return _proxy.ANALYZER_SUFFIX
+    elif name == "PLANNER_SUFFIX":
+        return _proxy.PLANNER_SUFFIX
+    elif name == "SYNTHESIZER_SUFFIX":
+        return _proxy.SYNTHESIZER_SUFFIX
+    elif name == "VERIFIER_SUFFIX":
+        return _proxy.VERIFIER_SUFFIX
+    elif name == "COVERAGE_SUFFIX":
+        return _proxy.COVERAGE_SUFFIX
+    elif name == "URL_EVALUATOR_SUFFIX":
+        return _proxy.URL_EVALUATOR_SUFFIX
+    raise AttributeError(f"module 'prompts' has no attribute '{name}'")
 
-Capabilities:
-- Research and information synthesis from multiple sources
-- Technical problem-solving and troubleshooting
-- Data analysis and pattern recognition
-- Step-by-step guidance and tutorials
-- Comparative analysis and evaluation
-- Creative ideation and brainstorming
 
-Communication Style:
-- Be direct and helpful
-- Avoid jargon unless context-appropriate
-- Provide specific, actionable information
-- Always cite sources when making claims
-- Acknowledge uncertainty when appropriate
-- Match technical depth to the query complexity
-"""
-
-# Chain-of-Draft instruction for thinking models (DeepSeek R1)
-CHAIN_OF_DRAFT_INSTRUCTION = """Think step by step, but only keep a minimum draft for each thinking step.
-Provide your final answer with citations."""
-
-# Agent-specific suffixes (appended to core prefix)
-ANALYZER_SUFFIX = """
-Your role: Query Analyzer
-Analyze the user query to determine the best approach for answering it.
-Think step by step, but only keep a minimum draft for each thinking step.
-
-Determine:
-1. Does this require web search for current/external information?
-2. What type of query is this? (research, problem-solving, factual, technical, creative, comparative, how-to)
-3. Key topics and concepts involved
-4. Complexity level (simple, moderate, complex, expert)
-5. Suggested search queries if web search is needed
-
-Output JSON format:
-{
-    "requires_search": true/false,
-    "query_type": "research|problem_solving|factual|technical|creative|comparative|how_to",
-    "decomposed_questions": ["question1", "question2", ...],
-    "key_topics": ["topic1", "topic2", ...],
-    "complexity": "simple|moderate|complex|expert",
-    "reasoning": "brief explanation"
-}
-"""
-
-PLANNER_SUFFIX = """
-Your role: Search Planner
-Create an optimal search strategy for answering the user's query.
-Think step by step, but only keep a minimum draft for each thinking step.
-
-Consider:
-- What information is needed?
-- What sources are most likely to have it?
-- How many searches are needed?
-- What order should searches be executed?
-
-Output JSON format:
-{
-    "search_queries": ["query1", "query2", ...],
-    "expected_sources": ["type1", "type2", ...],
-    "priority": "high|medium|low",
-    "reasoning": "brief explanation"
-}
-"""
-
-SYNTHESIZER_SUFFIX = """
-Your role: Information Synthesizer
-Think step by step, but only keep a minimum draft for each thinking step.
-Combine search results into a comprehensive, well-structured response.
-
-Instructions:
-1. Synthesize information from multiple sources coherently
-2. Structure your answer with clear sections for complex topics
-3. Include specific facts, figures, and examples where available
-4. Use [Source N] citations for key facts and claims
-5. Acknowledge limitations or gaps in available information
-6. Provide actionable recommendations when applicable
-7. Use appropriate technical depth based on the query complexity
-8. Note any conflicting information between sources with balanced presentation
-"""
-
-VERIFIER_SUFFIX = """
-Your role: Information Verifier
-Cross-check claims against available sources.
-Think step by step, but only keep a minimum draft for each thinking step.
-
-Tasks:
-- Identify claims that can be verified
-- Check consistency across sources
-- Flag contradictions
-- Assess confidence level
-
-Output JSON format:
-{
-    "verified_claims": [...],
-    "unverified_claims": [...],
-    "contradictions": [...],
-    "confidence_score": 0.0-1.0
-}
-"""
-
-COVERAGE_SUFFIX = """
-Your role: Coverage Evaluator
-Evaluate if scraped content adequately answers the decomposed questions.
-Think step by step, but only keep a minimum draft for each thinking step.
-
-For each question, determine:
-1. Is the question fully answered with specific details?
-2. Is the question partially answered (some info missing)?
-3. Is the question unanswered?
-
-Output JSON format:
-{
-    "questions": [
-        {"question": "...", "status": "answered|partial|unanswered", "missing": "..."}
-    ],
-    "coverage_score": 0.0-1.0,
-    "refinement_queries": ["query to fill gap 1", ...]
-}
-"""
-
-URL_EVALUATOR_SUFFIX = """
-Your role: URL Relevance Evaluator
-Evaluate if a URL is likely to contain relevant information for the query.
-Think step by step, but only keep a minimum draft for each thinking step.
-
-Consider:
-- URL domain and path structure
-- Search result snippet content
-- Relevance to the user's specific query
-- Credibility and authority of the source
-- Likelihood of containing detailed, useful information
-
-Output JSON format:
-{
-    "is_relevant": true/false,
-    "relevance_score": 0.0-1.0,
-    "reasoning": "brief explanation"
-}
-"""
+def _get_agent_suffixes() -> Dict[str, str]:
+    """Build agent suffixes dict from central config."""
+    return {
+        "analyzer": _proxy.ANALYZER_SUFFIX,
+        "planner": _proxy.PLANNER_SUFFIX,
+        "synthesizer": _proxy.SYNTHESIZER_SUFFIX,
+        "verifier": _proxy.VERIFIER_SUFFIX,
+        "coverage": _proxy.COVERAGE_SUFFIX,
+        "url_evaluator": _proxy.URL_EVALUATOR_SUFFIX,
+    }
 
 # Agent type to suffix mapping
-AGENT_SUFFIXES: Dict[str, str] = {
-    "analyzer": ANALYZER_SUFFIX,
-    "planner": PLANNER_SUFFIX,
-    "synthesizer": SYNTHESIZER_SUFFIX,
-    "verifier": VERIFIER_SUFFIX,
-    "coverage": COVERAGE_SUFFIX,
-    "url_evaluator": URL_EVALUATOR_SUFFIX,
-}
+AGENT_SUFFIXES: Dict[str, str] = property(lambda self: _get_agent_suffixes())
 
 
 def build_prompt(
@@ -199,17 +142,20 @@ def build_prompt(
     Returns:
         Complete prompt with static prefix + agent suffix + dynamic content
     """
+    config = get_prompt_config()
+
     # Static prefix (highest cache hit potential)
-    prompt = CORE_SYSTEM_PREFIX
+    prompt = config.system_prompts.core_prefix
 
     # Agent-specific suffix
-    suffix = custom_suffix or AGENT_SUFFIXES.get(agent_type, "")
+    agent_suffixes = _get_agent_suffixes()
+    suffix = custom_suffix or agent_suffixes.get(agent_type, "")
     if suffix:
         prompt += suffix
 
     # Chain-of-Draft instruction (for thinking models)
     if use_chain_of_draft and agent_type in ["synthesizer", "verifier"]:
-        prompt += f"\n\n{CHAIN_OF_DRAFT_INSTRUCTION}"
+        prompt += f"\n\n{config.instructions.chain_of_draft}"
 
     # Dynamic context (lowest cache hit potential - always different)
     if dynamic_context:
@@ -224,8 +170,10 @@ def get_system_prompt(agent_type: str) -> str:
 
     Use this for creating consistent system prompts that can be cached.
     """
-    prompt = CORE_SYSTEM_PREFIX
-    suffix = AGENT_SUFFIXES.get(agent_type, "")
+    config = get_prompt_config()
+    prompt = config.system_prompts.core_prefix
+    agent_suffixes = _get_agent_suffixes()
+    suffix = agent_suffixes.get(agent_type, "")
     if suffix:
         prompt += suffix
     return prompt
@@ -242,60 +190,20 @@ def estimate_prefix_tokens(agent_type: str) -> int:
     return len(prefix) // 4
 
 
-# Prompt templates for specific operations
-TEMPLATES = {
-    "search_query_generation": """Based on the user's question, generate optimal search queries.
-User question: {question}
-Context: {context}
+def _get_templates() -> Dict[str, str]:
+    """Get templates from central config."""
+    config = get_prompt_config()
+    return {
+        "search_query_generation": config.templates.search_query_generation,
+        "url_relevance": config.templates.url_relevance,
+        "content_summary": config.templates.content_summary,
+        "gap_detection": config.templates.gap_detection,
+        "synthesis_with_sources": config.templates.synthesis_with_sources,
+    }
 
-Generate 2-3 search queries that would help answer this question.
-Output as JSON array: ["query1", "query2", ...]""",
 
-    "url_relevance": """Evaluate if this URL is worth scraping for information relevant to the query.
-URL: {url}
-Title: {title}
-Snippet: {snippet}
-Query: {query}
-
-Is this likely to contain detailed, authoritative information relevant to the query?
-Output JSON: {{"is_relevant": true/false, "score": 0.0-1.0, "reason": "..."}}""",
-
-    "content_summary": """Summarize the key information from this content relevant to the query.
-Content: {content}
-Query: {query}
-
-Focus on:
-- Key facts and findings
-- Specific details, numbers, and examples
-- Actionable information
-- Source credibility indicators
-- Any limitations or caveats
-
-Output a concise summary (max 200 words).""",
-
-    "gap_detection": """Given the questions and current findings, identify information gaps.
-Questions: {questions}
-Findings: {findings}
-
-For each question, determine if it's been answered.
-Output JSON: {{"gaps": ["missing info 1", ...], "coverage_score": 0.0-1.0}}""",
-
-    "synthesis_with_sources": """Synthesize the following search results into a comprehensive response.
-
-Original Question: {question}
-
-Sources:
-{sources}
-
-Instructions:
-1. Combine information from all relevant sources
-2. Use [Source N] citations for key facts
-3. Organize information clearly
-4. Highlight the most important details first
-5. Note any conflicting information
-
-Provide a well-structured response:""",
-}
+# Prompt templates for specific operations (loaded from config)
+TEMPLATES = property(lambda self: _get_templates())
 
 
 def get_template(template_name: str, **kwargs) -> str:
@@ -309,7 +217,11 @@ def get_template(template_name: str, **kwargs) -> str:
     Returns:
         Filled template string
     """
-    template = TEMPLATES.get(template_name)
+    templates = _get_templates()
+    template = templates.get(template_name)
+    if not template:
+        # Fallback to central config lookup
+        template = get_prompt_config().get_template(template_name)
     if not template:
         raise ValueError(f"Unknown template: {template_name}")
 

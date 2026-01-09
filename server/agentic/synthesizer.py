@@ -27,6 +27,7 @@ from .context_limits import (
 )
 from .metrics import get_performance_metrics
 from .gateway_client import get_gateway_client, LogicalModel, GatewayResponse
+from .prompt_config import get_prompt_config
 
 # Lazy settings import to avoid circular dependencies
 _settings = None
@@ -39,10 +40,15 @@ def _get_settings():
 
 logger = logging.getLogger("agentic.synthesizer")
 
-# Thorough reasoning instruction for thinking models
+
+def _get_thinking_instruction() -> str:
+    """Get thinking model instruction from central config."""
+    return get_prompt_config().agent_prompts.synthesizer.thinking_instruction
+
+
+# Thorough reasoning instruction for thinking models (loaded from config)
 # Full reasoning preferred for industrial troubleshooting accuracy over token reduction
-THINKING_MODEL_REASONING_INSTRUCTION = """Think through this step by step, providing thorough reasoning for each consideration.
-Provide your final answer with citations."""
+THINKING_MODEL_REASONING_INSTRUCTION = property(lambda self: _get_thinking_instruction())
 
 # Thinking models for complex reasoning tasks
 # Updated with validated sampling parameters from DeepSeek API docs
@@ -159,50 +165,19 @@ class SynthesizerAgent:
                 verification_text += f"\nPotential conflicts: {conflict_notes}"
 
         # Build synthesis prompt with mandatory citation requirements
-        prompt = f"""<role>EXPERT RESEARCH SYNTHESIZER for industrial automation</role>
-<expertise>Combine information from multiple sources into accurate, actionable answers for FANUC robotics, Allen-Bradley PLCs, Siemens automation, servo systems, and industrial troubleshooting. Every claim MUST be cited. Use technical terminology correctly.</expertise>
+        # Load prompts from central config
+        prompt_config = get_prompt_config()
+        synth_prompts = prompt_config.agent_prompts.synthesizer
+        instructions = prompt_config.instructions
 
-Think through this step by step, providing thorough reasoning for your synthesis.
-
-Based on the search results provided, create a comprehensive answer to the user's question.
-
-**FOCUS REQUIREMENT**: Your answer MUST directly address the specific topic in the Original Question below. Do NOT answer about tangentially related topics that appear in search results. Stay focused on exactly what was asked.
-
-Original Question: {query}
-
-Search Results:
-{results_text}
-{verification_text}
-
-CRITICAL REQUIREMENTS (you MUST follow these):
-1. **STAY ON TOPIC**: Answer ONLY about the specific error code, component, or procedure mentioned in the Original Question. Ignore unrelated content in search results.
-2. **MANDATORY CITATIONS**: Every factual claim MUST have a [Source N] citation. Answers without citations are INCOMPLETE.
-3. **TERM COVERAGE**: Use the key technical terms from the question in your answer (e.g., error codes, component names, procedures).
-4. Be direct and solution-focused with specific details, examples, and references.
-5. Structure your answer with clear sections if the topic is complex.
-6. If information is limited, acknowledge what's known and what remains unclear.
-7. If sources conflict, note the discrepancy: "Source 1 says X [Source 1], but Source 2 says Y [Source 2]."
-
-CROSS-DOMAIN RELATIONSHIP RULES (MANDATORY for multi-system queries):
-8. **NEVER CLAIM SPURIOUS CAUSAL RELATIONSHIPS**:
-   - Robot servo/encoder alarms CANNOT directly cause IMM hydraulic faults (independent systems)
-   - Robot alarms CANNOT directly affect eDart/RJG cavity pressure readings (no physical connection)
-   - Valid cross-domain relationships are LIMITED to: discrete I/O signals, safety interlocks, cycle timing
-9. **FOR CROSS-SYSTEM CLAIMS**:
-   - With evidence: Prefix "Based on [Source N], system A affects system B because..."
-   - Inferring without evidence: State "It is possible that X and Y are related, but this should be verified"
-   - No evidence: State "The relationship between X and Y is unclear from available sources"
-10. **PART NUMBERS**: NEVER fabricate part numbers with placeholder patterns (XXXX, 0000).
-    - If exact part number is unknown, say: "Consult the [manufacturer] parts catalog for the specific part number for [component description]"
-    - Real FANUC format examples: A06B-6110-H006 (servo amp), A860-2005-T301 (pulsecoder), A660-4008-T403 (cable)
-
-CITATION FORMAT EXAMPLES:
-- "SRVO-063 indicates overcurrent [Source 1]."
-- "The calibration procedure requires mastering all axes [Source 2]."
-
-WARNING: Responses that answer about a DIFFERENT topic than asked will be rejected. Responses without [Source N] citations will be considered incomplete. Responses claiming cross-domain causal relationships without evidence will be flagged as potentially spurious.
-
-Your synthesized answer (with citations):"""
+        # Format the main synthesis prompt with variables
+        prompt = synth_prompts.main.format(
+            query=query,
+            results_text=results_text,
+            verification_text=verification_text,
+            citation_requirement=instructions.citation_requirement,
+            cross_domain_constraints=instructions.cross_domain_constraints
+        )
 
         try:
             if use_gateway:
@@ -597,7 +572,7 @@ Please try rephrasing your question or providing more context."""
 
         # Build a comprehensive synthesis prompt that asks the model to ANSWER the question
         # Thorough reasoning instruction added for thinking models to improve accuracy
-        reasoning_prefix = THINKING_MODEL_REASONING_INSTRUCTION + "\n\n" if is_thinking_model else ""
+        reasoning_prefix = _get_thinking_instruction() + "\n\n" if is_thinking_model else ""
 
         # Extract domain knowledge from context if provided (e.g., HSEA FANUC error codes)
         # Domain knowledge is AUTHORITATIVE and takes PRIORITY over web sources

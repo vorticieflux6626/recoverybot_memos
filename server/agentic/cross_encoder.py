@@ -23,6 +23,7 @@ import aiohttp
 import json
 
 from .llm_config import get_llm_config
+from .prompt_config import get_prompt_config
 
 logger = logging.getLogger(__name__)
 
@@ -63,22 +64,13 @@ class CrossEncoderReranker:
     - Lightweight model (gemma3:4b) for speed
     """
 
-    RERANK_PROMPT = """You are a relevance scoring system. Rate how relevant each document is to the query.
+    @staticmethod
+    def _get_rerank_prompt() -> str:
+        """Get rerank prompt from central config."""
+        return get_prompt_config().agent_prompts.cross_encoder.rerank
 
-Query: {query}
-
-Documents to score:
-{documents}
-
-For each document, provide a relevance score from 0 to 10:
-- 0-2: Not relevant (different topic, no useful information)
-- 3-4: Slightly relevant (tangentially related)
-- 5-6: Moderately relevant (some useful information)
-- 7-8: Highly relevant (directly addresses the query)
-- 9-10: Perfect match (comprehensive answer to query)
-
-Output ONLY a JSON array of scores in order, like: [7, 3, 9, 5, 2]
-Do not explain your reasoning. Just output the scores array."""
+    # Legacy class variable for backward compatibility
+    RERANK_PROMPT = property(lambda self: self._get_rerank_prompt())
 
     def __init__(
         self,
@@ -126,7 +118,7 @@ Do not explain your reasoning. Just output the scores array."""
 
         documents_str = "\n\n".join(doc_lines)
 
-        prompt = self.RERANK_PROMPT.format(
+        prompt = self._get_rerank_prompt().format(
             query=query,
             documents=documents_str
         )

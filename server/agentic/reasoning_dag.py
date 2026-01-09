@@ -70,6 +70,8 @@ import logging
 import asyncio
 import httpx
 
+from .prompt_config import get_prompt_config
+
 logger = logging.getLogger("agentic.reasoning_dag")
 
 
@@ -170,87 +172,32 @@ class ReasoningDAG:
     - get_convergent_answer(): Extract final answer from sinks
     """
 
-    # Prompt for generating hypotheses (branching)
-    BRANCH_PROMPT = """Generate {num_branches} distinct hypotheses or approaches to answer this question.
-Each hypothesis should explore a different angle or perspective.
+    # Prompts are now loaded from central config
+    @staticmethod
+    def _get_branch_prompt() -> str:
+        """Get branch prompt from central config."""
+        return get_prompt_config().agent_prompts.reasoning_dag.branch
 
-Question: {query}
-Parent context: {parent_content}
+    @staticmethod
+    def _get_aggregate_prompt() -> str:
+        """Get aggregate prompt from central config."""
+        return get_prompt_config().agent_prompts.reasoning_dag.aggregate
 
-Respond with a JSON array of hypotheses:
-[
-  {{"hypothesis": "First approach...", "reasoning": "Why this angle"}},
-  {{"hypothesis": "Second approach...", "reasoning": "Why this angle"}},
-  {{"hypothesis": "Third approach...", "reasoning": "Why this angle"}}
-]
+    @staticmethod
+    def _get_critique_prompt() -> str:
+        """Get critique prompt from central config."""
+        return get_prompt_config().agent_prompts.reasoning_dag.critique
 
-Generate diverse, non-overlapping hypotheses. /no_think"""
+    @staticmethod
+    def _get_refine_prompt() -> str:
+        """Get refine prompt from central config."""
+        return get_prompt_config().agent_prompts.reasoning_dag.refine
 
-    # Prompt for aggregating multiple nodes
-    AGGREGATE_PROMPT = """Synthesize these findings into a coherent understanding.
-
-Findings to aggregate:
-{findings}
-
-Create a unified synthesis that:
-1. Combines complementary information
-2. Resolves any contradictions
-3. Highlights key insights
-4. Notes remaining uncertainties
-
-Respond with JSON:
-{{
-  "synthesis": "Unified understanding...",
-  "key_insights": ["insight1", "insight2"],
-  "contradictions": ["conflict1 if any"],
-  "confidence": 0.0-1.0,
-  "reasoning": "How these were combined"
-}}
-
-/no_think"""
-
-    # Prompt for critiquing a node
-    CRITIQUE_PROMPT = """Critically evaluate this reasoning step.
-
-Node content: {content}
-Node type: {node_type}
-Supporting evidence: {evidence}
-
-Evaluate:
-1. Logical soundness
-2. Evidence quality
-3. Potential biases
-4. Missing considerations
-5. Alternative interpretations
-
-Respond with JSON:
-{{
-  "is_sound": true/false,
-  "strengths": ["strength1", "strength2"],
-  "weaknesses": ["weakness1", "weakness2"],
-  "suggestions": ["improvement1", "improvement2"],
-  "confidence_adjustment": -0.2 to +0.2
-}}
-
-/no_think"""
-
-    # Prompt for refining a node
-    REFINE_PROMPT = """Improve this reasoning based on the critique.
-
-Original content: {content}
-Critique: {critique}
-Suggestions: {suggestions}
-
-Create an improved version that addresses the weaknesses while preserving strengths.
-
-Respond with JSON:
-{{
-  "refined_content": "Improved reasoning...",
-  "changes_made": ["change1", "change2"],
-  "new_confidence": 0.0-1.0
-}}
-
-/no_think"""
+    # Legacy class variables for backward compatibility
+    BRANCH_PROMPT = property(lambda self: self._get_branch_prompt())
+    AGGREGATE_PROMPT = property(lambda self: self._get_aggregate_prompt())
+    CRITIQUE_PROMPT = property(lambda self: self._get_critique_prompt())
+    REFINE_PROMPT = property(lambda self: self._get_refine_prompt())
 
     def __init__(
         self,
@@ -378,7 +325,7 @@ Respond with JSON:
             return []
 
         # Generate hypotheses via LLM
-        prompt = self.BRANCH_PROMPT.format(
+        prompt = self._get_branch_prompt().format(
             num_branches=num_branches,
             query=query or parent.content,
             parent_content=parent.content
@@ -482,7 +429,7 @@ Respond with JSON:
 
         findings_text = "\n\n".join([f"{i+1}. {f}" for i, f in enumerate(findings)])
 
-        prompt = self.AGGREGATE_PROMPT.format(findings=findings_text)
+        prompt = self._get_aggregate_prompt().format(findings=findings_text)
 
         try:
             response = await self._call_llm(prompt)
@@ -556,7 +503,7 @@ Respond with JSON:
 
         evidence_text = "\n".join(evidence) if evidence else "No direct evidence"
 
-        prompt = self.CRITIQUE_PROMPT.format(
+        prompt = self._get_critique_prompt().format(
             content=node.content,
             node_type=node.node_type.value,
             evidence=evidence_text
@@ -620,7 +567,7 @@ Respond with JSON:
         suggestions = critique.metadata.get("suggestions", [])
         weaknesses = critique.metadata.get("weaknesses", [])
 
-        prompt = self.REFINE_PROMPT.format(
+        prompt = self._get_refine_prompt().format(
             content=node.content,
             critique=critique.content,
             suggestions=suggestions

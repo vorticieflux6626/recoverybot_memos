@@ -36,6 +36,7 @@ import numpy as np
 import httpx
 
 from .llm_config import get_llm_config
+from .prompt_config import get_prompt_config
 
 logger = logging.getLogger(__name__)
 
@@ -124,79 +125,40 @@ class RAGASConfig:
 
 
 # =============================================================================
-# RAGAS Prompts
+# RAGAS Prompts (loaded from central config)
 # =============================================================================
 
-CLAIM_EXTRACTION_PROMPT = """Extract all factual claims from the following answer.
-A claim is a specific statement that can be verified against source material.
+def _get_claim_extraction_prompt() -> str:
+    """Get claim extraction prompt from central config."""
+    return get_prompt_config().agent_prompts.ragas.claim_extraction
 
-Answer: {answer}
 
-List each claim on a separate line. Only include verifiable factual claims.
-Do not include opinions, questions, or vague statements.
+def _get_claim_verification_prompt() -> str:
+    """Get claim verification prompt from central config."""
+    return get_prompt_config().agent_prompts.ragas.claim_verification
 
-Claims:"""
 
-CLAIM_VERIFICATION_PROMPT = """Determine if the following claim is supported by the context.
+def _get_answer_relevancy_prompt() -> str:
+    """Get answer relevancy prompt from central config."""
+    return get_prompt_config().agent_prompts.ragas.answer_relevancy
 
-Claim: {claim}
 
-Context:
-{context}
+def _get_context_relevancy_prompt() -> str:
+    """Get context relevancy prompt from central config."""
+    return get_prompt_config().agent_prompts.ragas.context_relevancy
 
-Is this claim supported by the context? Answer with:
-- SUPPORTED: if the claim is clearly supported by the context
-- NOT_SUPPORTED: if the claim is not mentioned or contradicted
-- PARTIALLY: if only part of the claim is supported
 
-Also rate your confidence (0.0 to 1.0).
+def _get_question_generation_prompt() -> str:
+    """Get question generation prompt from central config."""
+    return get_prompt_config().agent_prompts.ragas.question_generation
 
-Response format:
-{{
-    "verdict": "SUPPORTED|NOT_SUPPORTED|PARTIALLY",
-    "confidence": 0.85,
-    "explanation": "Brief explanation"
-}}"""
 
-ANSWER_RELEVANCY_PROMPT = """Rate how well the answer addresses the question.
-
-Question: {question}
-
-Answer: {answer}
-
-Rate the answer relevancy from 0.0 to 1.0:
-- 1.0: Answer completely and directly addresses the question
-- 0.5: Answer partially addresses the question or is tangential
-- 0.0: Answer is completely irrelevant to the question
-
-Response format:
-{{
-    "score": 0.85,
-    "explanation": "Brief explanation"
-}}"""
-
-CONTEXT_RELEVANCY_PROMPT = """Rate how relevant this context passage is to the question.
-
-Question: {question}
-
-Context: {context}
-
-Rate the relevancy from 0.0 to 1.0:
-- 1.0: Context directly helps answer the question
-- 0.5: Context is somewhat related but not directly helpful
-- 0.0: Context is completely irrelevant
-
-Response format:
-{{
-    "score": 0.85,
-    "explanation": "Brief explanation"
-}}"""
-
-QUESTION_GENERATION_PROMPT = """Generate a question that would be answered by this response.
-
-Response: {answer}
-
-Generate a clear, specific question that this response would answer:"""
+# Backward-compatible module-level access (these are functions, call them to get the prompt)
+CLAIM_EXTRACTION_PROMPT = property(lambda self: _get_claim_extraction_prompt())
+CLAIM_VERIFICATION_PROMPT = property(lambda self: _get_claim_verification_prompt())
+ANSWER_RELEVANCY_PROMPT = property(lambda self: _get_answer_relevancy_prompt())
+CONTEXT_RELEVANCY_PROMPT = property(lambda self: _get_context_relevancy_prompt())
+QUESTION_GENERATION_PROMPT = property(lambda self: _get_question_generation_prompt())
 
 
 # =============================================================================
@@ -314,7 +276,7 @@ class RAGASEvaluator:
 
     async def extract_claims(self, answer: str) -> List[str]:
         """Extract verifiable claims from an answer."""
-        prompt = CLAIM_EXTRACTION_PROMPT.format(answer=answer)
+        prompt = _get_claim_extraction_prompt().format(answer=answer)
         response = await self._llm_generate(prompt)
 
         # Parse claims from response
@@ -335,7 +297,7 @@ class RAGASEvaluator:
     ) -> ClaimVerification:
         """Verify if a claim is supported by contexts."""
         combined_context = "\n\n".join(contexts)
-        prompt = CLAIM_VERIFICATION_PROMPT.format(
+        prompt = _get_claim_verification_prompt().format(
             claim=claim,
             context=combined_context
         )
@@ -394,14 +356,14 @@ class RAGASEvaluator:
         Method 2: Generate question from answer, measure semantic similarity
         """
         # Direct rating approach (faster)
-        prompt = ANSWER_RELEVANCY_PROMPT.format(question=question, answer=answer)
+        prompt = _get_answer_relevancy_prompt().format(question=question, answer=answer)
         response = await self._llm_generate(prompt)
         parsed = self._parse_json_response(response)
 
         direct_score = float(parsed.get("score", 0.5))
 
         # Question regeneration approach (more robust)
-        gen_prompt = QUESTION_GENERATION_PROMPT.format(answer=answer)
+        gen_prompt = _get_question_generation_prompt().format(answer=answer)
         generated_question = await self._llm_generate(gen_prompt)
 
         if generated_question:
@@ -434,7 +396,7 @@ class RAGASEvaluator:
 
         scores = []
         for context in contexts:
-            prompt = CONTEXT_RELEVANCY_PROMPT.format(
+            prompt = _get_context_relevancy_prompt().format(
                 question=question,
                 context=context[:500]  # Truncate for efficiency
             )

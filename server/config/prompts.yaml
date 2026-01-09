@@ -1,0 +1,759 @@
+# =============================================================================
+# Central Prompt Configuration for memOS Agentic Pipeline
+# =============================================================================
+#
+# This file centralizes all LLM prompts used across the agentic search system.
+# Prompts are organized by category and can be overridden via environment.
+#
+# Structure:
+#   system_prompts: Core system-level instructions
+#   agent_prompts: Per-agent role definitions and task instructions
+#   templates: Reusable prompt templates with {placeholders}
+#   instructions: Shared instruction snippets (chain-of-draft, etc.)
+#
+# Usage:
+#   from agentic.prompt_config import get_prompt_config
+#   config = get_prompt_config()
+#   prompt = config.agent_prompts.analyzer.system
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Shared Instructions (reusable across agents)
+# -----------------------------------------------------------------------------
+instructions:
+  chain_of_draft: |
+    Think step by step, but only keep a minimum draft for each thinking step.
+    Provide your final answer after the drafts.
+
+  chain_of_draft_short: |
+    Think step by step, but only output minimal drafts of each step in ~5 words.
+    After all drafts, output your final answer.
+
+  no_think_suffix: " /no_think"
+
+  json_output: |
+    Return ONLY valid JSON. No explanations, no markdown, no extra text.
+
+  industrial_expertise: |
+    You are an expert in industrial automation systems including:
+    - FANUC robotics (R-30iB, R-30iB Plus controllers)
+    - Allen-Bradley/Rockwell PLCs (ControlLogix, CompactLogix)
+    - Siemens automation (S7-1500, TIA Portal)
+    - Injection molding machines and hot runner systems
+    - Industrial sensors, encoders, and servo drives
+
+  citation_requirement: |
+    CITATION REQUIREMENTS:
+    - Every factual claim MUST include [Source N] citation
+    - Use actual source numbers from the provided context
+    - Never fabricate citations or part numbers
+    - If uncertain, state "based on [Source N]" or "unclear from sources"
+
+  cross_domain_constraints: |
+    CROSS-DOMAIN CONSTRAINTS:
+    - DO NOT claim causal relationships between independent systems
+    - Robot servo alarms do NOT cause hydraulic system issues
+    - Each system (robot, IMM, hot runner) operates independently
+    - Only claim relationships if explicitly stated in sources
+
+# -----------------------------------------------------------------------------
+# System Prompts (core prefixes)
+# -----------------------------------------------------------------------------
+system_prompts:
+  core_prefix: |
+    You are an AI research and problem-solving assistant.
+    Your role is to help users find accurate, well-sourced information.
+    Always cite your sources and acknowledge uncertainty when appropriate.
+
+  industrial_prefix: |
+    You are an AI research assistant specializing in industrial automation,
+    robotics, PLCs, injection molding, and manufacturing systems.
+    Provide technically accurate information with proper citations.
+
+# -----------------------------------------------------------------------------
+# Agent Prompts (per-agent configurations)
+# -----------------------------------------------------------------------------
+agent_prompts:
+  # ---------------------------------------------------------------------------
+  # Analyzer Agent
+  # ---------------------------------------------------------------------------
+  analyzer:
+    system: |
+      Your role: Query Analyzer
+      Analyze the user query to determine the best approach for answering it.
+      Identify query type, key entities, required search strategies, and potential sources.
+
+    url_evaluation: |
+      Evaluate which of these search results are worth scraping to answer the user's question.
+
+      USER'S QUESTION: {query}
+
+      SEARCH RESULTS:
+      {results}
+
+      For each result, evaluate:
+      1. Relevance to the question (0-10)
+      2. Likely content quality (official docs, forums, blogs)
+      3. Whether it's worth the scraping cost
+
+      Return JSON array of URLs to scrape, ordered by priority.
+
+    content_adequacy: |
+      Analyze if the scraped content adequately answers the user's questions.
+
+      ORIGINAL QUESTIONS:
+      {decomposed_questions}
+
+      SCRAPED CONTENT SUMMARY:
+      {content_summary}
+
+      Evaluate:
+      1. Which questions are fully answered?
+      2. Which questions are partially answered?
+      3. Which questions have no coverage?
+      4. Overall adequacy score (0-100)
+
+      Return JSON with your analysis.
+
+  # ---------------------------------------------------------------------------
+  # Planner Agent
+  # ---------------------------------------------------------------------------
+  planner:
+    system: |
+      Your role: Search Planner
+      Create an optimal search strategy for answering the user's question.
+      Generate specific, targeted search queries that will find relevant information.
+
+    query_generation: |
+      You are a search query planner. Analyze this question and generate 2-4 specific web search queries.
+
+      Question: {query}
+
+      Requirements:
+      - Each query should target different aspects of the question
+      - Use specific technical terms when appropriate
+      - Include manufacturer names for industrial queries (FANUC, Siemens, etc.)
+      - Avoid overly broad queries
+
+      Return JSON array of search queries.
+
+  # ---------------------------------------------------------------------------
+  # Synthesizer Agent
+  # ---------------------------------------------------------------------------
+  synthesizer:
+    system: |
+      <role>EXPERT RESEARCH SYNTHESIZER for industrial automation</role>
+      <expertise>
+      Combine information from multiple sources into comprehensive, accurate responses.
+      Specialize in FANUC robotics, Allen-Bradley PLCs, Siemens automation,
+      injection molding, and manufacturing systems.
+      </expertise>
+
+    main: |
+      <role>EXPERT RESEARCH SYNTHESIZER for industrial automation</role>
+      <expertise>Combine information from multiple sources into accurate, actionable answers for FANUC robotics, Allen-Bradley PLCs, Siemens automation, servo systems, and industrial troubleshooting. Every claim MUST be cited. Use technical terminology correctly.</expertise>
+
+      Think through this step by step, providing thorough reasoning for your synthesis.
+
+      Based on the search results provided, create a comprehensive answer to the user's question.
+
+      **FOCUS REQUIREMENT**: Your answer MUST directly address the specific topic in the Original Question below. Do NOT answer about tangentially related topics that appear in search results. Stay focused on exactly what was asked.
+
+      Original Question: {query}
+
+      Search Results:
+      {results_text}
+      {verification_text}
+
+      CRITICAL REQUIREMENTS (you MUST follow these):
+      1. **STAY ON TOPIC**: Answer ONLY about the specific error code, component, or procedure mentioned in the Original Question. Ignore unrelated content in search results.
+      2. **MANDATORY CITATIONS**: Every factual claim MUST have a [Source N] citation. Answers without citations are INCOMPLETE.
+      3. **TERM COVERAGE**: Use the key technical terms from the question in your answer (e.g., error codes, component names, procedures).
+      4. Be direct and solution-focused with specific details, examples, and references.
+      5. Structure your answer with clear sections if the topic is complex.
+      6. If information is limited, acknowledge what's known and what remains unclear.
+      7. If sources conflict, note the discrepancy: "Source 1 says X [Source 1], but Source 2 says Y [Source 2]."
+
+      {cross_domain_constraints}
+
+      {citation_requirement}
+
+      Your synthesized answer (with citations):
+
+    thinking_instruction: |
+      Think through this step by step, providing thorough reasoning for each consideration.
+      Provide your final synthesized answer after your analysis.
+
+  # ---------------------------------------------------------------------------
+  # Verifier Agent
+  # ---------------------------------------------------------------------------
+  verifier:
+    system: |
+      Your role: Information Verifier
+      Cross-check claims against available sources.
+      Identify unsupported claims, contradictions, and verification status.
+
+    verification: |
+      Verify the following synthesis against the source materials.
+
+      SYNTHESIS:
+      {synthesis}
+
+      SOURCES:
+      {sources}
+
+      For each major claim in the synthesis:
+      1. Is it supported by the sources? (yes/partial/no)
+      2. Which source(s) support it?
+      3. Are there any contradictions?
+
+      Return JSON with verification results.
+
+  # ---------------------------------------------------------------------------
+  # Query Classifier
+  # ---------------------------------------------------------------------------
+  query_classifier:
+    system: |
+      <role>QUERY ROUTING SPECIALIST for industrial automation research</role>
+      <expertise>
+      Classify queries to determine optimal search strategy and resource allocation.
+      Recognize technical terms, error codes, and domain-specific patterns.
+      </expertise>
+
+    classification: |
+      Classify this query to determine the best search approach.
+
+      Query: {query}
+
+      Classify into:
+      - type: (troubleshooting|how_to|comparison|definition|research|general)
+      - domain: (fanuc|allen_bradley|siemens|injection_molding|general_automation|other)
+      - complexity: (simple|moderate|complex)
+      - required_depth: (quick|standard|thorough)
+
+      Return JSON with classification.
+
+  # ---------------------------------------------------------------------------
+  # Retrieval Evaluator (CRAG)
+  # ---------------------------------------------------------------------------
+  retrieval_evaluator:
+    system: |
+      <role>RETRIEVAL QUALITY EVALUATOR for industrial documentation</role>
+      <expertise>
+      Assess relevance and quality of retrieved documents for answering queries.
+      Determine if additional retrieval is needed.
+      </expertise>
+
+    document_scoring: |
+      Evaluate this document's relevance for answering the query.
+
+      Query: {query}
+
+      Document:
+      {document}
+
+      Score (0-10) on:
+      1. Topical relevance
+      2. Information completeness
+      3. Source authority
+      4. Technical accuracy indicators
+
+      Return JSON with scores and recommendation (use/partial/skip).
+
+    query_refinement: |
+      The original query is: "{query}"
+
+      The search found some relevant results but coverage is incomplete.
+      Current gaps: {gaps}
+
+      Generate 2-3 refined search queries to fill these gaps.
+      Return JSON array of queries.
+
+    fallback_queries: |
+      The search for "{query}" returned poor results.
+
+      Generate 3 alternative search queries using:
+      1. Different terminology
+      2. More specific technical terms
+      3. Broader scope if query was too narrow
+
+      Return JSON array of alternative queries.
+
+    query_decomposition: |
+      Break this complex query into 2-4 simpler sub-questions:
+
+      Query: "{query}"
+
+      Output JSON array of sub-questions that together answer the main query.
+
+  # ---------------------------------------------------------------------------
+  # Self-Reflection Agent
+  # ---------------------------------------------------------------------------
+  self_reflection:
+    system: |
+      Your role: Quality Assessor
+      Evaluate synthesis quality using ISREL, ISSUP, and ISUSE criteria.
+
+    relevance_check: |
+      Rate how relevant this answer is to the question on a scale of 0-10.
+
+      Question: {query}
+
+      Answer: {answer}
+
+      Consider:
+      - Does it address the main question?
+      - Is it focused or off-topic?
+      - Does it provide actionable information?
+
+      Return JSON: {"score": N, "reasoning": "..."}
+
+    support_check: |
+      Analyze if the claims in this synthesis are supported by the sources.
+
+      SYNTHESIS:
+      {synthesis}
+
+      SOURCES:
+      {sources}
+
+      For each major claim, determine:
+      - supported: claim is directly backed by sources
+      - partial: claim is partially supported
+      - unsupported: no source evidence
+
+      Return JSON with analysis.
+
+  # ---------------------------------------------------------------------------
+  # Entity Tracker
+  # ---------------------------------------------------------------------------
+  entity_tracker:
+    extraction: |
+      Extract named entities from this content. /no_think
+
+      Content:
+      {content}
+
+      Return ONLY valid JSON:
+      {
+        "entities": [
+          {"name": "...", "type": "...", "context": "..."}
+        ]
+      }
+
+      Entity types: PRODUCT, COMPANY, ERROR_CODE, PARAMETER, PROCEDURE, COMPONENT
+
+  # ---------------------------------------------------------------------------
+  # Cross-Encoder Reranker
+  # ---------------------------------------------------------------------------
+  cross_encoder:
+    rerank: |
+      You are a relevance scoring system. Rate how relevant each document is to the query.
+
+      Query: {query}
+
+      Documents to score:
+      {documents}
+
+      For each document, provide a relevance score from 0 to 10:
+      - 0-2: Not relevant (different topic, no useful information)
+      - 3-4: Slightly relevant (tangentially related)
+      - 5-6: Moderately relevant (some useful information)
+      - 7-8: Highly relevant (directly addresses the query)
+      - 9-10: Perfect match (comprehensive answer to query)
+
+      Output ONLY a JSON array of scores in order, like: [7, 3, 9, 5, 2]
+      Do not explain your reasoning. Just output the scores array.
+
+  # ---------------------------------------------------------------------------
+  # HyDE (Hypothetical Document Embeddings)
+  # ---------------------------------------------------------------------------
+  hyde:
+    answer: |
+      Given the following question, generate a hypothetical answer document
+      that would perfectly answer this question. Write as if this is the actual answer from a reliable source.
+
+      Question: {query}
+
+      Generate a detailed, factual answer (about 100-150 words):
+
+    passage: |
+      Given the following search query, generate a relevant passage that would
+      appear in a document that answers this query. Write as if you're quoting from an authoritative source.
+
+      Query: {query}
+
+      Generate a relevant passage (about 100-150 words):
+
+    explanation: |
+      Given the following question, write a detailed explanation that
+      thoroughly addresses all aspects of the question. Include relevant context and examples.
+
+      Question: {query}
+
+      Provide a comprehensive explanation (about 150-200 words):
+
+    technical: |
+      Given the following technical query, generate a passage that would
+      appear in technical documentation addressing this query. Include specific details, steps, or specifications.
+
+      Query: {query}
+
+      Generate technical documentation (about 100-150 words):
+
+    multi: |
+      Given the following query, generate {n} different hypothetical document passages
+      that would each answer this query from different angles or perspectives.
+
+      Query: {query}
+
+      Generate {n} diverse passages, each about 80-100 words. Number them 1 through {n}:
+
+  # ---------------------------------------------------------------------------
+  # Reasoning DAG (Graph-of-Thought)
+  # ---------------------------------------------------------------------------
+  reasoning_dag:
+    branch: |
+      Generate {num_branches} distinct hypotheses or approaches to answer this question.
+      Each hypothesis should explore a different angle or perspective.
+
+      Question: {question}
+
+      Current context: {context}
+
+      Return JSON array of hypotheses, each with:
+      - hypothesis: the proposed approach
+      - reasoning: why this might work
+      - confidence: estimated likelihood (0-1)
+
+    aggregate: |
+      Synthesize these findings into a coherent understanding.
+
+      Findings to aggregate:
+      {findings}
+
+      Create a unified synthesis that:
+      1. Identifies common themes
+      2. Resolves contradictions
+      3. Highlights key insights
+
+      Return your synthesis.
+
+    critique: |
+      Critically evaluate this reasoning step.
+
+      Node content: {content}
+      Node type: {node_type}
+      Supporting evidence: {evidence}
+
+      Evaluate:
+      1. Logical soundness
+      2. Evidence support
+      3. Potential weaknesses
+      4. Confidence level (0-1)
+
+      Return JSON with critique.
+
+    refine: |
+      Improve this reasoning based on the critique.
+
+      Original content: {content}
+      Critique: {critique}
+
+      Provide a refined version that addresses the identified weaknesses.
+
+  # ---------------------------------------------------------------------------
+  # RAGAS Evaluation
+  # ---------------------------------------------------------------------------
+  ragas:
+    claim_extraction: |
+      Extract all factual claims from the following answer.
+      A claim is a specific statement that can be verified as true or false.
+
+      Answer: {answer}
+
+      Return JSON array of claims.
+
+    claim_verification: |
+      Determine if the following claim is supported by the context.
+
+      Claim: {claim}
+
+      Context:
+      {context}
+
+      Return JSON: {"supported": true/false, "evidence": "...", "confidence": 0-1}
+
+    answer_relevancy: |
+      Rate how well the answer addresses the question.
+
+      Question: {question}
+
+      Answer: {answer}
+
+      Rate on a scale of 0-10 where:
+      - 0: Completely irrelevant
+      - 5: Partially addresses the question
+      - 10: Perfectly answers the question
+
+      Return JSON: {"score": N, "reasoning": "..."}
+
+    context_relevancy: |
+      Rate how relevant this context passage is to the question.
+
+      Question: {question}
+
+      Context: {context}
+
+      Rate on a scale of 0-10.
+      Return JSON: {"score": N, "reasoning": "..."}
+
+    question_generation: |
+      Generate a question that would be answered by this response.
+
+      Response: {answer}
+
+      Generate a clear, specific question.
+
+  # ---------------------------------------------------------------------------
+  # Sufficient Context Evaluator
+  # ---------------------------------------------------------------------------
+  sufficient_context:
+    evaluation: |
+      You are an expert evaluator determining if retrieved context is SUFFICIENT to answer a question.
+
+      QUESTION: {question}
+
+      RETRIEVED CONTEXT:
+      {context}
+
+      Evaluate:
+      1. Does the context contain information to answer the question?
+      2. Is the information complete or partial?
+      3. What specific gaps exist?
+
+      Return JSON:
+      {
+        "sufficient": true/false,
+        "confidence": 0-1,
+        "coverage_score": 0-100,
+        "gaps": ["gap1", "gap2"],
+        "reasoning": "..."
+      }
+
+  # ---------------------------------------------------------------------------
+  # Adaptive Refinement
+  # ---------------------------------------------------------------------------
+  adaptive_refinement:
+    gap_analysis: |
+      Analyze this Q&A for information gaps.
+
+      Question: {query}
+
+      Current Answer:
+      {current_answer}
+
+      Identify:
+      1. What aspects of the question remain unanswered?
+      2. What information would improve the answer?
+      3. What follow-up questions would help?
+
+      Return JSON with gaps and suggested queries.
+
+    adequacy_grading: |
+      Grade this answer's adequacy for the query.
+
+      Query: {query}
+
+      Answer: {answer}
+
+      Rate adequacy on a scale of 0-10:
+      - 0-3: Poor (major gaps, off-topic)
+      - 4-6: Adequate (covers basics, some gaps)
+      - 7-9: Good (thorough, minor gaps)
+      - 10: Excellent (comprehensive)
+
+      Return JSON: {"grade": N, "reasoning": "...", "gaps": [...]}
+
+  # ---------------------------------------------------------------------------
+  # Enhanced Reasoning
+  # ---------------------------------------------------------------------------
+  enhanced_reasoning:
+    planning: |
+      You are a research planning agent. Create a detailed execution plan for answering this query.
+
+      Query: {query}
+
+      Consider:
+      1. What information is needed?
+      2. What sources might have this information?
+      3. What order should steps be executed?
+      4. What are potential obstacles?
+
+      Return a structured plan.
+
+    qa: |
+      You are a quality assurance agent. Evaluate this research synthesis.
+
+      Query: {query}
+
+      Synthesis:
+      {synthesis}
+
+      Evaluate:
+      1. Accuracy of information
+      2. Completeness of coverage
+      3. Quality of citations
+      4. Clarity of presentation
+
+      Return JSON with scores and feedback.
+
+    contradiction_analysis: |
+      Analyze these sources for contradictions.
+
+      Sources:
+      {sources_text}
+
+      Identify any conflicting claims, noting:
+      - The specific contradiction
+      - Which sources disagree
+      - Possible explanations
+
+      Return JSON array of contradictions.
+
+  # ---------------------------------------------------------------------------
+  # FLARE Retrieval
+  # ---------------------------------------------------------------------------
+  flare:
+    uncertainty_detection: |
+      Based on the original question and the tentative answer being generated,
+      identify any gaps or unclear points that need additional information.
+
+      Question: {question}
+
+      Partial Answer:
+      {partial_answer}
+
+      Identify:
+      1. What claims lack sufficient support?
+      2. What technical details need verification?
+      3. What follow-up queries would help?
+
+      Return JSON with uncertainty markers and suggested queries.
+
+    continuation: |
+      Based on the question and partial answer, continue writing:
+
+      Question: {question}
+
+      Partial answer so far:
+      {partial_answer}
+
+      New context:
+      {new_context}
+
+      Continue the answer, incorporating the new context where relevant.
+
+  # ---------------------------------------------------------------------------
+  # Information Bottleneck
+  # ---------------------------------------------------------------------------
+  information_bottleneck:
+    analysis: |
+      Analyze these passages for answering the query. Apply Information Bottleneck principle:
+
+      Query: {query}
+
+      Passages:
+      {passages}
+
+      For each passage:
+      1. Extract ONLY information relevant to the query
+      2. Compress to essential facts
+      3. Rate information density (0-1)
+
+      Return JSON with compressed relevant information per passage.
+
+  # ---------------------------------------------------------------------------
+  # Entropy Monitor
+  # ---------------------------------------------------------------------------
+  entropy_monitor:
+    confidence: |
+      Evaluate the confidence level of this synthesis.
+
+      Question: {query}
+
+      Synthesis:
+      {synthesis}
+
+      Assess:
+      1. How certain is the information?
+      2. Are claims well-supported?
+      3. Are there hedging words indicating uncertainty?
+
+      Return JSON: {"confidence": 0-1, "uncertain_claims": [...], "reasoning": "..."}
+
+  # ---------------------------------------------------------------------------
+  # Domain Corpus Extraction
+  # ---------------------------------------------------------------------------
+  domain_corpus:
+    extraction: |
+      You are extracting structured information for a {domain_name} knowledge base.
+
+      {schema_context}
+
+      Content to extract from:
+      {content}
+
+      Extract entities and relationships following the schema.
+      Return valid JSON matching the schema format.
+
+# -----------------------------------------------------------------------------
+# Templates (reusable with variable substitution)
+# -----------------------------------------------------------------------------
+templates:
+  search_query_generation: |
+    Based on the user's question, generate optimal search queries.
+    User question: {question}
+    Generate 2-4 specific search queries.
+
+  url_relevance: |
+    Evaluate if this URL is worth scraping for information relevant to the query.
+    URL: {url}
+    Title: {title}
+    Snippet: {snippet}
+    Query: {query}
+    Return JSON: {"relevant": true/false, "score": 0-10, "reasoning": "..."}
+
+  content_summary: |
+    Summarize the key information from this content relevant to the query.
+    Content: {content}
+    Query: {query}
+    Provide a focused summary.
+
+  gap_detection: |
+    Given the questions and current findings, identify information gaps.
+    Questions: {questions}
+    Current findings: {findings}
+    What information is still missing?
+
+  synthesis_with_sources: |
+    Synthesize the following search results into a comprehensive response.
+
+    Original Query: {query}
+
+    Sources:
+    {sources}
+
+    Requirements:
+    - Cite sources using [Source N] format
+    - Stay focused on the query
+    - Acknowledge gaps or uncertainties
+
+# -----------------------------------------------------------------------------
+# Metadata
+# -----------------------------------------------------------------------------
+metadata:
+  version: "1.0.0"
+  last_updated: "2026-01-09"
+  description: "Central prompt configuration for memOS agentic pipeline"
