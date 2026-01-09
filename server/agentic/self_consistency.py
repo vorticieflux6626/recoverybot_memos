@@ -28,6 +28,8 @@ import json
 import re
 import numpy as np
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -96,16 +98,17 @@ class SelfConsistencyChecker:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "gemma3:4b",
+        ollama_url: Optional[str] = None,
+        model: Optional[str] = None,
         embedding_model: str = "mxbai-embed-large",
         min_agreement: float = 0.6,
         similarity_threshold: float = 0.85,
         min_samples: int = 3,
         max_samples: int = 7
     ):
-        self.ollama_url = ollama_url
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.utility.self_consistency.model
         self.embedding_model = embedding_model
         self.min_agreement = min_agreement
         self.similarity_threshold = similarity_threshold

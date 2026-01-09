@@ -215,6 +215,150 @@ utility:
     max_tokens: 1024
     description: "Verify entity references against sources"
 
+  # Self-Discover Reasoning Composer
+  reasoning_composer:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.7
+    max_tokens: 2048
+    description: "Compose task-specific reasoning strategies"
+    notes: "Self-Discover pattern for meta-reasoning"
+
+  # DAG-Based Reasoning (Graph of Thoughts)
+  reasoning_dag:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.6
+    max_tokens: 2048
+    description: "Multi-path reasoning via graph exploration"
+    notes: "GoT-style branching and aggregation"
+
+  # Pre-Act Planning (Enhanced Reasoning)
+  enhanced_planner:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.4
+    max_tokens: 1024
+    description: "Pre-Act multi-step planning"
+    notes: "70% accuracy improvement over ReAct"
+
+  # Pre-Act Reflection (Enhanced Reasoning)
+  enhanced_reflector:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.3
+    max_tokens: 1024
+    description: "Self-reflection after synthesis"
+
+  # Cross-Encoder Reranking
+  cross_encoder:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.2
+    max_tokens: 512
+    description: "Neural reranking of search results"
+
+  # HyDE Hypothetical Document Generation
+  hyde_generator:
+    model: "gemma3:4b"
+    context_window: 131072
+    temperature: 0.7
+    max_tokens: 1024
+    description: "Generate hypothetical documents for dense retrieval"
+    notes: "Fast model for speculative generation"
+
+  # FLARE Uncertainty Detection
+  flare_detector:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.3
+    max_tokens: 512
+    description: "Detect uncertainty for proactive retrieval"
+
+  # Information Bottleneck Scoring
+  information_bottleneck:
+    model: "gemma3:4b"
+    context_window: 131072
+    temperature: 0.2
+    max_tokens: 512
+    description: "Score passage relevance via information bottleneck"
+    notes: "Fast model for scoring"
+
+  # Sufficient Context Evaluator
+  sufficient_context:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.3
+    max_tokens: 1024
+    description: "Evaluate if context is sufficient to answer"
+
+  # Self-Consistency Reasoning
+  self_consistency:
+    model: "gemma3:4b"
+    context_window: 131072
+    temperature: 0.7
+    max_tokens: 1024
+    description: "Multiple reasoning paths for consistency check"
+    notes: "Higher temp for diverse paths"
+
+  # Speculative RAG Verifier
+  speculative_verifier:
+    model: "deepseek-r1:14b-qwen-distill-q8_0"
+    context_window: 32000
+    temperature: 0.2
+    max_tokens: 2048
+    description: "Verify speculative generations"
+    notes: "Larger model for accurate verification"
+
+  # RAGAS Judge
+  ragas_judge:
+    model: "gemma3:4b"
+    context_window: 131072
+    temperature: 0.2
+    max_tokens: 512
+    description: "RAGAS-style evaluation metrics"
+
+  # Entropy Monitor
+  entropy_monitor:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.3
+    max_tokens: 512
+    description: "Monitor token entropy for uncertainty"
+
+  # Content Scraper Analysis
+  scraper_analyzer:
+    model: "qwen3:14b"
+    context_window: 40960
+    temperature: 0.3
+    max_tokens: 4096
+    description: "Analyze scraped content relevance"
+    notes: "Larger model for nuanced content analysis"
+
+  # Actor Factory (AIME-style)
+  actor_factory:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.4
+    max_tokens: 1024
+    description: "Dynamic agent assembly"
+
+  # Adaptive Refinement
+  adaptive_refinement:
+    model: "qwen3:8b"
+    context_window: 40960
+    temperature: 0.4
+    max_tokens: 1024
+    description: "Adaptive query refinement based on results"
+
+  # Information Gain Scoring
+  information_gain:
+    model: "gemma3:4b"
+    context_window: 131072
+    temperature: 0.2
+    max_tokens: 512
+    description: "Score information gain from new sources"
+
 # =============================================================================
 # EMBEDDING MODELS
 # =============================================================================

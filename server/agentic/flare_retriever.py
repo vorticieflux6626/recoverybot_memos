@@ -24,6 +24,8 @@ from enum import Enum
 import httpx
 import json
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -94,15 +96,16 @@ class FLARERetriever:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better uncertainty detection
+        ollama_url: str = None,
+        model: str = None,
         confidence_threshold: float = 0.6,
         check_interval: int = 50,          # Check every N tokens
         max_retrievals: int = 5,           # Max retrievals per generation
         tentative_tokens: int = 50,        # Tokens to generate tentatively
     ):
-        self.ollama_url = ollama_url
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.utility.flare_detector.model
         self.confidence_threshold = confidence_threshold
         self.check_interval = check_interval
         self.max_retrievals = max_retrievals

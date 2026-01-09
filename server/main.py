@@ -84,6 +84,15 @@ except ImportError as e:
     OBSERVABILITY_ENABLED = False
     logging.getLogger("memos_server").warning(f"Observability API disabled: {e}")
 
+# LLM Config router (for model configuration management)
+try:
+    from api.config import router as config_router
+    CONFIG_ENABLED = True
+except ImportError as e:
+    config_router = None
+    CONFIG_ENABLED = False
+    logging.getLogger("memos_server").warning(f"LLM Config API disabled: {e}")
+
 # Configure logging
 setup_logging()
 logger = logging.getLogger("memos_server")
@@ -192,6 +201,11 @@ if SYSTEM_HEALTH_ENABLED and system_health_router:
 if OBSERVABILITY_ENABLED and observability_router:
     app.include_router(observability_router)
     logger.info("Observability endpoints enabled at /api/v1/observability/*")
+
+# Include LLM config router if available (for model configuration)
+if CONFIG_ENABLED and config_router:
+    app.include_router(config_router)
+    logger.info("LLM config endpoints enabled at /api/v1/config/*")
 
 # Mount static files for Sherpa-ONNX TTS models
 # Models are served from: /api/models/sherpa-onnx/{model_dir}/{file}

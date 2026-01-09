@@ -39,6 +39,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from .content_cache import get_content_cache
+from .llm_config import get_llm_config
 from .domain_corpus import (
     DomainCorpus,
     DomainSchema,
@@ -340,7 +341,8 @@ class PLCCorpusScraper:
         db_path: Optional[str] = None,
         ollama_url: str = "http://localhost:11434",
         rate_limit_delay: float = 2.0,
-        max_retries: int = 3
+        max_retries: int = 3,
+        extraction_model: Optional[str] = None
     ):
         """
         Initialize the PLC corpus scraper.
@@ -350,9 +352,14 @@ class PLCCorpusScraper:
             ollama_url: URL for Ollama API (entity extraction)
             rate_limit_delay: Seconds between requests
             max_retries: Max retry attempts per URL
+            extraction_model: Model for entity extraction (defaults to config)
         """
         if db_path is None:
             db_path = str(Path(__file__).parent.parent / "cache" / "plc_corpus.db")
+
+        # Load model from central config if not provided
+        llm_config = get_llm_config()
+        extraction_model = extraction_model or llm_config.corpus.plc_extractor.model
 
         self.db_path = db_path
         self.schema = create_plc_corpus_schema()
@@ -363,7 +370,7 @@ class PLCCorpusScraper:
         )
         self.builder = CorpusBuilder(
             corpus=self.corpus,
-            extraction_model="qwen3:8b"
+            extraction_model=extraction_model
         )
         self.content_cache = get_content_cache()
         self.ollama_url = ollama_url

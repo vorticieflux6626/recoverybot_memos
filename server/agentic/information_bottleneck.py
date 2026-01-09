@@ -42,6 +42,7 @@ import numpy as np
 
 from .metrics import get_performance_metrics
 from .context_limits import get_model_context_window
+from .llm_config import get_llm_config
 
 logger = logging.getLogger("agentic.information_bottleneck")
 
@@ -150,12 +151,13 @@ class InformationBottleneckFilter:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "gemma3:4b",  # Fast model for scoring
+        ollama_url: str = None,
+        model: str = None,
         beta: float = 0.6
     ):
-        self.ollama_url = ollama_url
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.utility.information_bottleneck.model
         self.beta = beta
 
     async def filter(
@@ -604,11 +606,11 @@ Rate honestly - low relevance for off-topic content, high noise for redundant/mi
 
 # Factory functions
 def create_ib_filter(
-    ollama_url: str = "http://localhost:11434",
-    model: str = "gemma3:4b",
+    ollama_url: str = None,
+    model: str = None,
     beta: float = 0.6
 ) -> InformationBottleneckFilter:
-    """Create an InformationBottleneckFilter instance."""
+    """Create an InformationBottleneckFilter instance (config from llm_models.yaml)."""
     return InformationBottleneckFilter(
         ollama_url=ollama_url,
         model=model,

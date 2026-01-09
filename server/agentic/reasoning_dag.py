@@ -254,13 +254,15 @@ Respond with JSON:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "qwen3:8b",
+        ollama_url: str = None,
+        model: str = None,
         max_depth: int = 5,
         max_branches: int = 4
     ):
-        self.ollama_url = ollama_url
-        self.model = model
+        from .llm_config import get_llm_config
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.utility.reasoning_dag.model
         self.max_depth = max_depth
         self.max_branches = max_branches
 
@@ -955,8 +957,8 @@ Respond with JSON:
 
 # Factory function
 def create_reasoning_dag(
-    ollama_url: str = "http://localhost:11434",
-    model: str = "qwen3:8b"
+    ollama_url: str = None,
+    model: str = None
 ) -> ReasoningDAG:
-    """Create a ReasoningDAG instance"""
+    """Create a ReasoningDAG instance (config from llm_models.yaml)"""
     return ReasoningDAG(ollama_url=ollama_url, model=model)

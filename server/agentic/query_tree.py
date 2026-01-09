@@ -28,6 +28,8 @@ import json
 import re
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Set, Tuple
+
+from .llm_config import get_llm_config
 from enum import Enum
 import httpx
 
@@ -175,15 +177,16 @@ class QueryTreeDecoder:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "gemma3:4b",
+        ollama_url: Optional[str] = None,
+        model: Optional[str] = None,
         max_branches: int = 4,
         max_depth: int = 2,
         min_confidence: float = 0.3,
         parallel_limit: int = 3
     ):
-        self.ollama_url = ollama_url
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.utility.query_decomposer.model
         self.max_branches = max_branches
         self.max_depth = max_depth
         self.min_confidence = min_confidence

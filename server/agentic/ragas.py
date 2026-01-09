@@ -35,6 +35,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import httpx
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -214,13 +216,14 @@ class RAGASEvaluator:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        judge_model: str = "gemma3:4b",
+        ollama_url: Optional[str] = None,
+        judge_model: Optional[str] = None,
         embedding_model: str = "bge-m3",
         config: Optional[RAGASConfig] = None
     ):
-        self.ollama_url = ollama_url
-        self.judge_model = judge_model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.judge_model = judge_model or llm_config.utility.ragas_judge.model
         self.embedding_model = embedding_model
         self.config = config or RAGASConfig()
 
@@ -599,8 +602,8 @@ _ragas_evaluator: Optional[RAGASEvaluator] = None
 
 
 def get_ragas_evaluator(
-    ollama_url: str = "http://localhost:11434",
-    judge_model: str = "gemma3:4b",
+    ollama_url: Optional[str] = None,
+    judge_model: Optional[str] = None,
     embedding_model: str = "bge-m3"
 ) -> RAGASEvaluator:
     """Get or create the global RAGAS evaluator instance."""
@@ -617,8 +620,8 @@ def get_ragas_evaluator(
 
 
 async def create_ragas_evaluator(
-    ollama_url: str = "http://localhost:11434",
-    judge_model: str = "gemma3:4b",
+    ollama_url: Optional[str] = None,
+    judge_model: Optional[str] = None,
     embedding_model: str = "bge-m3",
     config: Optional[RAGASConfig] = None
 ) -> RAGASEvaluator:

@@ -27,6 +27,8 @@ import httpx
 import json
 import re
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -87,15 +89,16 @@ class EntropyMonitor:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better entropy estimation
+        ollama_url: Optional[str] = None,
+        model: Optional[str] = None,
         high_confidence_threshold: float = 0.2,
         low_confidence_threshold: float = 0.5,
         convergence_threshold: float = 0.05,  # Entropy change < 5% = converged
         min_iterations_before_halt: int = 1
     ):
-        self.ollama_url = ollama_url
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.utility.entropy_monitor.model
         self.high_confidence_threshold = high_confidence_threshold
         self.low_confidence_threshold = low_confidence_threshold
         self.convergence_threshold = convergence_threshold

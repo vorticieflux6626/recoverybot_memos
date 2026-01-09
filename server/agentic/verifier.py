@@ -14,6 +14,7 @@ from typing import List, Optional, Dict, Any
 import httpx
 
 from .models import VerificationResult, VerificationLevel, WebSearchResult
+from .llm_config import get_llm_config
 
 logger = logging.getLogger("agentic.verifier")
 
@@ -30,11 +31,12 @@ class VerifierAgent:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better verification quality
+        ollama_url: str = None,
+        model: str = None
     ):
-        self.ollama_url = ollama_url
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.pipeline.verifier.model
 
     async def verify(
         self,

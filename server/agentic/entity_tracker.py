@@ -65,6 +65,8 @@ import hashlib
 import asyncio
 import httpx
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger("agentic.entity_tracker")
 
 
@@ -321,12 +323,13 @@ Return ONLY valid JSON:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        extraction_model: str = "qwen3:8b",
+        ollama_url: Optional[str] = None,
+        extraction_model: Optional[str] = None,
         similarity_threshold: float = 0.85
     ):
-        self.ollama_url = ollama_url
-        self.extraction_model = extraction_model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.extraction_model = extraction_model or llm_config.utility.entity_extractor.model
         self.similarity_threshold = similarity_threshold
 
         # Entity storage

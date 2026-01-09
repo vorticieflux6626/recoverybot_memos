@@ -761,10 +761,15 @@ Extract all relevant entities and relationships. Return ONLY valid JSON:
     def __init__(
         self,
         corpus: DomainCorpus,
-        extraction_model: str = "qwen3:8b",
+        extraction_model: Optional[str] = None,
         chunk_size: int = 1500,
         chunk_overlap: int = 200
     ):
+        # Load model from central config if not provided
+        from .llm_config import get_llm_config
+        llm_config = get_llm_config()
+        extraction_model = extraction_model or llm_config.corpus.domain_extractor.model
+
         self.corpus = corpus
         self.extraction_model = extraction_model
         self.chunk_size = chunk_size

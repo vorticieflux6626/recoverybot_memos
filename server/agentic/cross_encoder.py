@@ -22,6 +22,8 @@ from typing import List, Dict, Any, Optional, Tuple
 import aiohttp
 import json
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -80,13 +82,14 @@ Do not explain your reasoning. Just output the scores array."""
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better reranking quality
+        ollama_url: str = None,
+        model: str = None,
         batch_size: int = 5,
         timeout: float = 30.0
     ):
-        self.ollama_url = ollama_url
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.utility.cross_encoder.model
         self.batch_size = batch_size
         self.timeout = timeout
         self._session: Optional[aiohttp.ClientSession] = None
@@ -295,10 +298,10 @@ _cross_encoder: Optional[CrossEncoderReranker] = None
 
 
 def get_cross_encoder(
-    ollama_url: str = "http://localhost:11434",
-    model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better reranking quality
+    ollama_url: str = None,
+    model: str = None
 ) -> CrossEncoderReranker:
-    """Get or create the global cross-encoder instance."""
+    """Get or create the global cross-encoder instance (config from llm_models.yaml)."""
     global _cross_encoder
 
     if _cross_encoder is None:

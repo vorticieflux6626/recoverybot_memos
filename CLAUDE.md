@@ -14,6 +14,8 @@
 | Format Code | `ruff format .` | After venv activation |
 | Lint Code | `ruff check .` | After venv activation |
 | Ollama Config | `source setup_ollama_optimization.sh && systemctl restart ollama` | Apply optimizations |
+| **LLM Config** | `curl localhost:8001/api/v1/config/llm-models` | View model assignments |
+| Apply Preset | `curl -X POST localhost:8001/api/v1/config/llm-models/presets/speed` | speed/quality/balanced |
 
 ## Critical Rules
 

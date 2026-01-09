@@ -22,6 +22,8 @@ from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
 import httpx
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -132,12 +134,13 @@ class SufficientContextClassifier:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "qwen3:8b",  # Good reasoning capability
+        ollama_url: str = None,
+        model: str = None,
         timeout: float = 60.0
     ):
-        self.ollama_url = ollama_url.rstrip("/")
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = (ollama_url or llm_config.ollama.url).rstrip("/")
+        self.model = model or llm_config.utility.sufficient_context.model
         self.timeout = timeout
         self._stats = {
             "total_classifications": 0,
@@ -283,11 +286,12 @@ class PositionalOptimizer:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "gemma3:4b"  # Fast model for relevance scoring
+        ollama_url: str = None,
+        model: str = None
     ):
-        self.ollama_url = ollama_url.rstrip("/")
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = (ollama_url or llm_config.ollama.url).rstrip("/")
+        self.model = model or llm_config.utility.relevance_scorer.model
 
     async def score_relevance(
         self,

@@ -45,6 +45,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import httpx
 from urllib.parse import urlparse
 
+from .llm_config import get_llm_config
 from .domain_corpus import (
     DomainCorpus,
     DomainSchema,
@@ -290,8 +291,12 @@ class IMMCorpusBuilder:
         self,
         corpus: Optional[DomainCorpus] = None,
         ollama_url: str = "http://localhost:11434",
-        extraction_model: str = "gemma3:4b"  # Fast model for extraction
+        extraction_model: Optional[str] = None  # Defaults to config
     ):
+        # Load model from central config if not provided
+        llm_config = get_llm_config()
+        extraction_model = extraction_model or llm_config.corpus.imm_extractor.model
+
         # Initialize corpus if not provided
         if corpus is None:
             manager = get_corpus_manager()

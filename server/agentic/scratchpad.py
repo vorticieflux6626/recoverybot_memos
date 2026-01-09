@@ -85,6 +85,8 @@ import uuid
 import json
 import logging
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger("agentic.scratchpad")
 
 
@@ -1401,7 +1403,7 @@ class AgenticScratchpad(BaseModel):
         self,
         llm_client,
         available_agents: List[str] = None,
-        model: str = "gemma3:4b"
+        model: Optional[str] = None
     ) -> str:
         """
         LLM-powered agent selection using blackboard state.
@@ -1418,6 +1420,8 @@ class AgenticScratchpad(BaseModel):
         Returns:
             Name of selected agent
         """
+        llm_config = get_llm_config()
+        model = model or llm_config.utility.relevance_scorer.model
         if available_agents is None:
             available_agents = [
                 "analyzer", "planner", "searcher", "scraper",

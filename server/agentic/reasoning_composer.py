@@ -22,6 +22,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -374,11 +376,12 @@ Milestone checkpoints:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "qwen3:8b"
+        ollama_url: str = None,
+        model: str = None
     ):
-        self.ollama_url = ollama_url
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.utility.reasoning_composer.model
         self._stats = {
             "compositions": 0,
             "modules_selected": 0,
@@ -643,10 +646,10 @@ _reasoning_composer: Optional[ReasoningComposer] = None
 
 
 def get_reasoning_composer(
-    ollama_url: str = "http://localhost:11434",
-    model: str = "qwen3:8b"
+    ollama_url: str = None,
+    model: str = None
 ) -> ReasoningComposer:
-    """Get or create singleton ReasoningComposer instance"""
+    """Get or create singleton ReasoningComposer instance (config from llm_models.yaml)"""
     global _reasoning_composer
     if _reasoning_composer is None:
         _reasoning_composer = ReasoningComposer(ollama_url=ollama_url, model=model)

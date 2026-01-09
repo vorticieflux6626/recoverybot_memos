@@ -27,6 +27,7 @@ import httpx
 
 from .thought_library import ThoughtLibrary, ThoughtTemplate, TemplateCategory, get_thought_library
 from .models import SearchResponse
+from .llm_config import get_llm_config
 
 logger = logging.getLogger("agentic.experience_distiller")
 
@@ -98,12 +99,13 @@ class ExperienceDistiller:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better distillation quality
+        ollama_url: Optional[str] = None,
+        model: Optional[str] = None,
         thought_library: Optional[ThoughtLibrary] = None
     ):
-        self.ollama_url = ollama_url
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.utility.experience_distiller.model
         self.thought_library = thought_library or get_thought_library()
 
         # Experience memory by query type
@@ -490,8 +492,8 @@ Output ONLY the JSON, no other text:"""
 
 # Factory function
 def create_experience_distiller(
-    ollama_url: str = "http://localhost:11434",
-    model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better distillation quality
+    ollama_url: Optional[str] = None,
+    model: Optional[str] = None
 ) -> ExperienceDistiller:
     """Create a new ExperienceDistiller instance"""
     return ExperienceDistiller(

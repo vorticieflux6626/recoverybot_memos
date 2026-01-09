@@ -24,6 +24,8 @@ import httpx
 import json
 import re
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,13 +78,14 @@ class DocumentInformationGain:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "gemma3:4b",  # Fast model for scoring
+        ollama_url: Optional[str] = None,
+        model: Optional[str] = None,
         positive_threshold: float = 0.1,
         negative_threshold: float = -0.05
     ):
-        self.ollama_url = ollama_url
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.utility.information_gain.model
         self.positive_threshold = positive_threshold
         self.negative_threshold = negative_threshold
         self._cache: Dict[str, DIGScore] = {}
@@ -436,8 +439,8 @@ _dig_scorer: Optional[DocumentInformationGain] = None
 
 
 def get_dig_scorer(
-    ollama_url: str = "http://localhost:11434",
-    model: str = "gemma3:4b"
+    ollama_url: Optional[str] = None,
+    model: Optional[str] = None
 ) -> DocumentInformationGain:
     """Get or create the DIG scorer singleton."""
     global _dig_scorer

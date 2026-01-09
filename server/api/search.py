@@ -121,12 +121,15 @@ async def get_universal_orchestrator(preset: str = "balanced") -> UniversalOrche
     This is the SINGLE SOURCE OF TRUTH for all orchestrator access.
 
     Args:
-        preset: One of 'minimal', 'balanced', 'enhanced', 'research', 'full'
+        preset: One of 'minimal', 'balanced', 'enhanced', 'research', 'full' (case-insensitive)
 
     Returns:
         UniversalOrchestrator instance configured with the specified preset
     """
     global _universal_orchestrators
+
+    # Normalize preset to lowercase for enum matching
+    preset = preset.lower()
 
     if preset not in _universal_orchestrators:
         settings = get_settings()
@@ -772,8 +775,8 @@ async def universal_search(request: UniversalSearchRequest):
         SearchResponse with enhancement_metadata showing which features were used.
     """
     try:
-        # Determine preset
-        preset = request.preset or "balanced"
+        # Determine preset (normalize to lowercase for enum matching)
+        preset = (request.preset or "balanced").lower()
 
         # Get or create orchestrator
         from agentic import UniversalOrchestrator, OrchestratorPreset, FeatureConfig

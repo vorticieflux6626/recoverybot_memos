@@ -18,6 +18,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Callable, Awaitable
 import httpx
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -282,17 +284,21 @@ class ActorFactory:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        default_model: str = "qwen3:8b"
+        default_model: Optional[str] = None
     ):
         """
         Initialize ActorFactory.
 
         Args:
             ollama_url: Ollama API URL
-            default_model: Fallback model if capability match fails
+            default_model: Fallback model if capability match fails (loaded from config if None)
         """
         self.ollama_url = ollama_url
-        self.default_model = default_model
+        if default_model is None:
+            llm_config = get_llm_config()
+            self.default_model = llm_config.utility.actor_factory.model
+        else:
+            self.default_model = default_model
         self.bundles = dict(DEFAULT_TOOL_BUNDLES)
         self.tools: Dict[str, Tool] = {}
         self.actors: Dict[str, DynamicActor] = {}
@@ -607,7 +613,7 @@ class ActorFactory:
 # Factory function
 def create_actor_factory(
     ollama_url: str = "http://localhost:11434",
-    default_model: str = "qwen3:8b"
+    default_model: Optional[str] = None
 ) -> ActorFactory:
     """Create a new ActorFactory instance"""
     return ActorFactory(ollama_url=ollama_url, default_model=default_model)
@@ -619,7 +625,7 @@ _actor_factory: Optional[ActorFactory] = None
 
 def get_actor_factory(
     ollama_url: str = "http://localhost:11434",
-    default_model: str = "qwen3:8b"
+    default_model: Optional[str] = None
 ) -> ActorFactory:
     """Get or create the singleton ActorFactory instance"""
     global _actor_factory

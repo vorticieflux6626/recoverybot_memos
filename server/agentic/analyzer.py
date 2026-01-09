@@ -30,6 +30,7 @@ from .context_limits import get_analyzer_limits, ANALYZER_LIMITS, get_model_cont
 from .metrics import get_performance_metrics
 from .acronym_dictionary import expand_acronyms, get_acronym_info, get_related_terms
 from .gateway_client import get_gateway_client, LogicalModel, GatewayResponse
+from .llm_config import get_llm_config, get_config_for_task
 
 
 def extract_json_object(text: str) -> Optional[str]:
@@ -86,14 +87,16 @@ class QueryAnalyzer:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better analysis quality
+        ollama_url: Optional[str] = None,
+        model: Optional[str] = None,
         entity_tracker: Optional["EntityTracker"] = None,
         enable_acronym_expansion: bool = True
     ):
-        self.ollama_url = ollama_url
-        self.model = model
-        self.timeout = 60.0
+        # Load from central config if not provided
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.pipeline.analyzer.model
+        self.timeout = llm_config.ollama.default_timeout
 
         # GSW Entity Tracking (Phase 2)
         self._entity_tracker = entity_tracker
@@ -364,23 +367,35 @@ Respond with a JSON object:
 For complex queries, plan more iterations. For simple queries, fewer.
 Return ONLY the JSON object, no other text."""
 
-    async def _call_ollama(self, prompt: str, request_id: str = "", num_predict: int = 1024) -> str:
+    async def _call_ollama(
+        self,
+        prompt: str,
+        request_id: str = "",
+        num_predict: int = 1024,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None
+    ) -> str:
         """Call Ollama API for LLM inference with context utilization tracking
 
         Args:
             prompt: The prompt to send to the LLM
             request_id: Request ID for tracking context utilization
             num_predict: Maximum tokens to generate (default 1024, use 2048 for larger outputs)
+            model: Optional model override (uses self.model if not provided)
+            temperature: Optional temperature override (default 0.3)
         """
+        use_model = model or self.model
+        use_temp = temperature if temperature is not None else 0.3
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 f"{self.ollama_url}/api/generate",
                 json={
-                    "model": self.model,
+                    "model": use_model,
                     "prompt": prompt,
                     "stream": False,
                     "options": {
-                        "temperature": 0.3,
+                        "temperature": use_temp,
                         "num_predict": num_predict
                     }
                 }
@@ -395,10 +410,10 @@ Return ONLY the JSON object, no other text."""
                 metrics.record_context_utilization(
                     request_id=request_id,
                     agent_name="analyzer",
-                    model_name=self.model,
+                    model_name=use_model,
                     input_text=prompt,
                     output_text=result,
-                    context_window=get_model_context_window(self.model)
+                    context_window=get_model_context_window(use_model)
                 )
 
             return result
@@ -640,10 +655,17 @@ Return ONLY the JSON object, no other text."""
         self,
         query: str,
         search_results: List[Dict[str, Any]],
-        max_urls: int = None  # Will use dynamic default if None
+        max_urls: int = None,  # Will use dynamic default if None
+        model: Optional[str] = None  # Override model (uses url_evaluator config by default)
     ) -> List[Dict[str, Any]]:
         """
         Use LLM to evaluate which URLs are worth scraping for the query.
+
+        Args:
+            query: User's search query
+            search_results: List of search result dicts with title, url, snippet, domain
+            max_urls: Maximum URLs to evaluate (default from ANALYZER_LIMITS)
+            model: Optional model override (default: url_evaluator from llm_config)
 
         Returns list of URLs with relevance scores and reasoning.
         Only returns URLs that are likely to contain useful information.
@@ -651,9 +673,17 @@ Return ONLY the JSON object, no other text."""
         if not search_results:
             return []
 
+        # Get url_evaluator config from central config
+        url_eval_config = get_config_for_task("url_evaluator")
+        eval_model = model or url_eval_config.model
+        eval_temp = url_eval_config.temperature
+        eval_max_tokens = url_eval_config.max_tokens
+
         # Use dynamic limit based on model context window
         if max_urls is None:
             max_urls = ANALYZER_LIMITS["max_urls_to_evaluate"]
+
+        logger.debug(f"URL evaluation using model: {eval_model}")
 
         # Format search results for LLM evaluation
         results_summary = []
@@ -697,7 +727,12 @@ Only include URLs with HIGH or MEDIUM relevance. Skip low relevance or irrelevan
 Return ONLY the JSON array, no other text. /no_think"""
 
         try:
-            result = await self._call_ollama(prompt, num_predict=2048)
+            result = await self._call_ollama(
+                prompt,
+                num_predict=eval_max_tokens,
+                model=eval_model,
+                temperature=eval_temp
+            )
 
             # Parse JSON response
             json_match = re.search(r'\[.*\]', result, re.DOTALL)
@@ -802,9 +837,9 @@ Return ONLY the JSON array, no other text. /no_think"""
         content_text = "\n\n---\n\n".join(content_summary)
         questions_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(decomposed_questions)])
 
-        # Use qwen3:8b for coverage evaluation - it's already loaded for other tasks
-        # so no extra VRAM cost, and provides better analysis quality
-        analysis_model = "qwen3:8b"
+        # Use central config for coverage evaluation model
+        llm_config = get_llm_config()
+        analysis_model = llm_config.pipeline.coverage_evaluator.model
 
         prompt = f"""Analyze if the scraped content adequately answers the user's questions.
 

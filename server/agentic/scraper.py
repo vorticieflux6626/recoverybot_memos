@@ -28,6 +28,7 @@ from .content_cache import get_content_cache
 from .metrics import get_performance_metrics
 from .context_limits import get_model_context_window
 from .search_metrics import get_search_metrics
+from .llm_config import get_llm_config
 
 # Phase K.3: Table complexity scoring and Docling routing
 _table_scorer_instance = None
@@ -1336,10 +1337,14 @@ class DeepReader:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        model: str = "qwen3:14b"  # Use a capable reasoning model
+        model: Optional[str] = None  # Use a capable reasoning model (loaded from config if None)
     ):
         self.ollama_url = ollama_url
-        self.model = model
+        if model is None:
+            llm_config = get_llm_config()
+            self.model = llm_config.utility.scraper_analyzer.model
+        else:
+            self.model = model
         self.timeout = 120.0  # Longer timeout for deep analysis
 
     async def analyze_content(

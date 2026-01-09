@@ -14,6 +14,7 @@ from typing import List, Optional, Dict, Any
 import httpx
 
 from .models import AgentAction, ActionType
+from .llm_config import get_llm_config
 
 logger = logging.getLogger("agentic.planner")
 
@@ -30,13 +31,14 @@ class PlannerAgent:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
+        ollama_url: str = None,
         mcp_url: str = "http://localhost:7777",
-        model: str = "gemma3:4b"
+        model: str = None
     ):
-        self.ollama_url = ollama_url
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
         self.mcp_url = mcp_url
-        self.model = model
+        self.model = model or llm_config.pipeline.planner.model
         self.mcp_available = False
 
     async def check_mcp_available(self) -> bool:

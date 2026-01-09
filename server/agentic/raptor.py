@@ -32,6 +32,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 import numpy as np
 
+from .llm_config import get_llm_config
+
 try:
     from sklearn.cluster import AgglomerativeClustering
     from sklearn.mixture import GaussianMixture
@@ -72,10 +74,16 @@ class SummarizationStyle(str, Enum):
 @dataclass
 class RAPTORConfig:
     """Configuration for RAPTOR tree building."""
-    # Model settings
-    summarization_model: str = "qwen3:8b"
+    # Model settings (None = load from llm_config)
+    summarization_model: Optional[str] = None
     embedding_model: str = "mxbai-embed-large"
     ollama_url: str = "http://localhost:11434"
+
+    def __post_init__(self):
+        """Load defaults from central llm_config if not specified."""
+        if self.summarization_model is None:
+            config = get_llm_config()
+            self.summarization_model = config.utility.raptor_summarizer.model
 
     # Tree structure
     max_levels: int = 5  # Maximum tree depth

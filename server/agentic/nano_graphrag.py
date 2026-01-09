@@ -64,6 +64,8 @@ except ImportError:
 
 import httpx
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger("agentic.nano_graphrag")
 
 
@@ -138,11 +140,19 @@ class Community:
 @dataclass
 class GraphRAGConfig:
     """Configuration for NanoGraphRAG."""
-    # LLM settings
+    # LLM settings (None = load from llm_config)
     ollama_url: str = "http://localhost:11434"
-    extraction_model: str = "qwen3:8b"
-    summary_model: str = "gemma3:4b"
+    extraction_model: Optional[str] = None
+    summary_model: Optional[str] = None
     embedding_model: str = "mxbai-embed-large"
+
+    def __post_init__(self):
+        """Load defaults from central llm_config if not specified."""
+        config = get_llm_config()
+        if self.extraction_model is None:
+            self.extraction_model = config.utility.graph_extractor.model
+        if self.summary_model is None:
+            self.summary_model = config.utility.graph_summarizer.model
 
     # Graph settings
     max_entities_per_chunk: int = 20

@@ -22,6 +22,8 @@ from enum import Enum
 from datetime import datetime, timezone
 import aiohttp
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger("agentic.dynamic_planner")
 
 
@@ -186,12 +188,16 @@ class DynamicPlanner:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        planning_model: str = "qwen3:8b",
+        planning_model: Optional[str] = None,  # Loaded from config if None
         max_depth: int = 3,
         max_tasks_per_level: int = 5
     ):
         self.ollama_url = ollama_url
-        self.planning_model = planning_model
+        if planning_model is None:
+            llm_config = get_llm_config()
+            self.planning_model = llm_config.utility.enhanced_planner.model
+        else:
+            self.planning_model = planning_model
         self.max_depth = max_depth
         self.max_tasks_per_level = max_tasks_per_level
 
@@ -710,7 +716,7 @@ _planner_instance: Optional[DynamicPlanner] = None
 
 def get_dynamic_planner(
     ollama_url: str = "http://localhost:11434",
-    planning_model: str = "qwen3:8b"
+    planning_model: Optional[str] = None
 ) -> DynamicPlanner:
     """Get or create the singleton DynamicPlanner instance"""
     global _planner_instance

@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 import httpx
 
+from .llm_config import get_llm_config
 from .domain_corpus import (
     DomainCorpus,
     CorpusBuilder,
@@ -313,8 +314,13 @@ class FANUCCorpusBuilder:
         self,
         corpus: Optional[DomainCorpus] = None,
         ollama_url: str = "http://localhost:11434",
-        extraction_model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better extraction quality
+        extraction_model: Optional[str] = None  # Defaults to config (plc_extractor)
     ):
+        # Load model from central config if not provided
+        # FANUC is a type of PLC, so use plc_extractor config
+        llm_config = get_llm_config()
+        extraction_model = extraction_model or llm_config.corpus.plc_extractor.model
+
         # Initialize corpus if not provided
         if corpus is None:
             manager = get_corpus_manager()

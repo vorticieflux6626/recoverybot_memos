@@ -30,6 +30,7 @@ import httpx
 from .metrics import get_performance_metrics
 from .context_limits import get_model_context_window
 from .gateway_client import get_gateway_client, LogicalModel, GatewayResponse
+from .llm_config import get_llm_config
 
 logger = logging.getLogger("agentic.retrieval_evaluator")
 
@@ -128,11 +129,12 @@ class RetrievalEvaluator:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better evaluation quality
+        ollama_url: str = None,
+        model: str = None
     ):
-        self.ollama_url = ollama_url
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.pipeline.retrieval_evaluator.model
 
     async def evaluate(
         self,
@@ -614,10 +616,10 @@ Output JSON array of sub-questions:
 
 # Factory functions
 def create_retrieval_evaluator(
-    ollama_url: str = "http://localhost:11434",
-    model: str = "qwen3:8b"  # Upgraded from gemma3:4b
+    ollama_url: str = None,
+    model: str = None
 ) -> RetrievalEvaluator:
-    """Create a RetrievalEvaluator instance"""
+    """Create a RetrievalEvaluator instance (config loaded from llm_models.yaml)"""
     return RetrievalEvaluator(ollama_url=ollama_url, model=model)
 
 

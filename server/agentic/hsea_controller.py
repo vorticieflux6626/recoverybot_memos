@@ -35,6 +35,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -103,9 +105,15 @@ class HSEAConfig:
     # SemanticMemory auto-connection threshold
     connection_threshold: float = 0.7
 
-    # Embedding model
-    embedding_model: str = "qwen3-embedding:latest"
+    # Embedding model (None = load from llm_config)
+    embedding_model: Optional[str] = None
     ollama_url: str = "http://localhost:11434"
+
+    def __post_init__(self):
+        """Load defaults from central llm_config if not specified."""
+        if self.embedding_model is None:
+            config = get_llm_config()
+            self.embedding_model = config.embeddings.primary.model
 
     # HyDE configuration
     enable_hyde: bool = True

@@ -27,6 +27,8 @@ import json
 
 import httpx
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger("agentic.enhanced_reasoning")
 
 
@@ -107,16 +109,17 @@ class EnhancedReasoningEngine:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        planning_model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better planning quality
-        reflection_model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better reflection quality
+        ollama_url: str = None,
+        planning_model: str = None,
+        reflection_model: str = None,
         max_reflection_iterations: int = 2,
         stuck_threshold_iterations: int = 3,
         similarity_threshold: float = 0.85
     ):
-        self.ollama_url = ollama_url
-        self.planning_model = planning_model
-        self.reflection_model = reflection_model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.planning_model = planning_model or llm_config.utility.enhanced_planner.model
+        self.reflection_model = reflection_model or llm_config.utility.enhanced_reflector.model
         self.max_reflection_iterations = max_reflection_iterations
         self.stuck_threshold = stuck_threshold_iterations
         self.similarity_threshold = similarity_threshold

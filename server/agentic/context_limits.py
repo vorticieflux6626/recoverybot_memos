@@ -9,9 +9,10 @@ Key Principle: Fill the context window to give the model the best chance
 of finding relevant information, then let the model trim to pertinent content.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
 from .model_specs import OLLAMA_MODEL_SPECS
+from .llm_config import get_llm_config
 import logging
 
 logger = logging.getLogger(__name__)
@@ -47,38 +48,65 @@ class ContextBudget:
     target_utilization: float = 0.85  # Aim for 85% context utilization
 
 
+def _get_default_pipeline_config() -> "PipelineContextConfig":
+    """Factory function to create PipelineContextConfig from central LLM config."""
+    config = get_llm_config()
+    return PipelineContextConfig(
+        analyzer_model=config.pipeline.analyzer.model,
+        analyzer_context=config.pipeline.analyzer.context_window,
+        planner_model=config.pipeline.planner.model,
+        planner_context=config.pipeline.planner.context_window,
+        synthesizer_model=config.pipeline.synthesizer.model,
+        synthesizer_context=config.pipeline.synthesizer.context_window,
+        thinking_model=config.pipeline.thinking.model,
+        thinking_context=config.pipeline.thinking.context_window,
+        evaluator_model=config.pipeline.retrieval_evaluator.model,
+        evaluator_context=config.pipeline.retrieval_evaluator.context_window,
+        verifier_model=config.pipeline.verifier.model,
+        verifier_context=config.pipeline.verifier.context_window,
+    )
+
+
 @dataclass
 class PipelineContextConfig:
-    """Context configuration for the entire agentic pipeline"""
+    """Context configuration for the entire agentic pipeline.
+
+    Model assignments are loaded from central config (config/llm_models.yaml).
+    Use get_pipeline_context_config() to get a properly initialized instance.
+    """
 
     # Analyzer model (query analysis, URL evaluation)
     analyzer_model: str = "qwen3:8b"
-    analyzer_context: int = 40960  # 40K tokens (from ollama.com)
+    analyzer_context: int = 40960
 
     # Planner model (search planning)
     planner_model: str = "qwen3:8b"
-    planner_context: int = 40960  # 40K tokens
+    planner_context: int = 40960
 
-    # Synthesizer model (content synthesis) - ministral-3:3b scored 0.848 overall
-    # Benchmark: 93.3% analysis, 17s duration, only 3GB VRAM (fits with PDF Tools)
+    # Synthesizer model (content synthesis)
     synthesizer_model: str = "ministral-3:3b"
-    synthesizer_context: int = 32000  # 32K tokens (ministral has 128K context)
+    synthesizer_context: int = 32000
 
-    # Thinking model (complex reasoning) - ministral-3:3b best practical option
-    # phi4-reasoning:14b (0.893) too VRAM-heavy (11GB) for production use
+    # Thinking model (complex reasoning)
     thinking_model: str = "ministral-3:3b"
-    thinking_context: int = 32000  # 32K tokens
+    thinking_context: int = 32000
 
     # Fast evaluation model
-    evaluator_model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better evaluation quality
-    evaluator_context: int = 131072  # 128K tokens
+    evaluator_model: str = "qwen3:8b"
+    evaluator_context: int = 40960
 
     # Verification model
     verifier_model: str = "qwen3:8b"
-    verifier_context: int = 40960  # 40K tokens
+    verifier_context: int = 40960
 
 
-# Default pipeline configuration
+def get_pipeline_context_config() -> PipelineContextConfig:
+    """Get pipeline context config initialized from central LLM config."""
+    return _get_default_pipeline_config()
+
+
+# Default pipeline configuration - lazily initialized from central config
+# Note: Use get_pipeline_context_config() for fresh config from YAML
 DEFAULT_PIPELINE_CONFIG = PipelineContextConfig()
 
 

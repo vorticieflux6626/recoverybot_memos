@@ -45,6 +45,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import json
 import re
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger("agentic.speculative_rag")
 
 
@@ -69,8 +71,13 @@ class SpeculativeRAGConfig:
     """Configuration for Speculative RAG."""
     # Model configuration
     drafter_model: str = "qwen2.5:7b"  # Smaller, faster model for drafts
-    verifier_model: str = "deepseek-r1:14b"  # Larger model for verification
+    verifier_model: Optional[str] = None  # Larger model for verification (loaded from config if None)
     ollama_url: str = "http://localhost:11434"
+
+    def __post_init__(self):
+        if self.verifier_model is None:
+            llm_config = get_llm_config()
+            self.verifier_model = llm_config.utility.speculative_verifier.model
 
     # Draft generation
     num_drafts: int = 4  # Number of parallel drafts to generate

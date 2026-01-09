@@ -37,6 +37,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import httpx
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -161,13 +163,14 @@ class HyDEExpander:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        generation_model: str = "gemma3:4b",
+        ollama_url: str = None,
+        generation_model: str = None,
         embedding_model: str = "bge-m3",
         config: Optional[HyDEConfig] = None
     ):
-        self.ollama_url = ollama_url
-        self.generation_model = generation_model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.generation_model = generation_model or llm_config.utility.hyde_generator.model
         self.embedding_model = embedding_model
         self.config = config or HyDEConfig()
 
@@ -534,11 +537,11 @@ _hyde_expander: Optional[HyDEExpander] = None
 
 
 def get_hyde_expander(
-    ollama_url: str = "http://localhost:11434",
-    generation_model: str = "gemma3:4b",
+    ollama_url: str = None,
+    generation_model: str = None,
     embedding_model: str = "bge-m3"
 ) -> HyDEExpander:
-    """Get or create the global HyDE expander instance."""
+    """Get or create the global HyDE expander instance (config from llm_models.yaml)."""
     global _hyde_expander
 
     if _hyde_expander is None:
@@ -552,12 +555,12 @@ def get_hyde_expander(
 
 
 async def create_hyde_expander(
-    ollama_url: str = "http://localhost:11434",
-    generation_model: str = "gemma3:4b",
+    ollama_url: str = None,
+    generation_model: str = None,
     embedding_model: str = "bge-m3",
     config: Optional[HyDEConfig] = None
 ) -> HyDEExpander:
-    """Create a new HyDE expander instance."""
+    """Create a new HyDE expander instance (config from llm_models.yaml)."""
     return HyDEExpander(
         ollama_url=ollama_url,
         generation_model=generation_model,

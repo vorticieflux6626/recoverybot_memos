@@ -30,6 +30,7 @@ from .cross_domain_validator import (
     ValidationSeverity,
     get_cross_domain_validator
 )
+from .llm_config import get_llm_config
 
 logger = logging.getLogger("agentic.self_reflection")
 
@@ -180,11 +181,12 @@ class SelfReflectionAgent:
 
     def __init__(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model: str = "qwen3:8b"  # Upgraded from gemma3:4b for better reflection quality
+        ollama_url: str = None,
+        model: str = None
     ):
-        self.ollama_url = ollama_url
-        self.model = model
+        llm_config = get_llm_config()
+        self.ollama_url = ollama_url or llm_config.ollama.url
+        self.model = model or llm_config.pipeline.self_reflection.model
 
     async def reflect(
         self,
@@ -799,10 +801,10 @@ Keep the same structure but correct any errors."""
 
 # Factory function
 def create_self_reflection_agent(
-    ollama_url: str = "http://localhost:11434",
-    model: str = "qwen3:8b"  # Upgraded from gemma3:4b
+    ollama_url: str = None,
+    model: str = None
 ) -> SelfReflectionAgent:
-    """Create a SelfReflectionAgent instance"""
+    """Create a SelfReflectionAgent instance (config loaded from llm_models.yaml)"""
     return SelfReflectionAgent(ollama_url=ollama_url, model=model)
 
 

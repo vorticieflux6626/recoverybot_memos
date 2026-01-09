@@ -26,6 +26,8 @@ from enum import Enum
 from typing import List, Dict, Any, Optional, Tuple
 import httpx
 
+from .llm_config import get_llm_config
+
 logger = logging.getLogger("agentic.adaptive_refinement")
 
 
@@ -93,12 +95,16 @@ class AdaptiveRefinementEngine:
     def __init__(
         self,
         ollama_url: str = "http://localhost:11434",
-        evaluation_model: str = "qwen3:8b",  # Upgraded from gemma3:4b for better evaluation quality
+        evaluation_model: Optional[str] = None,  # Loaded from config if None
         min_confidence_threshold: float = 0.5,
         max_refinement_attempts: int = 3
     ):
         self.ollama_url = ollama_url
-        self.evaluation_model = evaluation_model
+        if evaluation_model is None:
+            llm_config = get_llm_config()
+            self.evaluation_model = llm_config.utility.adaptive_refinement.model
+        else:
+            self.evaluation_model = evaluation_model
         self.min_confidence_threshold = min_confidence_threshold
         self.max_refinement_attempts = max_refinement_attempts
 
