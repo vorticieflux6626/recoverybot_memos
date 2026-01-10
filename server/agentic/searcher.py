@@ -1489,17 +1489,35 @@ class SearcherAgent:
     # Minimum keyword overlap ratio for domain boost (0.0-1.0)
     MIN_KEYWORD_RELEVANCE = 0.15  # Lowered from 0.3 to allow partial matches
 
-    # Domains to filter out from results (dictionaries, generic reference sites)
+    # Domains to filter out from results (dictionaries, grammar sites)
+    # These match on common English words like "what", "how", "does" in queries
+    # NOTE: Keep this list minimal - the semantic_query_parser now removes
+    # question words before searching, so fewer irrelevant results should appear
     BLOCKED_DOMAINS = {
+        # Dictionary sites (match on common English words)
         "collinsdictionary.com",
         "merriam-webster.com",
         "dictionary.com",
         "thesaurus.com",
-        "cambridge.org/dictionary",
+        "dictionary.cambridge.org",
+        "oxfordlearnersdictionaries.com",
         "yourdictionary.com",
         "wordreference.com",
         "vocabulary.com",
         "urbandictionary.com",
+        "wiktionary.org",
+        # Grammar/ESL sites (match on "do", "does", "can", "how", etc.)
+        "wiserread.com",
+        "grammarly.com",
+        "grammarbook.com",
+        "sprachcaffe.com",
+        "englishpage.com",
+        "englishclub.com",
+        # Generic AI assistants (compete with our system, often circular)
+        "gemini.google.com",
+        "gemini.google",
+        "bard.google.com",
+        "chatgpt.com",
     }
 
     # Reddit subreddits to filter out (entertainment, gaming, memes, unrelated)
@@ -1518,6 +1536,8 @@ class SearcherAgent:
         "choosingbeggars", "entitledparents", "insanepeoplefacebook",
         "antiwork", "workreform", "maliciouscompliance", "pettyrevenge",
         "prorevenge", "legaladvice", "amitheasshole", "aita",
+        "amioverreacting", "aio", "bestof", "subredditdrama", "advice",
+        "vent", "offmychest", "trueoffmychest", "nostupidquestions",
         "eyebleach", "wholesomememes", "mademesmile", "humansbeingbros",
         "animalsbeingbros", "animalsbeingjerks", "cats", "dogs", "pets",
         "art", "drawing", "painting", "photography", "earthporn",

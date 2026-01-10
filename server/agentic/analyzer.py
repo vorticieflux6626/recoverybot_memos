@@ -31,6 +31,7 @@ from .metrics import get_performance_metrics
 from .acronym_dictionary import expand_acronyms, get_acronym_info, get_related_terms
 from .gateway_client import get_gateway_client, LogicalModel, GatewayResponse
 from .llm_config import get_llm_config, get_config_for_task
+from .semantic_query_parser import parse_query, generate_search_queries, ParsedQuery
 
 
 def extract_json_object(text: str) -> Optional[str]:
@@ -176,6 +177,28 @@ class QueryAnalyzer:
             if related_terms:
                 analysis.key_topics = list(set(analysis.key_topics + related_terms))
 
+            # SEMANTIC QUERY OPTIMIZATION: Replace LLM-generated verbose queries
+            # with focused keyword queries based on NLP extraction
+            try:
+                parsed = parse_query(query)
+                optimized_queries = generate_search_queries(parsed)
+
+                if optimized_queries:
+                    # Store original LLM queries for reference
+                    original_llm_queries = analysis.suggested_queries.copy()
+
+                    # Replace with optimized queries (technical entities + focus terms)
+                    analysis.suggested_queries = optimized_queries
+
+                    # Log the optimization
+                    if parsed.technical_entities:
+                        logger.info(
+                            f"Query optimization: entities={[e[0] for e in parsed.technical_entities]}, "
+                            f"intent={parsed.intent}, queries={optimized_queries[:2]}"
+                        )
+            except Exception as e:
+                logger.warning(f"Semantic query parsing failed, using LLM queries: {e}")
+
             logger.info(f"Query analysis: requires_search={analysis.requires_search}, "
                        f"type={analysis.query_type}, complexity={analysis.estimated_complexity}")
             return analysis
@@ -226,6 +249,32 @@ class QueryAnalyzer:
             else:
                 result = await self._call_ollama(prompt, request_id)
             plan = self._parse_plan(result, query, analysis)
+
+            # SEMANTIC QUERY OPTIMIZATION: Optimize decomposed questions
+            # Remove question words and focus on technical entities
+            if plan.decomposed_questions:
+                try:
+                    optimized_questions = []
+                    for q in plan.decomposed_questions:
+                        parsed = parse_query(q)
+                        # Use the optimized query if it's different and meaningful
+                        if parsed.optimized_query and len(parsed.optimized_query) >= 5:
+                            optimized_questions.append(parsed.optimized_query)
+                        else:
+                            optimized_questions.append(q)
+
+                    # Log optimization
+                    if optimized_questions != plan.decomposed_questions:
+                        logger.info(
+                            f"Search plan optimization: {len(plan.decomposed_questions)} queries optimized"
+                        )
+                        logger.debug(f"Original: {plan.decomposed_questions[:2]}")
+                        logger.debug(f"Optimized: {optimized_questions[:2]}")
+
+                    plan.decomposed_questions = optimized_questions
+                except Exception as e:
+                    logger.warning(f"Search plan optimization failed: {e}")
+
             logger.info(f"Search plan created: {len(plan.decomposed_questions)} questions, "
                        f"{len(plan.search_phases)} phases")
             return plan

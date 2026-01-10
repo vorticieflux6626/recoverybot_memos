@@ -54,6 +54,41 @@ prompt = synth_prompt.format(query=query, results_text=results)
 
 **Environment Override:** Set `MEMOS_PROMPTS_CONFIG=/path/to/prompts.yaml`
 
+### Semantic Query Parser (`agentic/semantic_query_parser.py`)
+
+The semantic query parser extracts the core semantic content from natural language queries before searching. This prevents verbose questions from polluting search results with dictionary definitions.
+
+**Problem Solved:**
+```
+Input: "What is the FANUC SRVO-062 alarm code and its meaning?"
+Without parser: SearXNG matches on "what", "is", "meaning" → grammar sites
+With parser: Searches "SRVO-062 FANUC alarm code" → FANUC documentation
+```
+
+**Key Features:**
+- **Technical entity extraction**: Regex patterns for error codes (SRVO-062), part numbers (A06B-*), model names (R-30iB)
+- **Question word removal**: Filters "what", "how", "where", "why" that pollute search results
+- **Intent detection**: Classifies as troubleshooting, definition, procedure, etc.
+- **Focus term extraction**: Identifies what the query is "about" using noun phrases
+
+**Usage:**
+```python
+from agentic.semantic_query_parser import parse_query, generate_search_queries
+
+parsed = parse_query("What causes FANUC SRVO-062 alarm?")
+print(parsed.technical_entities)  # [('SRVO-062', 'FANUC_ERROR')]
+print(parsed.intent)              # "causal"
+print(parsed.optimized_query)     # "SRVO-062 FANUC alarm causes"
+
+# Generate search queries (best first)
+queries = generate_search_queries(parsed)
+# ['SRVO-062', 'SRVO-062 FANUC alarm causes', 'SRVO-062 cause']
+```
+
+**Integration Points:**
+- `analyzer.py`: `analyze()` and `create_search_plan()` optimize queries before search
+- Automatic - no configuration needed
+
 ## Critical Rules
 
 1. **NEVER** push from wrong directory - verify with `pwd && git remote -v` first
