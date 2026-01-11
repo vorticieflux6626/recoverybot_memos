@@ -33,6 +33,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .prompt_config import get_prompt_config
+from .llm_config import get_config_for_task
 from .llm_logger import get_llm_logger
 from .decision_logger import get_decision_logger, AgentName, DecisionType
 
@@ -223,13 +224,17 @@ Output ONLY the JSON below. No explanation. No thinking. Just the JSON.
         """Call Ollama for URL evaluation with LLM logging."""
         client = await self._ensure_http_client()
 
+        # Get max_tokens from centralized config
+        url_eval_config = get_config_for_task("url_evaluator")
+        max_tokens = url_eval_config.max_tokens if url_eval_config else 2048
+
         payload = {
             "model": self.MODEL,
             "prompt": prompt,
             "stream": False,
             "options": {
                 "temperature": 0.1,  # Low temp for consistent filtering
-                "num_predict": 1024  # Allow space for thinking + array of indices
+                "num_predict": max_tokens  # From llm_models.yaml config
             }
         }
 

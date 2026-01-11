@@ -14,7 +14,7 @@ from typing import List, Optional, Dict, Any
 import httpx
 
 from .models import AgentAction, ActionType
-from .llm_config import get_llm_config
+from .llm_config import get_llm_config, get_config_for_task
 
 logger = logging.getLogger("agentic.planner")
 
@@ -127,6 +127,10 @@ JSON array:"""
     async def _plan_via_ollama(self, prompt: str) -> List[str]:
         """Execute planning via direct Ollama API"""
         try:
+            # Get max_tokens from centralized config
+            planner_config = get_config_for_task("planner")
+            max_tokens = planner_config.max_tokens if planner_config else 2048
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     f"{self.ollama_url}/api/generate",
@@ -136,7 +140,7 @@ JSON array:"""
                         "stream": False,
                         "options": {
                             "temperature": 0.3,
-                            "num_predict": 256
+                            "num_predict": max_tokens  # From llm_models.yaml config
                         }
                     }
                 )

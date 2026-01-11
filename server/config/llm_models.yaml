@@ -20,8 +20,8 @@
 #   - Embeddings: qwen3-embedding, nomic-embed-text
 # =============================================================================
 
-version: "1.0.0"
-last_updated: "2026-01-09"
+version: "1.1.0"
+last_updated: "2026-01-11"
 
 # Ollama server configuration
 ollama:
@@ -40,7 +40,7 @@ pipeline:
     model: "qwen3:8b"
     context_window: 40960
     temperature: 0.3
-    max_tokens: 1024
+    max_tokens: 2048  # Increased from 1024 - complex analysis needs more space
     description: "Query analysis, classification, search planning"
     notes: "Needs good reasoning for accurate query classification"
 
@@ -67,7 +67,7 @@ pipeline:
     model: "qwen3:8b"
     context_window: 40960
     temperature: 0.4
-    max_tokens: 1024
+    max_tokens: 2048  # Increased from 1024 - multi-phase plans need more space
     description: "Generate search plans with decomposed questions"
     notes: "Needs reasoning ability for query decomposition"
 
@@ -76,7 +76,7 @@ pipeline:
     model: "ministral-3:3b"
     context_window: 32000
     temperature: 0.6
-    max_tokens: 4096
+    max_tokens: 8192  # Increased from 4096 - detailed troubleshooting needs 4K+ tokens
     description: "Synthesize final response from sources"
     notes: "Scored 0.848 in benchmarks, good balance of speed/quality"
 
@@ -85,7 +85,7 @@ pipeline:
     model: "ministral-3:3b"
     context_window: 32000
     temperature: 0.6
-    max_tokens: 8192
+    max_tokens: 16384  # Increased from 8192 - DeepSeek R1 thinking routinely uses 10K+
     description: "Extended reasoning for complex queries"
     notes: "Used when requires_thinking_model=true"
 
@@ -144,7 +144,7 @@ utility:
     model: "gemma3:4b"
     context_window: 131072
     temperature: 0.2
-    max_tokens: 512
+    max_tokens: 768  # Increased from 512 - JSON with reasoning needs more space
     description: "Score passage relevance"
     notes: "Simple scoring task - fast model preferred"
 
@@ -229,7 +229,7 @@ utility:
     model: "qwen3:8b"
     context_window: 40960
     temperature: 0.6
-    max_tokens: 2048
+    max_tokens: 4096  # Increased from 2048 - multi-path reasoning generates substantial output
     description: "Multi-path reasoning via graph exploration"
     notes: "GoT-style branching and aggregation"
 
@@ -280,7 +280,7 @@ utility:
     model: "gemma3:4b"
     context_window: 131072
     temperature: 0.2
-    max_tokens: 512
+    max_tokens: 1024  # Increased from 512 - analysis output needs more space
     description: "Score passage relevance via information bottleneck"
     notes: "Fast model for scoring"
 
@@ -315,7 +315,7 @@ utility:
     model: "gemma3:4b"
     context_window: 131072
     temperature: 0.2
-    max_tokens: 512
+    max_tokens: 1024  # Increased from 512 - detailed evaluation metrics need more space
     description: "RAGAS-style evaluation metrics"
 
   # Entropy Monitor

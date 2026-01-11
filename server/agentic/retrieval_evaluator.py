@@ -30,7 +30,7 @@ import httpx
 from .metrics import get_performance_metrics
 from .context_limits import get_model_context_window
 from .gateway_client import get_gateway_client, LogicalModel, GatewayResponse
-from .llm_config import get_llm_config
+from .llm_config import get_llm_config, get_config_for_task
 
 logger = logging.getLogger("agentic.retrieval_evaluator")
 
@@ -240,9 +240,9 @@ Output JSON array:
 
         try:
             if use_gateway:
-                result = await self._call_via_gateway(prompt, max_tokens=512, request_id=request_id)
+                result = await self._call_via_gateway(prompt, request_id=request_id)
             else:
-                result = await self._call_llm(prompt, max_tokens=512, request_id=request_id)
+                result = await self._call_llm(prompt, request_id=request_id)
             # Extract JSON array
             json_match = re.search(r'\[[\s\S]*\]', result)
             if json_match:
@@ -464,9 +464,9 @@ Output JSON array of queries:
 
         try:
             if use_gateway:
-                result = await self._call_via_gateway(prompt, max_tokens=256, request_id=request_id)
+                result = await self._call_via_gateway(prompt, request_id=request_id)
             else:
-                result = await self._call_llm(prompt, max_tokens=256, request_id=request_id)
+                result = await self._call_llm(prompt, request_id=request_id)
             json_match = re.search(r'\[[\s\S]*\]', result)
             if json_match:
                 return json.loads(json_match.group())[:3]
@@ -495,9 +495,9 @@ Output JSON array:
 
         try:
             if use_gateway:
-                result = await self._call_via_gateway(prompt, max_tokens=256, request_id=request_id)
+                result = await self._call_via_gateway(prompt, request_id=request_id)
             else:
-                result = await self._call_llm(prompt, max_tokens=256, request_id=request_id)
+                result = await self._call_llm(prompt, request_id=request_id)
             json_match = re.search(r'\[[\s\S]*\]', result)
             if json_match:
                 return json.loads(json_match.group())[:3]
@@ -522,9 +522,9 @@ Output JSON array of sub-questions:
 
         try:
             if use_gateway:
-                result = await self._call_via_gateway(prompt, max_tokens=256, request_id=request_id)
+                result = await self._call_via_gateway(prompt, request_id=request_id)
             else:
-                result = await self._call_llm(prompt, max_tokens=256, request_id=request_id)
+                result = await self._call_llm(prompt, request_id=request_id)
             json_match = re.search(r'\[[\s\S]*\]', result)
             if json_match:
                 return json.loads(json_match.group())[:4]
@@ -533,8 +533,13 @@ Output JSON array of sub-questions:
 
         return [query]
 
-    async def _call_llm(self, prompt: str, max_tokens: int = 256, request_id: str = "") -> str:
+    async def _call_llm(self, prompt: str, max_tokens: Optional[int] = None, request_id: str = "") -> str:
         """Call Ollama LLM with context utilization tracking"""
+        # Get max_tokens from centralized config if not specified
+        if max_tokens is None:
+            config = get_config_for_task("retrieval_evaluator")
+            max_tokens = config.max_tokens if config else 1024
+
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -572,10 +577,15 @@ Output JSON array of sub-questions:
     async def _call_via_gateway(
         self,
         prompt: str,
-        max_tokens: int = 256,
+        max_tokens: Optional[int] = None,
         request_id: str = ""
     ) -> str:
         """Call LLM via Gateway service with automatic fallback to direct Ollama."""
+        # Get max_tokens from centralized config if not specified
+        if max_tokens is None:
+            config = get_config_for_task("retrieval_evaluator")
+            max_tokens = config.max_tokens if config else 1024
+
         try:
             gateway = get_gateway_client()
 
