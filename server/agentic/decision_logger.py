@@ -55,6 +55,7 @@ class AgentName(str, Enum):
     FLARE = "flare"
     ENTITY_TRACKER = "entity_tracker"
     ORCHESTRATOR = "orchestrator"
+    URL_RELEVANCE_FILTER = "url_relevance_filter"
 
 
 @dataclass

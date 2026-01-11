@@ -337,6 +337,15 @@ Guidelines:
 - For research: prioritize arxiv, IEEE, ACM, academic sources
 - For engineering: include specifications, standards, and manufacturer docs
 
+ENTITY-FIRST QUERY GENERATION (for suggested_queries):
+- ALWAYS lead with specific entities (brand, model, product) NOT generic adjectives
+- NEVER start queries with: common, typical, general, basic, simple, standard
+- BAD: "common causes actuation failure" → matches unrelated content like "Common (rapper)"
+- GOOD: "FANUC M-16 actuation failure troubleshooting"
+- PRESERVE technical terms: model numbers, error codes, part numbers
+- ADD domain qualifiers: "servo motor industrial robot" NOT just "servo" (matches browser engine)
+- STRUCTURE: [BRAND/MODEL] [SPECIFIC_PROBLEM] [DOMAIN_CONTEXT]
+
 THINKING MODEL CLASSIFICATION:
 - requires_thinking_model=TRUE for queries involving:
   * Diagnosing WHY something isn't working (root cause analysis)
@@ -377,7 +386,7 @@ Return ONLY the JSON object, no other text."""
         analysis: QueryAnalysis,
         context: Optional[Dict[str, Any]]
     ) -> str:
-        """Build prompt for search planning"""
+        """Build prompt for search planning with entity-first query generation"""
         return f"""Create a comprehensive web search plan for this query.
 
 Original Query: "{query}"
@@ -385,29 +394,54 @@ Query Type: {analysis.query_type}
 Complexity: {analysis.estimated_complexity}
 Key Topics: {', '.join(analysis.key_topics)}
 
-Create a multi-phase search plan to thoroughly research this topic. The plan should:
-1. Break down the query into sub-questions that need answering
-2. Define search phases (initial broad search, then targeted refinement)
+CRITICAL: ENTITY-FIRST QUERY STRUCTURE
+When generating search queries, follow these research-backed rules:
+
+1. LEAD WITH SPECIFIC ENTITIES (brand, model, product name)
+   BAD: "common causes actuation failure robots" → matches "Common (rapper)"
+   GOOD: "FANUC M-16 actuation failure troubleshooting"
+
+2. AVOID GENERIC/AMBIGUOUS ADJECTIVES at query start
+   NEVER start with: common, typical, general, basic, simple, standard
+   These words match unrelated content (celebrities, dictionaries)
+
+3. PRESERVE TECHNICAL TERMS exactly as stated
+   Keep: model numbers (M-16, R-2000iC), error codes (SRVO-063), part numbers
+   Don't simplify: "degating robot" → "robot" loses specificity
+
+4. ADD DOMAIN QUALIFIERS to disambiguate
+   "servo motor failure industrial robot" NOT "servo failure" (matches browser engine)
+   "PLC ladder logic troubleshooting" NOT "PLC checks" (too vague)
+
+5. STRUCTURE: [BRAND/MODEL] [SPECIFIC_PROBLEM] [DOMAIN_CONTEXT]
+   Examples:
+   - "FANUC M-16 robot no motion at position troubleshooting"
+   - "Allen-Bradley PLC fault code 16#0001 diagnosis"
+   - "FANUC SRVO-063 servo alarm causes remedies"
+
+Create a multi-phase search plan:
+1. Break down the query into sub-questions (using entity-first structure)
+2. Define search phases (initial targeted, then refinement)
 3. Prioritize which aspects to search first
 4. Include fallback strategies if initial searches don't yield results
 
 Respond with a JSON object:
 {{
     "decomposed_questions": [
-        "What is X?",
-        "How does X relate to Y?",
-        "Where can I find X near location?"
+        "FANUC M-16 robot actuation failure causes",
+        "FANUC degating robot troubleshooting guide",
+        "FANUC servo motor position error diagnosis"
     ],
     "search_phases": [
-        {{"phase": "initial", "queries": ["broad query 1", "broad query 2"], "goal": "gather overview"}},
-        {{"phase": "detail", "queries": ["specific query 1"], "goal": "get specific information"}},
-        {{"phase": "verify", "queries": ["verification query"], "goal": "cross-check facts"}}
+        {{"phase": "initial", "queries": ["[BRAND] [MODEL] [problem] troubleshooting"], "goal": "find manufacturer docs"}},
+        {{"phase": "detail", "queries": ["[BRAND] [specific symptom] diagnosis"], "goal": "get specific solutions"}},
+        {{"phase": "verify", "queries": ["[BRAND] [solution] procedure"], "goal": "verify fix steps"}}
     ],
     "priority_order": [0, 1, 2],
     "fallback_strategies": [
-        "broaden terms if no results",
-        "try synonyms",
-        "search for related topics"
+        "add 'manual' or 'documentation' to query",
+        "try error code if available",
+        "search manufacturer forums"
     ],
     "estimated_iterations": 3-10,
     "reasoning": "explanation of the plan"

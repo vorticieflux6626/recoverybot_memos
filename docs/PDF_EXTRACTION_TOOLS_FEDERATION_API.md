@@ -1,8 +1,8 @@
 # PDF Extraction Tools - Multi-Domain Federation API
 
 **Integration Report for memOS**
-**Date:** 2026-01-03
-**Version:** 1.0.0
+**Date:** 2026-01-11
+**Version:** 1.1.0
 **API Base:** `http://localhost:8002/api/v1`
 
 ---
@@ -12,9 +12,10 @@
 PDF Extraction Tools now provides a **Multi-Domain Federation API** enabling memOS to query across 4 industrial knowledge domains through a unified interface. The API supports cross-domain search with RRF fusion, MCP-compatible tool definitions for LLM consumption, and domain-specific entity type filtering.
 
 **Total Knowledge Base:**
-- **286,400+ nodes** across all domains
+- **287,300+ nodes** across all domains
 - **4 specialized domains**: FANUC, IMM, Industrial Automation, OEM IMM
-- **8 MCP-compatible tools** for AI agent consumption
+- **9 MCP-compatible tools** for AI agent consumption
+- **NEW: IMM HMI Navigation** for process technician screen guidance
 
 ---
 
@@ -71,6 +72,89 @@ PDF Extraction Tools now provides a **Multi-Domain Federation API** enabling mem
 - **Entity Types:** `polymer`, `press_oem`, `plc_controllogix`, `sensor_rjg`, `process_setting`
 - **Graph File:** `data/oem_imm_graph.pkl`
 - **Node Format:** Dictionary
+
+---
+
+## IMM HMI Navigation API (Phase 49.5)
+
+**NEW:** Process technician-oriented HMI screen navigation for injection molding machines.
+
+### Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/imm/hmi/stats` | GET | Graph statistics (nodes, edges, brands) |
+| `/api/v1/imm/hmi/brands` | GET | List IMM brands and HMI systems |
+| `/api/v1/imm/hmi/screens` | GET | List HMI screens (filterable by brand) |
+| `/api/v1/imm/hmi/defects` | GET | List defects with screen mappings |
+| `/api/v1/imm/hmi/navigate` | POST | Get screens for defect troubleshooting |
+
+### HMI Graph Statistics
+- **Nodes:** 922 (screens, menus, buttons, parameters, defects)
+- **Edges:** 606 (navigates_to, addressed_by)
+- **Brands:** KraussMaffei, Cincinnati Milacron, Van Dorn, Siemens, Chenhsong, Mold-Masters, RJG, ACE Automation
+- **HMI Systems:** MC5, MC6, Acramatic, eDART, AIUC, S5, HMI-Tool
+- **Defects Mapped:** 10 (short shot, burn marks, flash, sink marks, warpage, etc.)
+
+### Navigate Request
+
+```json
+POST /api/v1/imm/hmi/navigate
+{
+    "defect": "short_shot",
+    "brand": "KraussMaffei"
+}
+```
+
+### Navigate Response
+
+```json
+{
+    "success": true,
+    "data": {
+        "defect": "short_shot",
+        "defect_label": "Short Shot",
+        "brand_filter": "KraussMaffei",
+        "screens": [
+            {
+                "node_id": "hmi_000593",
+                "label": "injection",
+                "category": "injection",
+                "brand": "KraussMaffei",
+                "hmi_system": "MC5",
+                "page_number": 859,
+                "source_doc": "kraussmaffei_MC5_full_manual_EN.pdf"
+            }
+        ],
+        "navigation_hint": "Navigate to: injection on KraussMaffei HMI",
+        "total_screens": 4
+    }
+}
+```
+
+### memOS Integration Pattern
+
+```python
+async def get_hmi_screens_for_defect(defect: str, brand: str = None):
+    """Get HMI screens to navigate for troubleshooting a defect."""
+    async with httpx.AsyncClient() as client:
+        payload = {"defect": defect}
+        if brand:
+            payload["brand"] = brand
+
+        resp = await client.post(
+            "http://localhost:8002/api/v1/imm/hmi/navigate",
+            json=payload
+        )
+        data = resp.json()["data"]
+
+        # Return navigation guidance for technician
+        return {
+            "screens": data["screens"],
+            "hint": data["navigation_hint"],
+            "source_docs": [s["source_doc"] for s in data["screens"]]
+        }
+```
 
 ---
 
@@ -195,6 +279,15 @@ Get polymer material properties and processing guidelines.
 
 **Parameters:**
 - `polymer_name` (required): Polymer name or grade
+
+### 9. `navigate_imm_hmi` (NEW - Phase 49.5)
+Get HMI screens to navigate for troubleshooting injection molding defects.
+
+**Parameters:**
+- `defect` (required): Defect type (short_shot, burn_marks, flash, sink_marks, warpage, etc.)
+- `brand`: Optional brand filter (KraussMaffei, Cincinnati Milacron, Van Dorn, etc.)
+
+**Returns:** List of HMI screens with page references to source documentation.
 
 ---
 
@@ -404,6 +497,15 @@ Response:
 ---
 
 ## Changelog
+
+### v1.1.0 (2026-01-11)
+- **NEW: IMM HMI Navigation API** (Phase 49.5)
+  - 5 new endpoints for HMI screen navigation
+  - 922-node graph covering 10 IMM brands
+  - Defect-to-screen mapping for process technicians
+  - Page-level source document provenance
+- Added `navigate_imm_hmi` MCP tool (9th tool)
+- Updated node counts across domains
 
 ### v1.0.0 (2026-01-03)
 - Initial multi-domain federation API

@@ -708,6 +708,34 @@ agent_prompts:
       Extract entities and relationships following the schema.
       Return valid JSON matching the schema format.
 
+  # ---------------------------------------------------------------------------
+  # URL Relevance Filter
+  # ---------------------------------------------------------------------------
+  url_relevance_filter:
+    system: |
+      You are a URL relevance evaluator for technical search results.
+      Your task is to identify which URLs are actually relevant to the user's query.
+      Focus on domain-specific technical content, not generic definitions or unrelated topics.
+
+    evaluation: |
+      Query: "{query}"
+
+      Which URL indices are relevant to this query?
+      Relevant = discusses the specific topic/equipment/technology mentioned.
+      Irrelevant = dictionary definitions, celebrities, unrelated topics, wrong domain.
+
+      {url_descriptions}
+
+      RULES:
+      - Include URLs that discuss the specific brand/model/product mentioned
+      - Include URLs from manufacturer sites, repair guides, technical forums
+      - Exclude dictionary definitions, Wikipedia disambiguation pages
+      - Exclude results about unrelated topics (e.g., "Common" rapper for "common causes")
+      - Exclude results in wrong languages unless query is in that language
+
+      Output ONLY the JSON below. No explanation. No thinking. Just the JSON.
+      {{"relevant": [indices here]}}
+
 # -----------------------------------------------------------------------------
 # Templates (reusable with variable substitution)
 # -----------------------------------------------------------------------------

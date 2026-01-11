@@ -115,6 +115,7 @@ from .progress_tools import ProgressReporter, ProgressAggregator
 from .agent_step_graph import AgentType, get_agent_step_graph
 from .scratchpad_cache import get_scratchpad_cache
 from .graph_cache_integration import GraphCacheIntegration, get_graph_cache_integration
+from .url_relevance_filter import URLRelevanceFilter, get_url_relevance_filter
 
 # Additional features for full integration
 from .mixed_precision_embeddings import (
@@ -406,6 +407,7 @@ class FeatureConfig:
     enable_kv_cache_service: bool = False   # KV cache warming
     enable_memory_tiers: bool = False       # Three-tier memory
     enable_artifacts: bool = False          # Artifact storage for token reduction
+    enable_url_relevance_filter: bool = False  # LLM-based URL filtering before scraping
 
     # Enhanced retrieval (Layer 2)
     enable_hyde: bool = False              # Query expansion
@@ -527,6 +529,8 @@ PRESET_CONFIGS = {
         enable_hyde=False,
         enable_hybrid_reranking=True,  # BGE-M3 dense+sparse fusion
         enable_ragas=False,
+        # URL relevance filter: LLM-based filtering before scraping (~3-5s, saves 60s+ per irrelevant URL)
+        enable_url_relevance_filter=True,
         # HSEA for FANUC knowledge (fast, high-value)
         enable_domain_corpus=True,  # Required for HSEA to run
         enable_hsea_context=True
@@ -539,6 +543,7 @@ PRESET_CONFIGS = {
         enable_ragas=True,
         enable_context_curation=True,  # DIG-based context filtering
         context_curation_preset="balanced",
+        enable_url_relevance_filter=True,  # LLM-based URL filtering before scraping
         enable_mixed_precision=True,
         enable_entity_enhanced_retrieval=True,
         # Layer 3 reasoning features
@@ -568,6 +573,7 @@ PRESET_CONFIGS = {
         enable_ragas=True,
         enable_context_curation=True,  # DIG-based context filtering
         context_curation_preset="thorough",  # Thorough for research
+        enable_url_relevance_filter=True,  # LLM-based URL filtering before scraping
         # Phase 2: Confidence-Calibrated Halting
         enable_entropy_halting=True,
         enable_iteration_bandit=True,
@@ -634,6 +640,7 @@ PRESET_CONFIGS = {
         enable_kv_cache_service=True,
         enable_memory_tiers=True,
         enable_artifacts=True,
+        enable_url_relevance_filter=True,  # LLM-based URL filtering before scraping
         # Layer 2 - Enhanced retrieval
         enable_hyde=True,
         enable_hybrid_reranking=True,
@@ -5452,11 +5459,18 @@ class UniversalOrchestrator(BaseSearchPipeline):
             })
 
             # Handle corrective actions
-            # FIX 3: Skip REFINE_QUERY when domain knowledge provides authoritative data
-            # Domain knowledge from HSEA/corpus is authoritative - web search quality is less important
-            if state.has_domain_knowledge and evaluation.recommended_action == CorrectiveAction.REFINE_QUERY:
-                logger.info(f"[{request_id}] CRAG bypass: Domain knowledge present ({state.domain_knowledge_chars} chars) - skipping query refinement")
-                search_trace[-1]["crag_bypass"] = "domain_knowledge_present"
+            # FIX 3 REVISED: Only bypass REFINE_QUERY when domain knowledge is substantial AND
+            # web results have at least minimal relevance (not "ambiguous")
+            # Rationale: Domain knowledge helps synthesis, but doesn't fix bad web search queries.
+            # The sources displayed to users come from web search, not domain knowledge.
+            should_bypass_crag = (
+                state.has_domain_knowledge and
+                state.domain_knowledge_chars > 2000 and
+                evaluation.quality.value != "ambiguous"
+            )
+            if should_bypass_crag and evaluation.recommended_action == CorrectiveAction.REFINE_QUERY:
+                logger.info(f"[{request_id}] CRAG bypass: Strong domain knowledge ({state.domain_knowledge_chars} chars) + non-ambiguous results")
+                search_trace[-1]["crag_bypass"] = "domain_knowledge_sufficient"
             elif evaluation.recommended_action == CorrectiveAction.REFINE_QUERY:
                 refined_queries = evaluation.refined_queries[:3]
                 # Integrate with Query Tree for parallel exploration
@@ -5610,15 +5624,46 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
         # Deduplicate URLs before scraping (preserve order, take first occurrence)
         seen_urls = set()
-        unique_urls = []
+        unique_results = []
         for r in state.raw_results:
             if r.url not in seen_urls:
                 seen_urls.add(r.url)
-                unique_urls.append(r.url)
-                if len(unique_urls) >= request.max_urls_to_scrape:
+                unique_results.append(r)
+                if len(unique_results) >= request.max_urls_to_scrape * 2:  # Extra buffer for filtering
                     break
-        urls_to_scrape = unique_urls
-        logger.info(f"[{request_id}] Scraping {len(urls_to_scrape)} unique URLs (from {len(state.raw_results)} total results)")
+
+        # URL Relevance Filtering: Use LLM to filter irrelevant URLs before scraping
+        if self.config.enable_url_relevance_filter and unique_results:
+            filter_start = time.time()
+            try:
+                url_filter = get_url_relevance_filter(self.ollama_url)
+                # Convert SearchResult objects to dicts for filter
+                results_for_filter = [
+                    {"url": r.url, "title": r.title or "", "snippet": r.snippet or ""}
+                    for r in unique_results
+                ]
+                filtered_results = await url_filter.filter_urls(
+                    query=state.query,
+                    search_results=results_for_filter,
+                    max_urls=request.max_urls_to_scrape,
+                    request_id=request_id
+                )
+                filter_ms = int((time.time() - filter_start) * 1000)
+                urls_to_scrape = [r["url"] for r in filtered_results]
+                logger.info(f"[{request_id}] URL filter: {len(unique_results)} -> {len(urls_to_scrape)} relevant URLs ({filter_ms}ms)")
+                search_trace.append({
+                    "step": "url_relevance_filter",
+                    "urls_evaluated": len(unique_results),
+                    "urls_passed": len(urls_to_scrape),
+                    "duration_ms": filter_ms
+                })
+            except Exception as e:
+                logger.warning(f"[{request_id}] URL relevance filter failed, using all URLs: {e}")
+                urls_to_scrape = [r.url for r in unique_results[:request.max_urls_to_scrape]]
+        else:
+            urls_to_scrape = [r.url for r in unique_results[:request.max_urls_to_scrape]]
+
+        logger.info(f"[{request_id}] Scraping {len(urls_to_scrape)} URLs (from {len(state.raw_results)} total results)")
 
         # Update graph: complete Search, enter Evaluate
         self._graph_state.complete("S")

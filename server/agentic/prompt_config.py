@@ -191,6 +191,13 @@ class DomainCorpusPrompts:
 
 
 @dataclass
+class URLRelevanceFilterPrompts:
+    """URL relevance filter prompts."""
+    system: str = ""
+    evaluation: str = ""
+
+
+@dataclass
 class AgentPrompts:
     """Container for all agent-specific prompts."""
     analyzer: AnalyzerPrompts = field(default_factory=AnalyzerPrompts)
@@ -212,6 +219,7 @@ class AgentPrompts:
     information_bottleneck: InformationBottleneckPrompts = field(default_factory=InformationBottleneckPrompts)
     entropy_monitor: EntropyMonitorPrompts = field(default_factory=EntropyMonitorPrompts)
     domain_corpus: DomainCorpusPrompts = field(default_factory=DomainCorpusPrompts)
+    url_relevance_filter: URLRelevanceFilterPrompts = field(default_factory=URLRelevanceFilterPrompts)
 
 
 @dataclass
@@ -323,6 +331,7 @@ def _load_agent_prompts(data: Dict[str, Any]) -> AgentPrompts:
         "information_bottleneck": (InformationBottleneckPrompts, "information_bottleneck"),
         "entropy_monitor": (EntropyMonitorPrompts, "entropy_monitor"),
         "domain_corpus": (DomainCorpusPrompts, "domain_corpus"),
+        "url_relevance_filter": (URLRelevanceFilterPrompts, "url_relevance_filter"),
     }
 
     for yaml_key, (dataclass_type, attr_name) in agent_mapping.items():

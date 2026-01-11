@@ -79,12 +79,8 @@ class _PromptProxy:
 
 _proxy = _PromptProxy()
 
-# Core system prompt (shared across all agents ~1000 tokens)
-# This prefix is STATIC and identical across all requests - maximizes KV cache hits
-CORE_SYSTEM_PREFIX = property(lambda self: _proxy.CORE_SYSTEM_PREFIX)
-
-# For backward compatibility, expose as module-level constants
-# These are evaluated when the module loads
+# For backward compatibility, expose as module-level constants via __getattr__
+# This allows lazy loading from prompts.yaml on first access
 def __getattr__(name: str):
     """Module-level attribute access for backward compatibility."""
     if name == "CORE_SYSTEM_PREFIX":
@@ -103,6 +99,10 @@ def __getattr__(name: str):
         return _proxy.COVERAGE_SUFFIX
     elif name == "URL_EVALUATOR_SUFFIX":
         return _proxy.URL_EVALUATOR_SUFFIX
+    elif name == "AGENT_SUFFIXES":
+        return _get_agent_suffixes()
+    elif name == "TEMPLATES":
+        return _get_templates()
     raise AttributeError(f"module 'prompts' has no attribute '{name}'")
 
 
@@ -117,8 +117,7 @@ def _get_agent_suffixes() -> Dict[str, str]:
         "url_evaluator": _proxy.URL_EVALUATOR_SUFFIX,
     }
 
-# Agent type to suffix mapping
-AGENT_SUFFIXES: Dict[str, str] = property(lambda self: _get_agent_suffixes())
+# Agent type to suffix mapping is now provided via __getattr__
 
 
 def build_prompt(
@@ -202,8 +201,7 @@ def _get_templates() -> Dict[str, str]:
     }
 
 
-# Prompt templates for specific operations (loaded from config)
-TEMPLATES = property(lambda self: _get_templates())
+# Prompt templates for specific operations are provided via __getattr__
 
 
 def get_template(template_name: str, **kwargs) -> str:

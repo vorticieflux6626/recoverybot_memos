@@ -137,6 +137,7 @@ class ContentScraper:
         enable_vl_scraper: bool = True,
         enable_docling: bool = True,
         docling_threshold: float = 0.5,
+        enable_fallback_chain: bool = True,
     ):
         """
         Initialize ContentScraper.
@@ -145,18 +146,85 @@ class ContentScraper:
             enable_vl_scraper: Whether to use VL scraper for JS-heavy pages (default True)
             enable_docling: Whether to use Docling for complex table extraction (default True)
             docling_threshold: Minimum complexity score to trigger Docling (default 0.5)
+            enable_fallback_chain: Whether to use intelligent fallback chain (Docling→Pandoc→OCR→VL)
         """
         self.session: Optional[httpx.AsyncClient] = None
         self.enable_vl_scraper = enable_vl_scraper
         self.enable_docling = enable_docling
         self.docling_threshold = docling_threshold
+        self.enable_fallback_chain = enable_fallback_chain
         self._vl_scraper = None  # Lazy loaded
+        self._content_extractor = None  # Lazy loaded
 
     def _get_vl_scraper_instance(self):
         """Get VL scraper instance (lazy loaded)."""
         if self._vl_scraper is None and self.enable_vl_scraper:
             self._vl_scraper = get_vl_scraper()
         return self._vl_scraper
+
+    def _get_content_extractor(self):
+        """Get ContentExtractor instance (lazy loaded)."""
+        if self._content_extractor is None and self.enable_fallback_chain:
+            try:
+                from services.content_extractor import get_content_extractor
+                self._content_extractor = get_content_extractor()
+                logger.info("ContentExtractor initialized with fallback chain")
+            except ImportError as e:
+                logger.warning(f"ContentExtractor not available: {e}")
+                self._content_extractor = False  # Mark as unavailable
+        return self._content_extractor if self._content_extractor else None
+
+    async def _scrape_with_fallback_chain(
+        self,
+        url: str,
+        keywords: Optional[List[str]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Scrape URL using intelligent fallback chain.
+
+        Order of attempts:
+        1. Direct Docling (2s, 95% quality) - best for static HTML
+        2. Pandoc (742ms, 74% quality) - fastest for simple HTML
+        3. Screenshot + Docling OCR (24s, 95% quality) - handles JS-rendered
+        4. Screenshot + VL Model (5-8s, 68% quality) - last resort
+
+        Args:
+            url: URL to scrape
+            keywords: Optional keywords to validate extraction quality
+
+        Returns:
+            Dict with url, title, content, content_type, success, error,
+            extraction_method, fallback_chain - or None if unavailable.
+        """
+        extractor = self._get_content_extractor()
+        if not extractor:
+            logger.debug("ContentExtractor not available, falling back to standard extraction")
+            return None
+
+        try:
+            result = await extractor.extract(url, keywords=keywords)
+
+            if result.success:
+                return {
+                    "url": url,
+                    "title": result.metadata.get("page_title", ""),
+                    "content": result.content,
+                    "content_type": f"fallback_chain:{result.method.value}",
+                    "success": True,
+                    "error": None,
+                    "extraction_method": result.method.value,
+                    "fallback_chain": result.fallback_chain,
+                    "quality": result.quality.value,
+                    "char_count": result.char_count,
+                    "duration_ms": result.duration_ms
+                }
+            else:
+                logger.warning(f"Fallback chain extraction failed for {url[:60]}: {result.error}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error in fallback chain for {url[:60]}: {e}")
+            return None
 
     def _is_js_heavy_page(self, url: str, html: Optional[str] = None) -> bool:
         """
@@ -312,10 +380,17 @@ class ContentScraper:
     async def scrape_urls(
         self,
         urls: List[str],
-        max_concurrent: int = 3
+        max_concurrent: int = 8
     ) -> List[Dict[str, Any]]:
         """
         Scrape content from multiple URLs concurrently.
+
+        VRAM-aware parallel scraping: This method allows high concurrency (default 8)
+        because VRAM protection is handled at the content_extractor level via tiered
+        semaphores (CPU: 8, GPU: 2, VL: 1). This enables:
+        - 8 concurrent HTTP/Pandoc extractions (0 VRAM)
+        - 2 concurrent Docling OCR operations (~4GB each)
+        - 1 VL model operation at a time (2-11GB)
 
         Returns list of:
         {
@@ -388,6 +463,43 @@ class ContentScraper:
             if cached:
                 logger.info(f"Cache hit for {url[:60]}...")
                 return cached
+
+        # Phase K.4: Try intelligent fallback chain first (Docling→Pandoc→OCR→VL)
+        # This handles most cases with better quality/speed than legacy VL path
+        if self.enable_fallback_chain:
+            # Extract keywords from query context for quality validation
+            keywords = None
+            if query_context:
+                # Simple keyword extraction from query
+                keywords = [w.lower() for w in query_context.split() if len(w) > 3][:10]
+
+            chain_result = await self._scrape_with_fallback_chain(url, keywords=keywords)
+            if chain_result:
+                # Record metrics and cache
+                duration_ms = chain_result.get("duration_ms", (time.time() - start_time) * 1000)
+                content_length = chain_result.get("char_count", len(chain_result.get("content", "")))
+                metrics.record_scrape(
+                    domain=domain,
+                    success=True,
+                    content_length=content_length,
+                    duration_ms=duration_ms
+                )
+                if use_cache:
+                    cache = get_content_cache()
+                    cache.set_content(
+                        url=url,
+                        title=chain_result.get("title", ""),
+                        content=chain_result.get("content", ""),
+                        content_type=chain_result.get("content_type", "fallback_chain"),
+                        success=True,
+                        error=None
+                    )
+                logger.info(
+                    f"Fallback chain success: {chain_result.get('extraction_method')} "
+                    f"({content_length} chars, {duration_ms:.0f}ms, quality={chain_result.get('quality')})"
+                )
+                return chain_result
+            # If fallback chain failed, continue to legacy VL path
 
         # Phase K.1: Check if domain is known to be JS-heavy (VL scraper first)
         if self.enable_vl_scraper and self._is_js_heavy_page(url):
