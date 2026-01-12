@@ -13,15 +13,18 @@
 #   - VRAM: Lower usage = can run more concurrent models
 #   - Cost: Smaller models = less computational overhead
 #
-# Recommended Models by Task Type:
-#   - Fast classification: ministral-3:3b, gemma3:4b, qwen3:4b
-#   - Quality synthesis: qwen3:8b, ministral-3:8b
+# Recommended Models by Task Type (Benchmark Results 2026-01-12):
+#   - Fastest utility: qwen3:4b-instruct-2507-q8_0 (4.2s avg, 0.83 accuracy)
+#   - Balanced utility: gemma3:4b (5.1s avg, 0.91 accuracy)
+#   - Quality synthesis: qwen3:8b (12.3s avg, 1.0 accuracy)
+#   - Complex judgment: qwen3:30b-a3b-instruct-2507-q4_K_M (10.5s avg, 1.0 accuracy)
+#   - Self-reflection: cogito:8b (5.0s, 1.0 accuracy)
 #   - Complex reasoning: deepseek-r1:14b, phi4-reasoning:14b
 #   - Embeddings: qwen3-embedding, nomic-embed-text
 # =============================================================================
 
-version: "1.1.0"
-last_updated: "2026-01-11"
+version: "1.2.0"
+last_updated: "2026-01-12"
 
 # Ollama server configuration
 ollama:
@@ -36,22 +39,24 @@ ollama:
 
 pipeline:
   # Query Analysis - determines query type, complexity, search strategy
+  # Benchmark: gemma3:4b (0.91 acc, 5091ms) vs qwen3:8b (1.0 acc, 12320ms)
   analyzer:
-    model: "qwen3:8b"
-    context_window: 40960
+    model: "gemma3:4b"
+    context_window: 131072
     temperature: 0.3
-    max_tokens: 2048  # Increased from 1024 - complex analysis needs more space
+    max_tokens: 2048
     description: "Query analysis, classification, search planning"
-    notes: "Needs good reasoning for accurate query classification"
+    notes: "Benchmark winner: 0.91 accuracy at 2.4x speed of qwen3:8b"
 
   # URL Evaluation - determines which search results to scrape
+  # Benchmark: qwen3:30b-a3b (1.0 acc, 10423ms) vs gemma3:4b (0.66 acc, 5712ms)
   url_evaluator:
-    model: "ministral-3:3b"  # 8.7x faster than qwen3:8b, same accuracy
-    context_window: 32000
+    model: "gemma3:4b"
+    context_window: 131072
     temperature: 0.3
     max_tokens: 2048
     description: "Evaluate search result relevance for scraping"
-    notes: "Simple classification task - fast model is sufficient"
+    notes: "Balanced: gemma3:4b (0.66 acc). Quality: use qwen3:30b-a3b (1.0 acc)"
 
   # Content Coverage - evaluates if scraped content answers the query
   coverage_evaluator:
@@ -90,31 +95,34 @@ pipeline:
     notes: "Used when requires_thinking_model=true"
 
   # CRAG Retrieval Evaluator
+  # Benchmark: qwen3:4b-instruct-q8_0 (0.83 acc, 4513ms) = gemma3:4b (0.83 acc, 5079ms)
   retrieval_evaluator:
-    model: "qwen3:8b"
-    context_window: 40960
+    model: "qwen3:4b-instruct-2507-q8_0"
+    context_window: 32768
     temperature: 0.2
     max_tokens: 1024
     description: "Evaluate retrieval quality (CRAG)"
-    notes: "Needs accurate relevance assessment"
+    notes: "Benchmark winner: fastest at 0.83 accuracy"
 
   # Self-Reflection - post-synthesis quality check
+  # Benchmark: cogito:8b (1.0 acc, 5018ms) vs 4B models (0.50 acc - FAIL)
   self_reflection:
-    model: "qwen3:8b"
-    context_window: 40960
+    model: "cogito:8b"
+    context_window: 32768
     temperature: 0.3
     max_tokens: 1024
     description: "Post-synthesis quality evaluation"
-    notes: "Checks for hallucinations, accuracy, completeness"
+    notes: "Benchmark winner: thinking model achieves 1.0 acc. 4B models fail (0.50)"
 
   # Verification - fact checking
+  # Benchmark: gemma3:4b (0.75 acc, 5411ms) = qwen3:8b (0.75 acc, 20634ms)
   verifier:
-    model: "qwen3:8b"
-    context_window: 40960
+    model: "gemma3:4b"
+    context_window: 131072
     temperature: 0.2
     max_tokens: 1024
     description: "Verify claims against sources"
-    notes: "Needs precise comparison capability"
+    notes: "Benchmark winner: same accuracy as qwen3:8b at 3.8x speed"
 
 # =============================================================================
 # UTILITY MODELS
@@ -411,103 +419,158 @@ corpus:
     description: "General domain document extraction"
 
 # =============================================================================
-# PRESETS
+# PRESETS (Updated from Benchmark Results 2026-01-12)
 # Quick model assignment profiles for different use cases
 # =============================================================================
 
 presets:
-  # Maximum speed - use smallest viable models
+  # Maximum speed - use fastest models from benchmarks
+  # Total VRAM: ~10GB | Avg latency: ~4.5s per agent
   speed:
-    pipeline.analyzer: "gemma3:4b"
-    pipeline.url_evaluator: "ministral-3:3b"
-    pipeline.coverage_evaluator: "gemma3:4b"
-    pipeline.planner: "gemma3:4b"
-    pipeline.synthesizer: "ministral-3:3b"
-    pipeline.thinking: "ministral-3:3b"
-    pipeline.retrieval_evaluator: "gemma3:4b"
-    pipeline.self_reflection: "gemma3:4b"
-    pipeline.verifier: "gemma3:4b"
+    pipeline.analyzer: "qwen3:4b-instruct-2507-q8_0"       # 4235ms, 0.70 acc
+    pipeline.url_evaluator: "qwen3:4b-instruct-2507-q8_0"  # 4515ms, 0.66 acc
+    pipeline.coverage_evaluator: "qwen3:4b-instruct-2507-q8_0"
+    pipeline.planner: "qwen3:4b-instruct-2507-q8_0"
+    pipeline.synthesizer: "qwen3:8b"                       # Keep quality for output
+    pipeline.thinking: "qwen3:8b"
+    pipeline.retrieval_evaluator: "qwen3:4b-instruct-2507-q8_0"  # 4513ms, 0.83 acc
+    pipeline.self_reflection: "cogito:8b"                  # 5018ms, 1.0 acc (4B fails!)
+    pipeline.verifier: "qwen3:4b-instruct-2507-q8_0"       # 4623ms, 0.70 acc
 
-  # Maximum quality - use largest available models
+  # Maximum quality - use best accuracy models from benchmarks
+  # Total VRAM: ~24GB | Avg latency: ~11s per agent
   quality:
-    pipeline.analyzer: "qwen3:14b"
-    pipeline.url_evaluator: "qwen3:8b"
-    pipeline.coverage_evaluator: "qwen3:14b"
-    pipeline.planner: "qwen3:14b"
-    pipeline.synthesizer: "qwen3:14b"
+    pipeline.analyzer: "qwen3:30b-a3b-instruct-2507-q4_K_M"  # 10981ms, 0.88 acc
+    pipeline.url_evaluator: "qwen3:30b-a3b-instruct-2507-q4_K_M"  # 10423ms, 1.0 acc!
+    pipeline.coverage_evaluator: "qwen3:30b-a3b-instruct-2507-q4_K_M"
+    pipeline.planner: "qwen3:30b-a3b-instruct-2507-q4_K_M"
+    pipeline.synthesizer: "qwen3:30b-a3b-instruct-2507-q4_K_M"
     pipeline.thinking: "deepseek-r1:14b-qwen-distill-q8_0"
-    pipeline.retrieval_evaluator: "qwen3:14b"
-    pipeline.self_reflection: "qwen3:14b"
-    pipeline.verifier: "qwen3:14b"
+    pipeline.retrieval_evaluator: "qwen3:30b-a3b-instruct-2507-q4_K_M"  # 10197ms, 0.83 acc
+    pipeline.self_reflection: "qwen3:30b-a3b-instruct-2507-q4_K_M"  # 11696ms, 1.0 acc
+    pipeline.verifier: "gemma3:4b"                          # 5411ms, 0.75 acc (best)
 
-  # Balanced (default) - production recommendations
+  # Balanced (default) - benchmark-optimized production config
+  # Total VRAM: ~12GB | Best accuracy/speed tradeoff
   balanced:
-    pipeline.analyzer: "qwen3:8b"
-    pipeline.url_evaluator: "ministral-3:3b"
+    pipeline.analyzer: "gemma3:4b"                         # 5091ms, 0.91 acc
+    pipeline.url_evaluator: "gemma3:4b"                    # 5712ms, 0.66 acc
     pipeline.coverage_evaluator: "qwen3:8b"
     pipeline.planner: "qwen3:8b"
-    pipeline.synthesizer: "ministral-3:3b"
-    pipeline.thinking: "ministral-3:3b"
-    pipeline.retrieval_evaluator: "qwen3:8b"
-    pipeline.self_reflection: "qwen3:8b"
-    pipeline.verifier: "qwen3:8b"
+    pipeline.synthesizer: "qwen3:8b"
+    pipeline.thinking: "qwen3:8b"
+    pipeline.retrieval_evaluator: "qwen3:4b-instruct-2507-q8_0"  # 4513ms, 0.83 acc
+    pipeline.self_reflection: "cogito:8b"                  # 5018ms, 1.0 acc
+    pipeline.verifier: "gemma3:4b"                         # 5411ms, 0.75 acc
 
-  # Low VRAM - for constrained environments
+  # Low VRAM - for <12GB GPU environments
+  # Total VRAM: ~5GB | Single model loaded at a time
   low_vram:
-    pipeline.analyzer: "gemma3:4b"
-    pipeline.url_evaluator: "gemma3:4b"
-    pipeline.coverage_evaluator: "gemma3:4b"
-    pipeline.planner: "gemma3:4b"
-    pipeline.synthesizer: "gemma3:4b"
-    pipeline.thinking: "gemma3:4b"
-    pipeline.retrieval_evaluator: "gemma3:4b"
-    pipeline.self_reflection: "gemma3:4b"
-    pipeline.verifier: "gemma3:4b"
+    pipeline.analyzer: "qwen3:4b-instruct-2507-q8_0"
+    pipeline.url_evaluator: "qwen3:4b-instruct-2507-q8_0"
+    pipeline.coverage_evaluator: "qwen3:4b-instruct-2507-q8_0"
+    pipeline.planner: "qwen3:4b-instruct-2507-q8_0"
+    pipeline.synthesizer: "qwen3:4b-instruct-2507-q8_0"
+    pipeline.thinking: "qwen3:4b-instruct-2507-q8_0"
+    pipeline.retrieval_evaluator: "qwen3:4b-instruct-2507-q8_0"
+    pipeline.self_reflection: "qwen3:4b-instruct-2507-q8_0"  # Note: 0.50 acc - not ideal
+    pipeline.verifier: "qwen3:4b-instruct-2507-q8_0"
 
 # =============================================================================
-# BENCHMARK RESULTS REFERENCE
-# From tests/data/model_benchmarks.db
+# BENCHMARK RESULTS REFERENCE (2026-01-12)
+# From tests/data/agent_benchmarks.db
 # =============================================================================
 
 benchmarks:
+  # Analyzer benchmarks (query classification)
+  analyzer:
+    - model: "qwen3:4b-instruct-2507-q8_0"
+      avg_duration_ms: 4235
+      accuracy: 0.70
+      vram_mb: 4996
+      note: "Fastest model"
+    - model: "gemma3:4b"
+      avg_duration_ms: 5091
+      accuracy: 0.91
+      vram_mb: 2904
+      note: "Best accuracy/speed balance"
+    - model: "qwen3:30b-a3b-instruct-2507-q4_K_M"
+      avg_duration_ms: 10981
+      accuracy: 0.88
+      vram_mb: 18260
+      note: "Quality option"
+
+  # CRAG Evaluator benchmarks (retrieval quality)
+  crag_evaluator:
+    - model: "qwen3:4b-instruct-2507-q8_0"
+      avg_duration_ms: 4513
+      accuracy: 0.83
+      vram_mb: 4996
+      note: "Fastest with best accuracy"
+    - model: "gemma3:4b"
+      avg_duration_ms: 5079
+      accuracy: 0.83
+      vram_mb: 3875
+      note: "Equal accuracy, slightly slower"
+
+  # Self-Reflection benchmarks (synthesis evaluation)
+  self_reflection:
+    - model: "cogito:8b"
+      avg_duration_ms: 5018
+      accuracy: 1.00
+      vram_mb: 3496
+      note: "Best: thinking model achieves perfect accuracy"
+    - model: "qwen3:30b-a3b-instruct-2507-q4_K_M"
+      avg_duration_ms: 11696
+      accuracy: 1.00
+      vram_mb: 18260
+      note: "Quality alternative"
+    - model: "qwen3:4b-instruct-2507-q8_0"
+      avg_duration_ms: 5138
+      accuracy: 0.50
+      vram_mb: 4996
+      note: "WARNING: 4B models fail at this task"
+
+  # URL Relevance Filter benchmarks
+  url_filter:
+    - model: "qwen3:30b-a3b-instruct-2507-q4_K_M"
+      avg_duration_ms: 10423
+      accuracy: 1.00
+      vram_mb: 18266
+      note: "PERFECT accuracy - critical for avoiding wasted scrapes"
+    - model: "qwen3:4b-instruct-2507-q8_0"
+      avg_duration_ms: 4515
+      accuracy: 0.66
+      vram_mb: 4996
+      note: "Fastest, 100% success rate"
+    - model: "gemma3:4b"
+      avg_duration_ms: 5712
+      accuracy: 0.66
+      vram_mb: 1570
+      note: "Low VRAM option"
+
+  # Verifier benchmarks (claim verification)
+  verifier:
+    - model: "gemma3:4b"
+      avg_duration_ms: 5411
+      accuracy: 0.75
+      vram_mb: 3952
+      note: "Best accuracy at fastest speed"
+    - model: "qwen3:4b-instruct-2507-q8_0"
+      avg_duration_ms: 4623
+      accuracy: 0.70
+      vram_mb: 4996
+      note: "Fastest but slightly lower accuracy"
+
+  # Legacy synthesis benchmarks
   synthesis:
     - model: "gemma3:4b"
       avg_duration_ms: 14305
       ttfs_ms: 4175
       success_rate: 1.0
       vram_gb: 3.3
-
-    - model: "ministral-3:3b"
-      avg_duration_ms: 14907
-      ttfs_ms: 4190
-      success_rate: 1.0
-      vram_gb: 3.0
-
     - model: "qwen3:8b"
       avg_duration_ms: 28344
       ttfs_ms: 13033
       success_rate: 1.0
       vram_gb: 5.2
-
-    - model: "gemma3:12b"
-      avg_duration_ms: 33544
-      ttfs_ms: 6454
-      success_rate: 1.0
-      vram_gb: 8.1
-
-    - model: "deepseek-r1:14b-qwen-distill-q8_0"
-      avg_duration_ms: 48595
-      ttfs_ms: 35573
-      success_rate: 1.0
-      vram_gb: 14.0
-
-  url_evaluation:
-    - model: "ministral-3:3b"
-      avg_duration_ms: 4156
-      success_rate: 1.0
-      note: "8.7x faster than qwen3:8b"
-
-    - model: "qwen3:8b"
-      avg_duration_ms: 36078
-      success_rate: 0.67
-      note: "Slower, enters thinking mode despite /no_think"

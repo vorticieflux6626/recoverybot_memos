@@ -78,16 +78,16 @@ class OllamaConfig:
 
 @dataclass
 class PipelineModels:
-    """Model assignments for pipeline stages."""
-    analyzer: ModelConfig = field(default_factory=lambda: ModelConfig(model="qwen3:8b"))
-    url_evaluator: ModelConfig = field(default_factory=lambda: ModelConfig(model="ministral-3:3b"))
+    """Model assignments for pipeline stages (benchmark-optimized 2026-01-12)."""
+    analyzer: ModelConfig = field(default_factory=lambda: ModelConfig(model="gemma3:4b"))  # 0.91 acc, 5091ms
+    url_evaluator: ModelConfig = field(default_factory=lambda: ModelConfig(model="gemma3:4b"))  # 0.66 acc, 5712ms
     coverage_evaluator: ModelConfig = field(default_factory=lambda: ModelConfig(model="qwen3:8b"))
     planner: ModelConfig = field(default_factory=lambda: ModelConfig(model="qwen3:8b"))
-    synthesizer: ModelConfig = field(default_factory=lambda: ModelConfig(model="ministral-3:3b"))
-    thinking: ModelConfig = field(default_factory=lambda: ModelConfig(model="ministral-3:3b"))
-    retrieval_evaluator: ModelConfig = field(default_factory=lambda: ModelConfig(model="qwen3:8b"))
-    self_reflection: ModelConfig = field(default_factory=lambda: ModelConfig(model="qwen3:8b"))
-    verifier: ModelConfig = field(default_factory=lambda: ModelConfig(model="qwen3:8b"))
+    synthesizer: ModelConfig = field(default_factory=lambda: ModelConfig(model="qwen3:8b"))
+    thinking: ModelConfig = field(default_factory=lambda: ModelConfig(model="qwen3:8b"))
+    retrieval_evaluator: ModelConfig = field(default_factory=lambda: ModelConfig(model="qwen3:4b-instruct-2507-q8_0"))  # 0.83 acc, 4513ms
+    self_reflection: ModelConfig = field(default_factory=lambda: ModelConfig(model="cogito:8b"))  # 1.0 acc, 5018ms
+    verifier: ModelConfig = field(default_factory=lambda: ModelConfig(model="gemma3:4b"))  # 0.75 acc, 5411ms
 
 
 @dataclass

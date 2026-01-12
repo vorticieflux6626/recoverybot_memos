@@ -71,33 +71,43 @@ def _get_default_pipeline_config() -> "PipelineContextConfig":
 class PipelineContextConfig:
     """Context configuration for the entire agentic pipeline.
 
-    Model assignments are loaded from central config (config/llm_models.yaml).
-    Use get_pipeline_context_config() to get a properly initialized instance.
+    Model assignments are benchmark-optimized (2026-01-12).
+    See tests/data/BENCHMARK_RESULTS_2026-01-12.md for benchmark data.
+
+    Use get_pipeline_context_config() to load from config/llm_models.yaml.
     """
 
     # Analyzer model (query analysis, URL evaluation)
-    analyzer_model: str = "qwen3:8b"
-    analyzer_context: int = 40960
+    # Benchmark: gemma3:4b (0.91 acc, 5091ms) - best accuracy/speed balance
+    analyzer_model: str = "gemma3:4b"
+    analyzer_context: int = 131072
 
     # Planner model (search planning)
     planner_model: str = "qwen3:8b"
     planner_context: int = 40960
 
     # Synthesizer model (content synthesis)
-    synthesizer_model: str = "ministral-3:3b"
-    synthesizer_context: int = 32000
+    synthesizer_model: str = "qwen3:8b"
+    synthesizer_context: int = 40960
 
     # Thinking model (complex reasoning)
-    thinking_model: str = "ministral-3:3b"
-    thinking_context: int = 32000
+    thinking_model: str = "qwen3:8b"
+    thinking_context: int = 40960
 
-    # Fast evaluation model
-    evaluator_model: str = "qwen3:8b"
-    evaluator_context: int = 40960
+    # Fast evaluation model (CRAG)
+    # Benchmark: qwen3:4b-instruct-2507-q8_0 (0.83 acc, 4513ms) - fastest with best accuracy
+    evaluator_model: str = "qwen3:4b-instruct-2507-q8_0"
+    evaluator_context: int = 32768
 
     # Verification model
-    verifier_model: str = "qwen3:8b"
-    verifier_context: int = 40960
+    # Benchmark: gemma3:4b (0.75 acc, 5411ms) - best accuracy at fastest speed
+    verifier_model: str = "gemma3:4b"
+    verifier_context: int = 131072
+
+    # Self-reflection model (added for completeness)
+    # Benchmark: cogito:8b (1.0 acc, 5018ms) - 4B models fail at 0.50!
+    self_reflection_model: str = "cogito:8b"
+    self_reflection_context: int = 32768
 
 
 def get_pipeline_context_config() -> PipelineContextConfig:
@@ -151,13 +161,18 @@ def get_model_context_window(model_name: str) -> int:
         if spec_normalized in normalized or normalized in spec_normalized:
             return spec.get("context_window", 8192)
 
-    # Known model defaults (updated from ollama.com scrape results)
+    # Known model defaults (updated from ollama.com scrape results + benchmarks 2026-01-12)
     model_defaults = {
         # Qwen3 models (40K native)
         "qwen3:8b": 40960,
         "qwen3:4b": 40960,
         "qwen3:14b": 40960,
         "qwen3:32b": 40960,
+        # Qwen3 instruct variants (benchmark models)
+        "qwen3:4b-instruct-2507-q8_0": 32768,
+        "qwen3:4b-instruct-2507-fp16": 32768,
+        "qwen3:30b-a3b-instruct-2507-q4_K_M": 40960,
+        "qwen3:30b-a3b": 40960,
         # DeepSeek R1 models (128K)
         "deepseek-r1:8b": 128000,
         "deepseek-r1:14b": 128000,
@@ -167,6 +182,10 @@ def get_model_context_window(model_name: str) -> int:
         "gemma3:4b": 131072,
         "gemma3:12b": 131072,
         "gemma3:27b": 131072,
+        # Cogito thinking models (32K)
+        "cogito:3b": 32768,
+        "cogito:8b": 32768,
+        "cogito:14b": 32768,
         # Other common models
         "llama3.2:3b": 131072,
         "llama3.3:70b": 131072,
