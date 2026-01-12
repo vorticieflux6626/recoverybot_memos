@@ -479,6 +479,134 @@ class SearchMetrics:
 
             return False, "ok"
 
+    def get_domain_quality_score(self, domain: str) -> float:
+        """
+        Calculate a domain quality score based on historical performance.
+
+        Score range: -0.3 (poor) to +0.3 (excellent)
+        Factors considered:
+        - Success rate (primary factor)
+        - Content volume (avg chars scraped)
+        - Scraping efficiency (chars/second)
+        - Recency (recent failures penalized more)
+
+        Returns:
+            Float score from -0.3 to +0.3 for URL re-ranking
+        """
+        with self._lock:
+            if domain not in self._domains:
+                return 0.0  # No history - neutral score
+
+            stats = self._domains[domain]
+
+            # Need at least 2 attempts for meaningful score
+            if stats.total_attempts < 2:
+                return 0.0
+
+            score = 0.0
+
+            # 1. Success rate factor (-0.15 to +0.1)
+            # Poor success rate is heavily penalized
+            success_rate = stats.success_rate
+            if success_rate >= 0.9:
+                score += 0.1  # Excellent
+            elif success_rate >= 0.7:
+                score += 0.05  # Good
+            elif success_rate >= 0.5:
+                score += 0.0  # Average
+            elif success_rate >= 0.3:
+                score -= 0.1  # Below average
+            else:
+                score -= 0.15  # Poor
+
+            # 2. Content volume factor (-0.05 to +0.1)
+            # Domains that produce substantial content are rewarded
+            avg_chars = stats.avg_content_chars
+            if avg_chars >= 10000:
+                score += 0.1  # Excellent content volume
+            elif avg_chars >= 5000:
+                score += 0.05  # Good
+            elif avg_chars >= 1000:
+                score += 0.0  # Acceptable
+            elif avg_chars >= 100:
+                score -= 0.03  # Low content
+            else:
+                score -= 0.05  # Very low content (everythingaboutrobots.com type)
+
+            # 3. Scraping efficiency factor (-0.05 to +0.05)
+            # Reward fast domains, penalize slow ones
+            if stats.successful_scrapes > 0 and stats.total_duration_ms > 0:
+                avg_duration_ms = stats.total_duration_ms / stats.total_attempts
+                # chars per second
+                chars_per_second = (stats.total_content_chars / stats.successful_scrapes) / (avg_duration_ms / 1000) if avg_duration_ms > 0 else 0
+
+                if chars_per_second >= 10000:  # Fast and productive
+                    score += 0.05
+                elif chars_per_second >= 2000:  # Decent
+                    score += 0.02
+                elif chars_per_second >= 500:  # Slow but acceptable
+                    score += 0.0
+                else:  # Very slow (VL model, complex JS)
+                    score -= 0.05
+
+            # 4. Recent failure penalty (-0.05)
+            # Penalize domains with recent failures more heavily
+            if stats.last_failure:
+                time_since_failure = datetime.now(timezone.utc) - stats.last_failure
+                if time_since_failure < timedelta(minutes=30):
+                    score -= 0.05  # Very recent failure
+                elif time_since_failure < timedelta(hours=1):
+                    score -= 0.03  # Recent failure
+
+            # Clamp to range
+            return max(-0.3, min(0.3, score))
+
+    def get_domain_boost(self, domain: str) -> float:
+        """
+        Get the re-ranking boost/penalty for a domain.
+
+        Combines static trusted domain boosts with dynamic quality scores.
+
+        Returns:
+            Combined boost value for relevance score adjustment
+        """
+        quality_score = self.get_domain_quality_score(domain)
+        return quality_score
+
+    def get_domain_stats_for_reranking(self, domains: list) -> Dict[str, Dict]:
+        """
+        Get quality stats for multiple domains for batch re-ranking.
+
+        Returns:
+            Dict mapping domain -> {score, success_rate, avg_chars, recommendation}
+        """
+        results = {}
+        for domain in domains:
+            score = self.get_domain_quality_score(domain)
+            with self._lock:
+                if domain in self._domains:
+                    stats = self._domains[domain]
+                    results[domain] = {
+                        "score": score,
+                        "success_rate": stats.success_rate,
+                        "avg_chars": stats.avg_content_chars,
+                        "attempts": stats.total_attempts,
+                        "recommendation": (
+                            "boost" if score > 0.05
+                            else "penalize" if score < -0.05
+                            else "neutral"
+                        )
+                    }
+                else:
+                    results[domain] = {
+                        "score": 0.0,
+                        "success_rate": None,
+                        "avg_chars": None,
+                        "attempts": 0,
+                        "recommendation": "unknown"
+                    }
+        return results
+
     def get_summary(self) -> Dict:
         """Get a summary of all metrics"""
         with self._lock:

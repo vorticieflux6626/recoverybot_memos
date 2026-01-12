@@ -42,7 +42,8 @@ class VerifierAgent:
         self,
         claims: List[str],
         sources: List[WebSearchResult],
-        level: VerificationLevel = VerificationLevel.STANDARD
+        level: VerificationLevel = VerificationLevel.STANDARD,
+        scraped_content: Optional[List[str]] = None
     ) -> List[VerificationResult]:
         """
         Verify a list of claims against available sources.
@@ -51,6 +52,7 @@ class VerifierAgent:
             claims: List of claims to verify
             sources: Web search results to check against
             level: How thorough to be
+            scraped_content: Full scraped content for term matching (preferred over snippets)
 
         Returns:
             List of verification results
@@ -70,9 +72,9 @@ class VerifierAgent:
 
         for claim in claims[:10]:  # Limit to 10 claims
             if level == VerificationLevel.STANDARD:
-                result = await self._verify_standard(claim, sources)
+                result = await self._verify_standard(claim, sources, scraped_content)
             else:  # STRICT
-                result = await self._verify_strict(claim, sources)
+                result = await self._verify_strict(claim, sources, scraped_content)
 
             results.append(result)
 
@@ -81,38 +83,93 @@ class VerifierAgent:
     async def _verify_standard(
         self,
         claim: str,
-        sources: List[WebSearchResult]
+        sources: List[WebSearchResult],
+        scraped_content: Optional[List[str]] = None
     ) -> VerificationResult:
         """
         Standard verification: Check if claim appears in multiple sources.
+        Uses scraped_content (full text) if available, falls back to snippets.
         """
         supporting_sources = []
         claim_lower = claim.lower()
 
-        # Extract key terms from claim
+        # Extract key terms from claim (lowered threshold from 4 to 3 chars)
         key_terms = set(
             word for word in claim_lower.split()
-            if len(word) > 4 and word.isalpha()
+            if len(word) > 3 and word.isalpha()
         )
 
-        for source in sources:
-            snippet_lower = source.snippet.lower()
-            title_lower = source.title.lower()
+        # If no key terms found, use all alpha words
+        if not key_terms:
+            key_terms = set(word for word in claim_lower.split() if word.isalpha())
 
-            # Check term overlap
-            term_matches = sum(1 for term in key_terms if term in snippet_lower or term in title_lower)
-            match_ratio = term_matches / max(len(key_terms), 1)
+        if not key_terms:
+            logger.warning(f"No key terms extracted from claim: {claim[:100]}")
+            return VerificationResult(
+                claim=claim,
+                verified=False,
+                confidence=0.0,
+                sources=[],
+                conflicts=[]
+            )
 
-            if match_ratio > 0.5:  # More than half of key terms match
-                supporting_sources.append(source.source_domain)
+        # Use scraped content if available (much better for term matching)
+        if scraped_content:
+            for idx, content in enumerate(scraped_content):
+                content_lower = content.lower()
+
+                # Check term overlap in full scraped content
+                term_matches = sum(1 for term in key_terms if term in content_lower)
+                match_ratio = term_matches / len(key_terms)
+
+                if match_ratio > 0.4:  # 40% threshold for full content (more lenient)
+                    # Get domain from corresponding source if available
+                    if idx < len(sources):
+                        supporting_sources.append(sources[idx].source_domain)
+                    else:
+                        supporting_sources.append(f"source_{idx}")
+
+                    logger.debug(
+                        f"Claim verified in source {idx}: {match_ratio:.1%} term match "
+                        f"({term_matches}/{len(key_terms)} terms)"
+                    )
+        else:
+            # Fallback to snippets (less effective but still works)
+            for source in sources:
+                snippet_lower = source.snippet.lower()
+                title_lower = source.title.lower()
+                combined = f"{title_lower} {snippet_lower}"
+
+                # Check term overlap
+                term_matches = sum(1 for term in key_terms if term in combined)
+                match_ratio = term_matches / len(key_terms)
+
+                if match_ratio > 0.5:  # 50% threshold for snippets (stricter)
+                    supporting_sources.append(source.source_domain)
 
         # Calculate confidence based on source count and quality
         unique_domains = list(set(supporting_sources))
-        confidence = min(1.0, len(unique_domains) * 0.25)
+
+        # More nuanced confidence calculation
+        if len(unique_domains) >= 3:
+            confidence = min(1.0, 0.7 + len(unique_domains) * 0.1)  # 0.8+ for 3+ sources
+        elif len(unique_domains) == 2:
+            confidence = 0.6
+        elif len(unique_domains) == 1:
+            confidence = 0.4
+        else:
+            confidence = 0.1
+
+        verified = len(unique_domains) >= 1  # Verified if at least 1 source supports
+
+        logger.debug(
+            f"Claim verification: '{claim[:50]}...' - "
+            f"{len(unique_domains)} supporting sources, verified={verified}, conf={confidence:.2f}"
+        )
 
         return VerificationResult(
             claim=claim,
-            verified=len(unique_domains) >= 2,
+            verified=verified,
             confidence=confidence,
             sources=unique_domains,
             conflicts=[]
@@ -121,13 +178,14 @@ class VerifierAgent:
     async def _verify_strict(
         self,
         claim: str,
-        sources: List[WebSearchResult]
+        sources: List[WebSearchResult],
+        scraped_content: Optional[List[str]] = None
     ) -> VerificationResult:
         """
         Strict verification: Use LLM to analyze claim against sources.
         """
-        # First do standard check
-        standard_result = await self._verify_standard(claim, sources)
+        # First do standard check (pass scraped_content for better term matching)
+        standard_result = await self._verify_standard(claim, sources, scraped_content)
 
         # Then use LLM for deeper analysis
         sources_text = "\n".join([

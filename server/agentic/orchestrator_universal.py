@@ -408,6 +408,7 @@ class FeatureConfig:
     enable_memory_tiers: bool = False       # Three-tier memory
     enable_artifacts: bool = False          # Artifact storage for token reduction
     enable_url_relevance_filter: bool = False  # LLM-based URL filtering before scraping
+    enable_domain_quality_reranking: bool = False  # Dynamic re-ranking based on historical scraping performance
 
     # Enhanced retrieval (Layer 2)
     enable_hyde: bool = False              # Query expansion
@@ -464,6 +465,10 @@ class FeatureConfig:
     enable_cross_domain_validation: bool = False  # Validate cross-domain claims (servo→hydraulic INVALID)
     enable_entity_grounding: bool = False         # Ground entities via PDF Tools API
     cross_domain_severity_threshold: str = "warning"  # critical/warning/info
+
+    # Machine Entity Graph (Layer 3) - Phase 49
+    # Maps SRVO errors to physical robot components (motors, encoders, brakes)
+    enable_machine_entity_context: bool = False  # Error-to-component mapping via PDF Tools API
 
     # LLM Gateway (Layer 3) - Unified LLM routing
     enable_gateway_routing: bool = False   # Route LLM calls through gateway service
@@ -531,6 +536,8 @@ PRESET_CONFIGS = {
         enable_ragas=False,
         # URL relevance filter: LLM-based filtering before scraping (~3-5s, saves 60s+ per irrelevant URL)
         enable_url_relevance_filter=True,
+        # Domain quality reranking: Learn from scraping history (success rate, content volume, speed)
+        enable_domain_quality_reranking=True,
         # HSEA for FANUC knowledge (fast, high-value)
         enable_domain_corpus=True,  # Required for HSEA to run
         enable_hsea_context=True
@@ -544,6 +551,7 @@ PRESET_CONFIGS = {
         enable_context_curation=True,  # DIG-based context filtering
         context_curation_preset="balanced",
         enable_url_relevance_filter=True,  # LLM-based URL filtering before scraping
+        enable_domain_quality_reranking=True,  # Dynamic re-ranking based on historical scraping performance
         enable_mixed_precision=True,
         enable_entity_enhanced_retrieval=True,
         # Layer 3 reasoning features
@@ -563,7 +571,9 @@ PRESET_CONFIGS = {
         # Cross-Domain Hallucination Mitigation (Phase 48)
         enable_cross_domain_validation=True,  # Validate cross-domain claims
         enable_entity_grounding=True,         # Ground entities via PDF API
-        cross_domain_severity_threshold="warning"
+        cross_domain_severity_threshold="warning",
+        # Machine Entity Graph (Phase 49)
+        enable_machine_entity_context=True  # Error-to-component mapping
     ),
     OrchestratorPreset.RESEARCH: FeatureConfig(
         # All enhanced features
@@ -574,6 +584,7 @@ PRESET_CONFIGS = {
         enable_context_curation=True,  # DIG-based context filtering
         context_curation_preset="thorough",  # Thorough for research
         enable_url_relevance_filter=True,  # LLM-based URL filtering before scraping
+        enable_domain_quality_reranking=True,  # Dynamic re-ranking based on historical scraping performance
         # Phase 2: Confidence-Calibrated Halting
         enable_entropy_halting=True,
         enable_iteration_bandit=True,
@@ -632,7 +643,9 @@ PRESET_CONFIGS = {
         # Cross-Domain Hallucination Mitigation (Phase 48)
         enable_cross_domain_validation=True,   # Validate cross-domain claims
         enable_entity_grounding=True,          # Ground entities via PDF API
-        cross_domain_severity_threshold="critical"  # Stricter for research
+        cross_domain_severity_threshold="critical",  # Stricter for research
+        # Machine Entity Graph (Phase 49)
+        enable_machine_entity_context=True  # Error-to-component mapping
     ),
     OrchestratorPreset.FULL: FeatureConfig(
         # ALL features enabled
@@ -641,6 +654,7 @@ PRESET_CONFIGS = {
         enable_memory_tiers=True,
         enable_artifacts=True,
         enable_url_relevance_filter=True,  # LLM-based URL filtering before scraping
+        enable_domain_quality_reranking=True,  # Dynamic re-ranking based on historical scraping performance
         # Layer 2 - Enhanced retrieval
         enable_hyde=True,
         enable_hybrid_reranking=True,
@@ -711,7 +725,9 @@ PRESET_CONFIGS = {
         # Cross-Domain Hallucination Mitigation (Phase 48)
         enable_cross_domain_validation=True,   # Validate cross-domain claims
         enable_entity_grounding=True,          # Ground entities via PDF API
-        cross_domain_severity_threshold="critical"  # Maximum strictness for FULL
+        cross_domain_severity_threshold="critical",  # Maximum strictness for FULL
+        # Machine Entity Graph (Phase 49)
+        enable_machine_entity_context=True  # Error-to-component mapping
     )
 }
 
@@ -4098,6 +4114,53 @@ class UniversalOrchestrator(BaseSearchPipeline):
             except Exception as e:
                 logger.warning(f"[{request_id}] Technical docs search failed: {e}")
 
+        # PHASE 4.7: Machine Entity Graph Context (Phase 49)
+        # Maps SRVO errors to physical robot components (motors, encoders, brakes)
+        machine_context = None
+        if self.config.enable_machine_entity_context:
+            try:
+                from core.machine_entity_service import get_machine_entity_service
+                machine_service = get_machine_entity_service()
+
+                # Get machine entity context for the query
+                machine_result = await machine_service.get_machine_context_for_query(request.query)
+
+                if machine_result:
+                    machine_context = machine_result.get("formatted_context")
+                    if machine_context:
+                        enhancement_metadata["features_used"].append("machine_entity_context")
+
+                        # Store affected components in state for synthesis
+                        state.machine_components = machine_result.get("affected_components", [])
+                        state.related_errors = machine_result.get("related_errors", [])
+
+                        # Merge machine context with domain context
+                        if domain_context:
+                            domain_context = f"{domain_context}\n\n{machine_context}"
+                        else:
+                            domain_context = machine_context
+
+                        state.has_domain_knowledge = True
+                        state.domain_knowledge_chars = len(domain_context)
+
+                        # Log the error-to-component mapping
+                        error_info = machine_result.get("error_info", {})
+                        components = machine_result.get("affected_components", [])
+                        logger.info(
+                            f"[{request_id}] Machine entity context: {error_info.get('error_code')} -> "
+                            f"{len(components)} components, {len(machine_context)} chars"
+                        )
+
+                        # Track in search trace
+                        search_trace.append({
+                            "step": "machine_entity_context",
+                            "error_code": error_info.get("error_code"),
+                            "components_found": len(components),
+                            "related_errors": len(machine_result.get("related_errors", []))
+                        })
+            except Exception as e:
+                logger.warning(f"[{request_id}] Machine entity context failed: {e}")
+
         # PHASE 5: CRAG Evaluation (if enabled)
         # Check DyLAN skip decision for EVALUATOR
         skip_crag = False
@@ -4358,10 +4421,12 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
         if self.config.enable_verification and not skip_verification:
             # ===== SSE EVENT: Emit verifying_claims (non-streaming path) =====
+            # Note: This emits source count. Actual claims count is updated after extraction in _phase_verification
             if self.event_emitter:
                 await self.event_emitter.emit(events.verifying_claims(
                     request_id, len(scraped_content) if scraped_content else 0
                 ))
+                logger.debug(f"[{request_id}] Verifier: Starting verification of {len(scraped_content) if scraped_content else 0} sources")
 
             verify_start = time.time()
             verification_result = await self._phase_verification(
@@ -5665,6 +5730,47 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
         logger.info(f"[{request_id}] Scraping {len(urls_to_scrape)} URLs (from {len(state.raw_results)} total results)")
 
+        # Apply dynamic domain quality re-ranking based on historical scraping performance
+        # This uses mutable biases that learn from past scrape results (chars, duration, success rate)
+        if self.config.enable_domain_quality_reranking:
+            from agentic.search_metrics import get_search_metrics
+            from urllib.parse import urlparse
+            metrics = get_search_metrics()
+
+            # Get quality scores for each URL's domain
+            url_scores = []
+            for url in urls_to_scrape:
+                try:
+                    domain = urlparse(url).netloc.replace("www.", "")
+                    quality_score = metrics.get_domain_quality_score(domain)
+                    url_scores.append((url, quality_score))
+                except Exception:
+                    url_scores.append((url, 0.0))
+
+            # Sort by quality score (higher = better) while preserving original order for ties
+            # Use stable sort to maintain relevance order among equal quality scores
+            url_scores.sort(key=lambda x: -x[1])
+
+            # Log domains that got boosted or penalized
+            boosted = [(u, s) for u, s in url_scores if s > 0.05]
+            penalized = [(u, s) for u, s in url_scores if s < -0.05]
+            if boosted:
+                logger.info(f"[{request_id}] Domain quality: Boosted {len(boosted)} URLs (best: {boosted[0][1]:.2f})")
+            if penalized:
+                logger.info(f"[{request_id}] Domain quality: Penalized {len(penalized)} URLs (worst: {penalized[-1][1]:.2f})")
+
+            # Update URLs list with re-ranked order
+            urls_to_scrape = [url for url, _ in url_scores]
+
+            # Track for observability
+            search_trace.append({
+                "step": "domain_quality_rerank",
+                "boosted_count": len(boosted),
+                "penalized_count": len(penalized),
+                "top_score": url_scores[0][1] if url_scores else 0,
+                "bottom_score": url_scores[-1][1] if url_scores else 0
+            })
+
         # Update graph: complete Search, enter Evaluate
         self._graph_state.complete("S")
         self._graph_state.enter("E")
@@ -5850,6 +5956,38 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     extracted = await self.verifier.extract_claims(content[:2000])
                 claims.extend(extracted[:5])
 
+            # Log actual claims extracted (fixes SSE event confusion)
+            logger.info(f"[{request_id}] Verifier: Extracted {len(claims)} claims from {len(scraped_content)} sources")
+
+            # Emit updated event with actual claims count
+            await self.emit_event(
+                EventType.VERIFYING_CLAIMS,
+                {"claims_count": len(claims), "sources_count": len(scraped_content)},
+                request_id,
+                message=f"Extracted {len(claims)} claims from {len(scraped_content)} sources",
+                graph_line=self._graph_state.to_line()
+            )
+
+            if not claims:
+                # No verifiable claims found - return with 0 claims
+                logger.info(f"[{request_id}] Verifier: No verifiable claims extracted from content")
+                from dataclasses import dataclass
+
+                @dataclass
+                class AggregateVerification:
+                    confidence: float
+                    verified_count: int
+                    total_claims: int
+                    results: list
+
+                # Return aggregate with 0 claims but maintain confidence from other signals
+                return AggregateVerification(
+                    confidence=0.5,  # Neutral confidence when no claims to verify
+                    verified_count=0,
+                    total_claims=0,
+                    results=[]
+                )
+
             if claims:
                 # Pass WebSearchResult objects, not raw content strings
                 sources_for_verification = state.raw_results[:5]
@@ -5863,13 +6001,21 @@ class UniversalOrchestrator(BaseSearchPipeline):
                         prompt_template="verify_claims",
                         metadata={"claims_count": len(claims), "sources_count": len(sources_for_verification)}
                     ) as llm_call:
-                        verification_results = await self.verifier.verify(claims[:10], sources_for_verification)
+                        # Pass scraped_content for better term matching (full content instead of short snippets)
+                        verification_results = await self.verifier.verify(
+                            claims[:10], sources_for_verification,
+                            scraped_content=scraped_content[:5]  # Match sources count
+                        )
                         llm_call.finalize(
                             response=str(verification_results)[:200] if verification_results else "",
                             parse_success=bool(verification_results)
                         )
                 else:
-                    verification_results = await self.verifier.verify(claims[:10], sources_for_verification)
+                    # Pass scraped_content for better term matching (full content instead of short snippets)
+                    verification_results = await self.verifier.verify(
+                        claims[:10], sources_for_verification,
+                        scraped_content=scraped_content[:5]  # Match sources count
+                    )
 
                 # Calculate aggregate confidence from list of VerificationResult
                 if verification_results:

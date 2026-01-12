@@ -256,6 +256,11 @@ class SearchState(BaseModel):
     has_domain_knowledge: bool = Field(default=False, description="True if HSEA/domain corpus provided authoritative data")
     domain_knowledge_chars: int = Field(default=0, description="Size of domain knowledge for quality assessment")
 
+    # Phase 49: Machine Entity Graph context
+    # Physical component mapping from SRVO errors to motors, encoders, brakes
+    machine_components: List[Dict[str, Any]] = Field(default_factory=list, description="Affected physical components from Machine Entity Graph")
+    related_errors: List[Dict[str, Any]] = Field(default_factory=list, description="Related error codes from Machine Entity Graph")
+
     # Search progress
     search_phases_completed: List[str] = Field(default_factory=list)
     current_phase: str = "initial"
