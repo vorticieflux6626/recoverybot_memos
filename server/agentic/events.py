@@ -242,6 +242,13 @@ class EventType(str, Enum):
     CONTRASTIVE_SESSION_RECORDED = "contrastive_session_recorded"
     CONTRASTIVE_INSIGHT_GENERATED = "contrastive_insight_generated"
 
+    # ========== Cross-Domain Validation Events (Phase 48) ==========
+    CROSS_DOMAIN_VALIDATING = "cross_domain_validating"
+    CROSS_DOMAIN_CLAIM_EXTRACTED = "cross_domain_claim_extracted"
+    CROSS_DOMAIN_CLAIM_VALID = "cross_domain_claim_valid"
+    CROSS_DOMAIN_CLAIM_INVALID = "cross_domain_claim_invalid"
+    CROSS_DOMAIN_VALIDATION_COMPLETE = "cross_domain_validation_complete"
+
 
 @dataclass
 class SearchEvent:

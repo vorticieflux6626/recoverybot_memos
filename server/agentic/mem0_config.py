@@ -29,7 +29,8 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 
-# Use Gateway by default, fallback to direct Ollama if Gateway unavailable
+# Route through Gateway for VRAM management and priority scheduling
+# Gateway now has /v1/models endpoint (added 2026-01-13) for Mem0 compatibility
 USE_GATEWAY = os.getenv("MEM0_USE_GATEWAY", "true").lower() == "true"
 
 

@@ -94,7 +94,7 @@ class AgenticMemoryAdapter:
     def __init__(
         self,
         user_id: str,
-        use_gateway: bool = True,
+        use_gateway: bool = True,  # Route through Gateway for VRAM management
         collection_name: str = "agentic_memories",
         auto_extract: bool = True,
         min_confidence: float = 0.7,
@@ -549,7 +549,7 @@ _adapter_instances: Dict[str, AgenticMemoryAdapter] = {}
 
 def get_adapter_for_user(
     user_id: str,
-    use_gateway: bool = True,
+    use_gateway: bool = True,  # Route through Gateway for VRAM management
 ) -> AgenticMemoryAdapter:
     """
     Get or create an AgenticMemoryAdapter for a user.

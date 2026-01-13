@@ -1,52 +1,89 @@
 """
 memOS Server Settings Configuration
 HIPAA-compliant configuration management for Recovery Bot memory system
+
+Port defaults are loaded from the central ecosystem configuration:
+    /home/sparkone/sdd/ecosystem_config/ports.yaml
 """
 
 import os
+import sys
 from typing import List, Optional
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
 from pathlib import Path
 
+# Add ecosystem_config to path for imports
+sys.path.insert(0, '/home/sparkone/sdd')
+
+try:
+    from ecosystem_config import (
+        MEMOS_PORT,
+        GATEWAY_PORT,
+        PDF_TOOLS_PORT,
+        SEARXNG_PORT,
+        OLLAMA_PORT,
+        MCP_NODE_EDITOR_PORT,
+        POSTGRES_PORT,
+        REDIS_PORT,
+        PROMETHEUS_PORT,
+        GRAFANA_PORT,
+    )
+except ImportError:
+    # Fallback defaults if ecosystem_config not available
+    MEMOS_PORT = 8001
+    GATEWAY_PORT = 8100
+    PDF_TOOLS_PORT = 8002
+    SEARXNG_PORT = 8888
+    OLLAMA_PORT = 11434
+    MCP_NODE_EDITOR_PORT = 7777
+    POSTGRES_PORT = 5432
+    REDIS_PORT = 6379
+    PROMETHEUS_PORT = 9090
+    GRAFANA_PORT = 3000
+
 
 class MemOSSettings(BaseSettings):
     """Configuration settings for memOS server"""
     
-    # Server Configuration
+    # Server Configuration (ports from ecosystem_config)
     host: str = "localhost"
-    port: int = 8001
+    port: int = MEMOS_PORT
     debug: bool = False
     environment: str = "development"
-    
-    # Database Configuration
+
+    # Database Configuration (ports from ecosystem_config)
     postgres_host: str = "localhost"
-    postgres_port: int = 5432
+    postgres_port: int = POSTGRES_PORT
     postgres_db: str = "memos_recovery_bot"
     postgres_user: str = "memos_user"
     postgres_password: str = "change_this_password"
-    
+
     # Vector Database
     vector_store: str = "pgvector"  # pgvector, chroma, or qdrant
     chroma_db_path: str = "./data/chroma"
     embedding_model: str = "mxbai-embed-large"
     embedding_dimensions: int = 1024
-    
-    # Redis Configuration
+
+    # Redis Configuration (ports from ecosystem_config)
     redis_host: str = "localhost"
-    redis_port: int = 6379
+    redis_port: int = REDIS_PORT
     redis_db: int = 2
     redis_password: Optional[str] = None
-    
-    # Ollama Integration
+
+    # Ollama Integration (ports from ecosystem_config)
     ollama_host: str = "localhost"
-    ollama_port: int = 11434
+    ollama_port: int = OLLAMA_PORT
     ollama_model: str = "llama3.3:70b"
     ollama_embedding_model: str = "mxbai-embed-large"
 
-    # Agentic Search Configuration
-    mcp_url: str = "http://localhost:7777"  # MCP Node Editor
-    searxng_url: str = "http://localhost:8888"  # SearXNG metasearch
+    # Gateway Integration (ports from ecosystem_config)
+    gateway_host: str = "localhost"
+    gateway_port: int = GATEWAY_PORT
+
+    # Agentic Search Configuration (ports from ecosystem_config)
+    mcp_url: str = f"http://localhost:{MCP_NODE_EDITOR_PORT}"
+    searxng_url: str = f"http://localhost:{SEARXNG_PORT}"
     classifier_model: str = "deepseek-r1:14b-qwen-distill-q8_0"  # Query classifier
     synthesizer_model: str = "qwen3:8b"  # Synthesis model
     thinking_model: str = "deepseek-r1:14b-qwen-distill-q8_0"  # Reasoning model
@@ -70,8 +107,8 @@ class MemOSSettings(BaseSettings):
     validate_models_on_startup: bool = True
     model_validation_timeout: float = 5.0  # seconds
 
-    # PDF Extraction Tools API (FANUC Technical Documentation)
-    pdf_api_url: str = "http://localhost:8002"
+    # PDF Extraction Tools API (ports from ecosystem_config)
+    pdf_api_url: str = f"http://localhost:{PDF_TOOLS_PORT}"
     pdf_api_timeout: int = 30
     pdf_api_enabled: bool = True
     pdf_api_max_results: int = 10
@@ -130,9 +167,9 @@ class MemOSSettings(BaseSettings):
     recovery_bot_api_key: Optional[str] = None
     sync_with_recovery_bot: bool = True
     
-    # Monitoring
+    # Monitoring (ports from ecosystem_config)
     enable_prometheus_metrics: bool = True
-    metrics_port: int = 9090  # Changed from 8002 to avoid conflict with PDF API
+    metrics_port: int = PROMETHEUS_PORT
     log_level: str = "INFO"
     structured_logging: bool = True
     
@@ -151,6 +188,11 @@ class MemOSSettings(BaseSettings):
     def ollama_base_url(self) -> str:
         """Construct Ollama base URL"""
         return f"http://{self.ollama_host}:{self.ollama_port}"
+
+    @property
+    def gateway_base_url(self) -> str:
+        """Construct Gateway base URL"""
+        return f"http://{self.gateway_host}:{self.gateway_port}"
     
     @field_validator("storage_path", "log_path", "backup_path")
     @classmethod

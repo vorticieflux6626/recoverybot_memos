@@ -56,6 +56,8 @@ class AgentName(str, Enum):
     ENTITY_TRACKER = "entity_tracker"
     ORCHESTRATOR = "orchestrator"
     URL_RELEVANCE_FILTER = "url_relevance_filter"
+    CROSS_DOMAIN_VALIDATOR = "cross_domain_validator"
+    ENTITY_GROUNDING = "entity_grounding"
 
 
 @dataclass

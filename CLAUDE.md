@@ -1,6 +1,6 @@
 # memOS Server
 
-> **Updated**: 2026-01-04 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.88.0
+> **Updated**: 2026-01-13 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.89.0
 
 ## Quick Reference
 
