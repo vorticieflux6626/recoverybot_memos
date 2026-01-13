@@ -293,8 +293,11 @@ class DocumentGraphService:
             response.raise_for_status()
             data = response.json()
 
+            # Handle unified response format: {success, data: {results: [...]}, ...}
+            results_data = data.get('data', {}).get('results', []) or data.get('results', [])
+
             results = []
-            for r in data.get('results', []):
+            for r in results_data:
                 # Parse source document if available
                 source_doc = None
                 if 'source_document' in r and r['source_document']:
