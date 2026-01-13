@@ -61,6 +61,27 @@ class TroubleshootingStep:
 
 
 @dataclass
+class SourceDocument:
+    """Source document information for citations"""
+    document_id: str
+    title: str
+    document_type: str = "manual"
+    section_title: Optional[str] = None
+    section_path: Optional[List[str]] = None
+    page_number: Optional[int] = None
+    robot_models: Optional[List[str]] = None
+
+    @property
+    def citation_name(self) -> str:
+        """Get a clean document name for citations"""
+        # Clean up the title for citation display
+        name = self.title.replace("_", " ").strip()
+        if self.document_type == "manual" and not name.lower().endswith("manual"):
+            name = f"{name} Manual"
+        return name
+
+
+@dataclass
 class DocumentSearchResult:
     """Result from document graph search"""
     node_id: str
@@ -71,6 +92,7 @@ class DocumentSearchResult:
     matched_terms: List[str]
     node_type: str = "section"
     metadata: Dict[str, Any] = field(default_factory=dict)
+    source_document: Optional[SourceDocument] = None
 
 
 @dataclass
@@ -271,8 +293,23 @@ class DocumentGraphService:
             response.raise_for_status()
             data = response.json()
 
-            results = [
-                DocumentSearchResult(
+            results = []
+            for r in data.get('results', []):
+                # Parse source document if available
+                source_doc = None
+                if 'source_document' in r and r['source_document']:
+                    sd = r['source_document']
+                    source_doc = SourceDocument(
+                        document_id=sd.get('document_id', ''),
+                        title=sd.get('title', ''),
+                        document_type=sd.get('document_type', 'manual'),
+                        section_title=sd.get('section_title'),
+                        section_path=sd.get('section_path'),
+                        page_number=sd.get('page_number'),
+                        robot_models=sd.get('robot_models')
+                    )
+
+                results.append(DocumentSearchResult(
                     node_id=r.get('node_id', ''),
                     title=r.get('title', ''),
                     content_preview=r.get('content_preview', r.get('preview', '')),
@@ -280,10 +317,9 @@ class DocumentGraphService:
                     document_path=r.get('path', []),
                     matched_terms=r.get('matched_terms', []),
                     node_type=r.get('node_type', 'section'),
-                    metadata=r.get('metadata', {})
-                )
-                for r in data.get('results', [])
-            ]
+                    metadata=r.get('metadata', {}),
+                    source_document=source_doc
+                ))
 
             # Cache results
             self._set_cached(cache_key, results)
@@ -607,12 +643,33 @@ class DocumentGraphService:
 
         if results:
             context_parts.append("## Relevant Technical Documentation\n")
+
+            # Collect cited documents for deduplication
+            cited_docs = self._get_cited_documents(results)
+
             for i, r in enumerate(results, 1):
-                path_str = " > ".join(r.document_path) if r.document_path else "Unknown"
+                # Get document citation name
+                if r.source_document:
+                    doc_name = r.source_document.citation_name
+                    section_info = ""
+                    if r.source_document.section_title:
+                        section_info = f" > {r.source_document.section_title}"
+                    if r.source_document.page_number:
+                        section_info += f" (p. {r.source_document.page_number})"
+                    source_str = f"{doc_name}{section_info}"
+                else:
+                    source_str = " > ".join(r.document_path) if r.document_path else "Unknown"
+
                 context_parts.append(f"### [{i}] {r.title}")
-                context_parts.append(f"**Source:** {path_str}")
+                context_parts.append(f"**Source:** {source_str}")
                 context_parts.append(f"**Relevance:** {r.score:.2f}")
                 context_parts.append(f"{r.content_preview}\n")
+
+            # Add document references section at the end
+            if cited_docs:
+                context_parts.append("\n## Source Documents Referenced")
+                for doc_id, doc_info in cited_docs.items():
+                    context_parts.append(f"- **{doc_info['name']}** ({doc_info['type']}) - {doc_info['count']} citations")
 
         # If query contains error code, get troubleshooting path
         error_codes = self._extract_error_codes(query)
@@ -645,6 +702,29 @@ class DocumentGraphService:
             context = context[:max_tokens * 4] + "\n\n[Context truncated...]"
 
         return context
+
+    def _get_cited_documents(self, results: List[DocumentSearchResult]) -> Dict[str, Dict[str, Any]]:
+        """
+        Get deduplicated list of cited documents from search results.
+
+        Args:
+            results: List of search results with source_document info
+
+        Returns:
+            Dict mapping document_id to document info with citation count
+        """
+        cited_docs: Dict[str, Dict[str, Any]] = {}
+        for r in results:
+            if r.source_document:
+                doc_id = r.source_document.document_id
+                if doc_id not in cited_docs:
+                    cited_docs[doc_id] = {
+                        'name': r.source_document.citation_name,
+                        'type': r.source_document.document_type,
+                        'count': 0
+                    }
+                cited_docs[doc_id]['count'] += 1
+        return cited_docs
 
     def _extract_error_codes(self, text: str) -> List[str]:
         """Extract FANUC error codes from text"""
