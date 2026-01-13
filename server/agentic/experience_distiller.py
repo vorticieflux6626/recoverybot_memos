@@ -29,6 +29,13 @@ from .thought_library import ThoughtLibrary, ThoughtTemplate, TemplateCategory, 
 from .models import SearchResponse
 from .llm_config import get_llm_config
 
+# Mem0 integration for cross-session template persistence
+try:
+    from .mem0_config import get_mem0_instance, PRESETS
+    MEM0_AVAILABLE = True
+except ImportError:
+    MEM0_AVAILABLE = False
+
 logger = logging.getLogger("agentic.experience_distiller")
 
 
@@ -326,6 +333,10 @@ class ExperienceDistiller:
 
             logger.info(f"Distilled new template: {template.name}")
 
+            # Store template in Mem0 for cross-session persistence
+            if MEM0_AVAILABLE:
+                await self.store_template_in_mem0(template, query_type)
+
             return DistillationResult(
                 success=True,
                 template_created=True,
@@ -453,6 +464,137 @@ Output ONLY the JSON, no other text:"""
                 return template.id
 
         return None
+
+    async def store_template_in_mem0(
+        self,
+        template: ThoughtTemplate,
+        query_type: str = "general"
+    ) -> bool:
+        """
+        Store distilled template in Mem0 for cross-session persistence.
+
+        This enables templates to be retrieved across server restarts
+        using Mem0's consolidation logic (ADD/UPDATE/NOOP).
+
+        Args:
+            template: The distilled ThoughtTemplate
+            query_type: Category for the template
+
+        Returns:
+            True if stored successfully
+        """
+        if not MEM0_AVAILABLE:
+            logger.debug("Mem0 not available for template persistence")
+            return False
+
+        try:
+            # Get Mem0 instance with experience_templates preset
+            mem0 = get_mem0_instance(
+                collection_name="experience_templates",
+                llm_model="qwen3:8b",
+                embedding_model="mxbai-embed-large",
+                embedding_dims=1024
+            )
+
+            # Create memory content from template
+            memory_content = (
+                f"Template: {template.name}\n"
+                f"Category: {template.category.value if template.category else query_type}\n"
+                f"Pattern: {template.pattern}\n"
+                f"Success Rate: {template.success_rate:.2f}"
+            )
+
+            # Store with metadata for later retrieval
+            metadata = {
+                "template_id": template.id,
+                "category": template.category.value if template.category else query_type,
+                "pattern": template.pattern[:500],  # Truncate for storage
+                "success_rate": template.success_rate,
+                "use_count": template.use_count,
+                "created_at": template.created_at.isoformat() if template.created_at else None
+            }
+
+            # Use system user for template storage (shared across all users)
+            result = mem0.add(
+                memory_content,
+                user_id="system_templates",
+                metadata=metadata
+            )
+
+            if result:
+                logger.info(f"Stored template '{template.name}' in Mem0")
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.warning(f"Failed to store template in Mem0: {e}")
+            return False
+
+    async def load_templates_from_mem0(self) -> int:
+        """
+        Load persisted templates from Mem0 on startup.
+
+        Returns:
+            Number of templates loaded
+        """
+        if not MEM0_AVAILABLE:
+            return 0
+
+        try:
+            mem0 = get_mem0_instance(
+                collection_name="experience_templates",
+                llm_model="qwen3:8b",
+                embedding_model="mxbai-embed-large",
+                embedding_dims=1024
+            )
+
+            # Get all system templates
+            all_templates = mem0.get_all(user_id="system_templates")
+            templates = all_templates.get("results", []) if isinstance(all_templates, dict) else all_templates
+
+            loaded_count = 0
+            for mem in templates:
+                metadata = mem.get("metadata", {})
+                if not metadata:
+                    continue
+
+                # Reconstruct template from metadata
+                template_id = metadata.get("template_id")
+                if not template_id:
+                    continue
+
+                # Check if already in thought library
+                if self.thought_library.get_template(template_id):
+                    continue
+
+                # Create template from stored data
+                category_str = metadata.get("category", "general")
+                try:
+                    category = TemplateCategory(category_str)
+                except ValueError:
+                    category = TemplateCategory.GENERAL
+
+                template = ThoughtTemplate(
+                    id=template_id,
+                    name=mem.get("memory", "").split("\n")[0].replace("Template: ", ""),
+                    pattern=metadata.get("pattern", ""),
+                    category=category,
+                    success_rate=metadata.get("success_rate", 0.75),
+                    use_count=metadata.get("use_count", 0)
+                )
+
+                self.thought_library.add_template(template)
+                loaded_count += 1
+
+            if loaded_count > 0:
+                logger.info(f"Loaded {loaded_count} templates from Mem0")
+
+            return loaded_count
+
+        except Exception as e:
+            logger.warning(f"Failed to load templates from Mem0: {e}")
+            return 0
 
     def get_stats(self) -> Dict[str, Any]:
         """Get distillation statistics"""

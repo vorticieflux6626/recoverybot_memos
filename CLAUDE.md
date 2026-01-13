@@ -585,4 +585,72 @@ See `agentic/orchestrator_universal.py` → `PRESET_CONFIGS` for detailed featur
 
 ---
 
-*Last Updated: 2026-01-02 | Documentation reorganization - extracted detailed docs to reference files*
+## Mem0 Integration (2026-01-12)
+
+memOS uses **Mem0** as a memory layer for automated fact extraction and cross-session continuity.
+
+### Architecture
+
+```
+Conversation → Mem0 Extraction → memOS Storage (HIPAA-compliant)
+                    ↓
+Query → Mem0 Search → Context Augmentation → Orchestrator
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `agentic/mem0_config.py` | Gateway-routed configuration |
+| `agentic/mem0_adapter.py` | Agentic pipeline integration |
+| `core/memory_service.py` | Core memory (existing, uses Mem0) |
+| `docs/MEM0_INTEGRATION_REPORT.md` | Full integration analysis |
+
+### Usage
+
+```python
+from agentic.mem0_adapter import get_adapter_for_user
+
+# Get adapter for user
+adapter = get_adapter_for_user("user123")
+
+# Process interaction (auto-extract memories)
+await adapter.process_interaction(
+    query="How do I fix SRVO-063?",
+    response="SRVO-063 indicates servo disconnect...",
+    context={"preset": "RESEARCH", "domain": "FANUC"}
+)
+
+# Get context for query augmentation
+context = await adapter.get_context_for_query("What about SRVO-062?")
+```
+
+### Configuration
+
+Mem0 routes through LLM Gateway for VRAM management:
+
+```python
+from agentic.mem0_config import get_mem0_config
+
+config = get_mem0_config(
+    use_gateway=True,  # Route through :8100
+    collection_name="user_memories",
+    llm_model="qwen3:8b",
+    embedding_model="nomic-embed-text"
+)
+```
+
+### What Mem0 Provides (vs memOS native)
+
+| Feature | Mem0 | memOS Native |
+|---------|------|--------------|
+| Automated fact extraction | **Yes** | No |
+| Cross-session continuity | **Yes** | Partial |
+| Memory consolidation | **Yes** | No |
+| Domain expert routing | No | **Yes** |
+| Three-tier memory | No | **Yes** |
+| VRAM management | No | **Yes** |
+
+---
+
+*Last Updated: 2026-01-12 | Added Mem0 integration documentation*

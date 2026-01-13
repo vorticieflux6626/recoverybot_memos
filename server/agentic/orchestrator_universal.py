@@ -159,6 +159,14 @@ from .cross_domain_validator import (
     get_cross_domain_validator
 )
 
+# Mem0 Memory Extraction (Phase 6)
+from .mem0_adapter import (
+    AgenticMemoryAdapter,
+    get_adapter_for_user,
+    MemoryCategory,
+    ConversationContext
+)
+
 # PDF Extraction Tools integration
 from core.document_graph_service import (
     DocumentGraphService,
@@ -439,6 +447,9 @@ class FeatureConfig:
     enable_meta_buffer: bool = False       # Cross-session template persistence
     enable_reasoning_composer: bool = False  # Self-Discover reasoning composition
 
+    # Mem0 Memory Extraction (Phase 6 - Layer 3)
+    enable_mem0_extraction: bool = False   # Automated fact extraction via Mem0
+
     # Advanced reasoning (Layer 3)
     enable_entity_tracking: bool = False   # GSW entity extraction
     enable_thought_library: bool = False   # Reusable patterns
@@ -540,7 +551,9 @@ PRESET_CONFIGS = {
         enable_domain_quality_reranking=True,
         # HSEA for FANUC knowledge (fast, high-value)
         enable_domain_corpus=True,  # Required for HSEA to run
-        enable_hsea_context=True
+        enable_hsea_context=True,
+        # Mem0 memory extraction (user preferences, cross-session context)
+        enable_mem0_extraction=True
     ),
     OrchestratorPreset.ENHANCED: FeatureConfig(
         # Layer 2 quality features
@@ -573,7 +586,9 @@ PRESET_CONFIGS = {
         enable_entity_grounding=True,         # Ground entities via PDF API
         cross_domain_severity_threshold="warning",
         # Machine Entity Graph (Phase 49)
-        enable_machine_entity_context=True  # Error-to-component mapping
+        enable_machine_entity_context=True,  # Error-to-component mapping
+        # Mem0 memory extraction (user preferences, cross-session context)
+        enable_mem0_extraction=True
     ),
     OrchestratorPreset.RESEARCH: FeatureConfig(
         # All enhanced features
@@ -645,7 +660,9 @@ PRESET_CONFIGS = {
         enable_entity_grounding=True,          # Ground entities via PDF API
         cross_domain_severity_threshold="critical",  # Stricter for research
         # Machine Entity Graph (Phase 49)
-        enable_machine_entity_context=True  # Error-to-component mapping
+        enable_machine_entity_context=True,  # Error-to-component mapping
+        # Mem0 memory extraction (user preferences, cross-session context)
+        enable_mem0_extraction=True
     ),
     OrchestratorPreset.FULL: FeatureConfig(
         # ALL features enabled
@@ -727,7 +744,9 @@ PRESET_CONFIGS = {
         enable_entity_grounding=True,          # Ground entities via PDF API
         cross_domain_severity_threshold="critical",  # Maximum strictness for FULL
         # Machine Entity Graph (Phase 49)
-        enable_machine_entity_context=True  # Error-to-component mapping
+        enable_machine_entity_context=True,  # Error-to-component mapping
+        # Mem0 memory extraction (user preferences, cross-session context)
+        enable_mem0_extraction=True
     )
 }
 
@@ -2180,6 +2199,18 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 logger.info(f"[{request_id}] Observability stored (non-streaming): decisions={len(decision_logger.decisions)}, llm_calls={llm_logger.get_call_summary().get('total_calls', 0)}, sse_events={len(sse_events) if sse_events else 0}")
             except Exception as obs_err:
                 logger.warning(f"[{request_id}] Observability failed: {obs_err}")
+
+            # ===== MEM0: Extract and store memories from successful search =====
+            if self.config.enable_mem0_extraction and response.success:
+                try:
+                    await self._extract_mem0_memories(
+                        request=request,
+                        response=response,
+                        request_id=request_id
+                    )
+                except Exception as mem0_err:
+                    # Non-blocking: log and continue
+                    logger.warning(f"[{request_id}] Mem0 extraction failed: {mem0_err}")
 
             return response
 
@@ -3859,6 +3890,116 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 request_id,
                 int((time.time() - start_time) * 1000)
             )
+
+    # ===== Mem0 Memory Extraction =====
+
+    async def _extract_mem0_memories(
+        self,
+        request: SearchRequest,
+        response: SearchResponse,
+        request_id: str
+    ) -> None:
+        """
+        Extract and store memories from a successful search interaction.
+
+        This method processes the query-response pair through Mem0 to:
+        1. Extract domain information (FANUC, Allen-Bradley, etc.)
+        2. Learn user preferences (preset, detail level)
+        3. Track entities for cross-turn resolution
+
+        Args:
+            request: The original search request
+            response: The successful search response
+            request_id: Request ID for logging
+        """
+        # Get user_id from request options or use anonymous
+        user_id = getattr(request, 'user_id', None)
+        if not user_id:
+            options = getattr(request, 'options', {}) or {}
+            user_id = options.get('user_id', 'anonymous')
+
+        # Skip memory extraction for anonymous users unless explicitly enabled
+        if user_id == 'anonymous':
+            logger.debug(f"[{request_id}] Skipping Mem0 extraction for anonymous user")
+            return
+
+        try:
+            # Get or create adapter for this user
+            adapter = get_adapter_for_user(user_id, use_gateway=True)
+
+            # Build context from search metadata
+            context = {
+                "preset": self.preset.value if self.preset else "balanced",
+                "confidence": response.data.confidence_score if response.data else 0.0,
+                "sources_count": len(response.data.sources) if response.data and response.data.sources else 0,
+                "request_id": request_id,
+            }
+
+            # Detect domain from query
+            query_lower = request.query.lower()
+            if any(kw in query_lower for kw in ["fanuc", "srvo", "motn"]):
+                context["domain"] = "FANUC"
+            elif any(kw in query_lower for kw in ["allen-bradley", "plc", "controllogix"]):
+                context["domain"] = "Allen-Bradley"
+            elif any(kw in query_lower for kw in ["siemens", "s7-", "tia"]):
+                context["domain"] = "Siemens"
+
+            # Extract response text for entity detection
+            response_text = ""
+            if response.data and response.data.answer:
+                response_text = response.data.answer[:2000]  # Limit for processing
+
+            # Process the interaction (async, non-blocking)
+            extracted = await adapter.process_interaction(
+                query=request.query,
+                response=response_text,
+                context=context,
+                conversation_id=request_id
+            )
+
+            if extracted:
+                logger.info(
+                    f"[{request_id}] Mem0 extracted {len(extracted)} memories "
+                    f"for user {user_id}"
+                )
+            else:
+                logger.debug(f"[{request_id}] Mem0: No memories extracted")
+
+        except Exception as e:
+            # Log but don't fail the search
+            logger.warning(f"[{request_id}] Mem0 extraction error: {e}")
+
+    async def _get_mem0_context_for_query(
+        self,
+        query: str,
+        user_id: str,
+        limit: int = 5
+    ) -> Optional[ConversationContext]:
+        """
+        Retrieve Mem0 context for query augmentation (optional enhancement).
+
+        Can be used to inject user-specific context into the search pipeline.
+
+        Args:
+            query: The user's query
+            user_id: User identifier
+            limit: Maximum memories to retrieve
+
+        Returns:
+            ConversationContext or None if unavailable
+        """
+        if not self.config.enable_mem0_extraction:
+            return None
+
+        if user_id == 'anonymous':
+            return None
+
+        try:
+            adapter = get_adapter_for_user(user_id, use_gateway=True)
+            return await adapter.get_context_for_query(query, limit=limit)
+        except Exception as e:
+            logger.warning(f"Mem0 context retrieval failed: {e}")
+            return None
 
     async def _execute_pipeline(
         self,

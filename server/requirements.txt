@@ -1,4 +1,19 @@
 # memOS Server Requirements for Recovery Bot Integration
+#
+# =============================================================================
+# Python 3.14 Compatibility Note (2026-01-12)
+# =============================================================================
+# onnxruntime does not have official PyPI wheels for Python 3.14 yet.
+# The venv/pip.conf is configured to use Microsoft's ORT-Nightly feed:
+#   https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ORT-Nightly/pypi/simple/
+#
+# If you need to manually install onnxruntime on Python 3.14:
+#   pip install --pre --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ORT-Nightly/pypi/simple/ onnxruntime --no-deps
+#   pip install flatbuffers numpy packaging protobuf sympy coloredlogs
+#
+# Remove this workaround when onnxruntime >= 1.24 is officially released with cp314 wheels.
+# =============================================================================
+
 # Core Memory Framework
 mem0ai>=0.1.0                    # Primary memory framework
 chromadb>=0.4.18                 # Vector database backend
@@ -8,10 +23,12 @@ sentence-transformers>=2.2.2     # Text embeddings
 fastapi>=0.104.1                 # Web framework
 uvicorn>=0.24.0                  # ASGI server
 pydantic>=2.5.0                  # Data validation
+pydantic-settings>=2.1.0         # Settings management
 python-multipart>=0.0.6         # Form data support
 
 # Database Integration
 psycopg2-binary>=2.9.7           # PostgreSQL adapter
+asyncpg>=0.29.0                   # Async PostgreSQL driver
 pgvector>=0.2.3                  # Vector extension for PostgreSQL
 sqlalchemy>=2.0.23               # ORM
 alembic>=1.13.1                  # Database migrations
@@ -55,8 +72,8 @@ python-dotenv>=1.0.0             # Environment variables
 pyyaml>=6.0.1                    # YAML configuration
 
 # HIPAA Compliance and Privacy
-anonymizer>=0.1.0                # Data anonymization
-audit-logger>=1.0.0              # Audit trail logging
+# anonymizer and audit-logger packages not available on PyPI
+# Using custom implementations in the codebase instead
 
 # Text-to-Speech
 edge-tts>=6.1.0                  # Microsoft Edge TTS (free, high-quality voices)
