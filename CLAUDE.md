@@ -1,6 +1,6 @@
 # memOS Server
 
-> **Updated**: 2026-01-13 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.89.0
+> **Updated**: 2026-01-13 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.90.0
 
 ## Quick Reference
 
@@ -399,6 +399,60 @@ cross_domain_severity_threshold: str = "warning"  # critical/warning/info
 - BALANCED preset: ✅ Synthesis prompt constraints effective
 - Technical accuracy: ✅ SRVO-062/068 troubleshooting verified against FANUC docs
 
+### Document Citations with Deduplication (2026-01-13)
+
+Enhanced RAG context generation with proper document name citations from the PDF Tools knowledge graph.
+
+**Problem Solved:**
+- Previously showed raw paths: `["Manual", "Chapter", "Section"]`
+- Now shows clean citations: `Fanuc R-30iA and R-30iB Manual > 12.10 - TROUBLESHOOTING (p. 276)`
+
+**Key Components:**
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `SourceDocument` | `core/document_graph_service.py` | Dataclass with `citation_name` property |
+| `_get_cited_documents()` | `core/document_graph_service.py` | Deduplication by document_id |
+| `get_context_for_rag()` | `core/document_graph_service.py` | Formatted context with citations |
+
+**Example Output:**
+```markdown
+## Relevant Technical Documentation
+
+### [1] Node 317f126b
+**Source:** Fanuc R-30iA and R-30iB Manual > 12.10 - TROUBLESHOOTING (p. 276)
+**Relevance:** 0.30
+12. DATA TRANSFER BETWEEN ROBOTS OVER ETHERNET...
+
+## Source Documents Referenced
+- **Fanuc R-30iA and R-30iB Manual** (manual) - 5 citations
+```
+
+**Features:**
+- **Clean document names**: Underscores replaced with spaces, "Manual" suffix added
+- **Section info**: Shows section title from document hierarchy
+- **Page numbers**: Displays page number when available from PDF metadata
+- **Deduplication**: Groups multiple results from same document with citation count
+- **Unified API format**: Handles `{success, data: {results: [...]}}` response structure
+
+**Usage:**
+```python
+from core.document_graph_service import document_graph_service
+
+# Get RAG context with document citations
+context = await document_graph_service.get_context_for_rag(
+    query="SRVO-063 encoder error",
+    context_type="troubleshooting",
+    max_tokens=2000
+)
+
+# Get search results with source documents
+results = await document_graph_service.search_documentation("SRVO-063")
+for r in results:
+    if r.source_document:
+        print(f"{r.source_document.citation_name} (p. {r.source_document.page_number})")
+```
+
 ---
 
 ## Reference Documentation
@@ -653,4 +707,4 @@ config = get_mem0_config(
 
 ---
 
-*Last Updated: 2026-01-12 | Added Mem0 integration documentation*
+*Last Updated: 2026-01-13 | Added document citations with deduplication*
