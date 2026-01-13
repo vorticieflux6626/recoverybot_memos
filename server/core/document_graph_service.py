@@ -302,13 +302,25 @@ class DocumentGraphService:
                 source_doc = None
                 if 'source_document' in r and r['source_document']:
                     sd = r['source_document']
+
+                    # Get page number from source_document or fallback to node metadata
+                    page_number = sd.get('page_number')
+                    if page_number is None:
+                        # Check node metadata for page info (sections have page_start/page_end)
+                        metadata = r.get('metadata', {})
+                        page_number = (
+                            metadata.get('page_num') or
+                            metadata.get('page_start') or
+                            metadata.get('page_number')
+                        )
+
                     source_doc = SourceDocument(
                         document_id=sd.get('document_id', ''),
                         title=sd.get('title', ''),
                         document_type=sd.get('document_type', 'manual'),
                         section_title=sd.get('section_title'),
                         section_path=sd.get('section_path'),
-                        page_number=sd.get('page_number'),
+                        page_number=page_number,
                         robot_models=sd.get('robot_models')
                     )
 
