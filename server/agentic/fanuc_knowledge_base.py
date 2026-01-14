@@ -361,6 +361,208 @@ TROUBLESHOOTING_PATTERNS: Dict[str, TroubleshootingPattern] = {
             "System reliability",
             "Preventive maintenance"
         ]
+    ),
+
+    "complete_signal_loss_position": TroubleshootingPattern(
+        symptom=(
+            "Robot output (DO/RO) completely fails to activate at certain positions "
+            "and/or high speeds. Signal doesn't fire at all (not delayed). "
+            "Problem is position-dependent and worsens with speed."
+        ),
+        root_cause=(
+            "Electrical wiring issue: loose connector, damaged cable, or intermittent "
+            "short that manifests under mechanical stress from robot motion."
+        ),
+        explanation=(
+            "Unlike timing issues where the output fires but at wrong position, "
+            "complete signal loss indicates an electrical problem:\n\n"
+            "1. LOOSE CONNECTOR: Robot motion causes flexing at connector joints. "
+            "At certain positions/speeds, the connector momentarily disconnects.\n\n"
+            "2. DAMAGED CABLE: Cable routing through robot arm experiences repeated "
+            "flexing. Internal wire breaks can cause intermittent open circuits.\n\n"
+            "3. POSITION-DEPENDENT SHORT: At certain arm configurations, cables may "
+            "pinch or contact metal, causing shorts that prevent signal transmission.\n\n"
+            "4. EMI/NOISE: High-speed servo motors generate electrical noise. "
+            "Unshielded signal cables near servo cables can have signals corrupted.\n\n"
+            "The fact that speed increases failure rate suggests mechanical stress "
+            "(vibration, acceleration forces) is breaking a marginal connection."
+        ),
+        solutions=[
+            "SOLUTION 1: Inspect all connectors in the signal path from controller "
+            "to actuator. Look for: loose pins, corrosion, bent contacts, strain relief issues.",
+
+            "SOLUTION 2: Check cable routing through robot arm. Look for: "
+            "pinch points, excessive bending, wear marks, cable ties too tight.",
+
+            "SOLUTION 3: Perform continuity test while manually moving robot arm "
+            "through problem positions. Use multimeter in continuity mode and listen "
+            "for intermittent breaks.",
+
+            "SOLUTION 4: Add ferrite chokes to signal cables near servo motors "
+            "and drives to reduce EMI pickup. Route signal cables away from power cables.",
+
+            "SOLUTION 5: Check for ground loops. Ensure single-point grounding. "
+            "Verify shield connections on cables.",
+
+            "SOLUTION 6: Temporarily bypass suspect cable sections with new cable "
+            "to isolate the fault location.",
+
+            "SOLUTION 7: Check controller I/O board for cold solder joints or "
+            "damaged components. Vibration can cause board-level failures."
+        ],
+        technical_details=(
+            "Diagnostic indicators for electrical vs. timing issues:\n"
+            "- ELECTRICAL: Signal never fires (0V at actuator during failure)\n"
+            "- TIMING: Signal fires but at wrong position (scope shows pulse)\n\n"
+            "Common failure points:\n"
+            "- J1-J3 connectors: High stress from arm rotation\n"
+            "- Cable carrier/drag chain: Repeated flexing causes fatigue\n"
+            "- Tool flange connector: End-of-arm vibration\n"
+            "- I/O board edge connectors: Vibration loosens connections\n\n"
+            "EMI susceptibility:\n"
+            "- Unshielded cables within 6 inches of servo cables: HIGH risk\n"
+            "- Long cable runs (>10m): Increased antenna effect\n"
+            "- 24V signals more robust than 5V TTL signals"
+        ),
+        related_topics=[
+            "Cable routing",
+            "Connector inspection",
+            "EMI shielding",
+            "Continuity testing",
+            "Ground loops",
+            "I/O board diagnostics"
+        ]
+    ),
+
+    "emi_interference_high_speed": TroubleshootingPattern(
+        symptom=(
+            "I/O signals become unreliable at high robot speeds. Outputs may fail "
+            "to turn on, turn on spuriously, or show erratic behavior. "
+            "Problem correlates with servo motor activity, not just position."
+        ),
+        root_cause=(
+            "Electromagnetic interference (EMI) from servo motors and drives "
+            "coupling into unshielded or poorly routed signal cables."
+        ),
+        explanation=(
+            "High-speed robot motion requires rapid servo motor acceleration, "
+            "which generates significant electrical noise:\n\n"
+            "1. PWM SWITCHING NOISE: Servo drives use PWM at 4-16kHz. This creates "
+            "high-frequency noise that can couple into nearby cables.\n\n"
+            "2. MOTOR BACK-EMF: During deceleration, motors generate voltage spikes "
+            "that can propagate through the electrical system.\n\n"
+            "3. CABLE COUPLING: Signal cables routed parallel to motor cables act "
+            "as antennas, picking up induced voltages.\n\n"
+            "At low speeds, noise levels are lower and may not cross the threshold "
+            "to cause signal corruption. At high speeds, noise increases with "
+            "motor current and switching frequency."
+        ),
+        solutions=[
+            "SOLUTION 1: Install ferrite chokes on signal cables, especially "
+            "near servo drives and motors. Use snap-on ferrites for easy installation.",
+
+            "SOLUTION 2: Separate signal cables from motor/power cables by at least "
+            "6 inches. Cross at 90° angles if crossing is unavoidable.",
+
+            "SOLUTION 3: Use shielded cables for all I/O signals. Connect shield "
+            "at controller end only (single-point ground).",
+
+            "SOLUTION 4: Add RC snubber circuits across inductive loads (valves, relays) "
+            "to suppress switching transients.",
+
+            "SOLUTION 5: Verify proper grounding of robot frame, controller cabinet, "
+            "and all peripheral equipment. Poor grounding amplifies EMI.",
+
+            "SOLUTION 6: Check for damaged cable shielding. Even small breaks in "
+            "shield continuity can allow EMI ingress."
+        ],
+        technical_details=(
+            "EMI frequency ranges:\n"
+            "- Servo PWM: 4-16kHz fundamental, harmonics to 100kHz+\n"
+            "- Motor commutation: Depends on speed, typically 100Hz-10kHz\n"
+            "- Switching transients: Broadband, nanosecond rise times\n\n"
+            "Ferrite choke selection:\n"
+            "- Impedance: 100-500Ω at 100MHz typical\n"
+            "- Current rating: Must exceed signal current\n"
+            "- Split-core type allows installation without disconnecting cables\n\n"
+            "Shielding effectiveness:\n"
+            "- Braided shield: Good for low frequencies (<1MHz)\n"
+            "- Foil shield: Better for high frequencies (>1MHz)\n"
+            "- Combination foil+braid: Best overall protection"
+        ),
+        related_topics=[
+            "EMI shielding",
+            "Ferrite chokes",
+            "Cable routing",
+            "Grounding",
+            "Servo drive noise",
+            "Signal integrity"
+        ]
+    ),
+
+    "connector_failure_vibration": TroubleshootingPattern(
+        symptom=(
+            "I/O signals work when robot is stationary but fail during motion. "
+            "Tapping on connectors or cables may temporarily restore function. "
+            "Problem is vibration-related, not position-specific."
+        ),
+        root_cause=(
+            "Mechanical connector failure: fretting corrosion, loose pins, "
+            "or cold solder joints exacerbated by vibration during motion."
+        ),
+        explanation=(
+            "Robot motion generates vibration throughout the structure. "
+            "Marginal electrical connections that work when static can fail "
+            "under vibration:\n\n"
+            "1. FRETTING CORROSION: Micro-motion at contact surfaces wears away "
+            "plating and creates oxide layer, increasing resistance.\n\n"
+            "2. LOOSE PINS: Connector pins not fully seated or with worn "
+            "retention clips can intermittently disconnect.\n\n"
+            "3. COLD SOLDER JOINTS: Poor solder connections on PCBs crack "
+            "under thermal cycling and vibration.\n\n"
+            "4. CRIMP FAILURES: Improperly crimped wire terminals can pull "
+            "out under vibration stress."
+        ),
+        solutions=[
+            "SOLUTION 1: Disconnect and reconnect all connectors in signal path "
+            "to wipe contact surfaces and reseat pins.",
+
+            "SOLUTION 2: Apply contact cleaner/enhancer (DeoxIT or similar) "
+            "to connector contacts to remove oxidation.",
+
+            "SOLUTION 3: Check crimp connections by gentle tug test. "
+            "Re-crimp any suspect terminals.",
+
+            "SOLUTION 4: Inspect PCB solder joints under magnification. "
+            "Reflow any dull, cracked, or cold joints.",
+
+            "SOLUTION 5: Add strain relief to cables at connector entry points "
+            "to reduce mechanical stress on connections.",
+
+            "SOLUTION 6: Replace suspect connectors with new ones. "
+            "Use connectors rated for industrial vibration environments."
+        ],
+        technical_details=(
+            "Vibration-induced failure modes:\n"
+            "- Fretting: Occurs at contact interfaces, 10-100μm displacement\n"
+            "- Contact bounce: Momentary opens during vibration peaks\n"
+            "- Wire fatigue: Stranded wire breaks at crimp point\n\n"
+            "Visual inspection indicators:\n"
+            "- Dull/gray contacts: Oxidation or fretting wear\n"
+            "- Green/white deposits: Corrosion\n"
+            "- Cracked solder: Cold joint or thermal fatigue\n"
+            "- Loose housing: Worn retention features\n\n"
+            "Diagnostic technique:\n"
+            "Tap test: While monitoring signal, tap connectors and cable runs. "
+            "Intermittent signal = bad connection at that location."
+        ),
+        related_topics=[
+            "Connector maintenance",
+            "Fretting corrosion",
+            "Solder joint inspection",
+            "Crimp connections",
+            "Vibration resistance"
+        ]
     )
 }
 
@@ -526,6 +728,14 @@ def search_knowledge_base(query: str) -> List[Dict[str, Any]]:
             score += 0.8
         if "troubleshoot" in query_lower:
             score += 0.5
+        # Electrical/wiring-specific matching
+        electrical_keywords = ["wiring", "wire", "cable", "connector", "short", "emi",
+                               "interference", "signal loss", "electrical", "vibration"]
+        for kw in electrical_keywords:
+            if kw in query_lower and kw in pattern.explanation.lower():
+                score += 1.5
+            elif kw in query_lower and kw in pattern.root_cause.lower():
+                score += 1.2
 
         if score > 0:
             solutions_text = "\n".join(f"- {s}" for s in pattern.solutions)
@@ -609,7 +819,18 @@ ROBOTICS_QUERY_EXPANSIONS: Dict[str, List[str]] = {
     # Programming
     "karel": ["KAREL program", "PC program", "robot programming"],
     "tp program": ["teach pendant program", "motion program", "job program"],
-    "macro": ["macro program", "subprogram", "utility program"]
+    "macro": ["macro program", "subprogram", "utility program"],
+
+    # Electrical/Wiring troubleshooting
+    "wiring": ["cable", "connector", "wire harness", "electrical connection"],
+    "short": ["short circuit", "ground fault", "electrical short"],
+    "emi": ["electromagnetic interference", "noise", "signal interference", "RFI"],
+    "interference": ["EMI", "noise pickup", "signal corruption"],
+    "connector": ["terminal", "plug", "electrical connector", "pin connection"],
+    "signal loss": ["intermittent signal", "open circuit", "connection failure"],
+    "vibration": ["mechanical vibration", "connector vibration", "cable fatigue"],
+    "ground": ["grounding", "earth ground", "ground loop", "shield ground"],
+    "ferrite": ["ferrite choke", "EMI filter", "noise suppression"]
 }
 
 
