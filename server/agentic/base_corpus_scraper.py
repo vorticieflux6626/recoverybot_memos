@@ -709,39 +709,51 @@ class BaseCorpusScraper(ABC):
         html = re.sub(r"<!--.*?-->", "", html, flags=re.DOTALL)
 
         # Try to find main content areas
+        # Use greedy matching and validate content length at each step
         content = ""
+        min_content_len = 200  # Minimum chars to consider valid
 
-        # Look for article content
+        def clean_and_check(raw: str) -> str:
+            """Remove HTML tags and check if content is meaningful."""
+            text = re.sub(r"<[^>]+>", " ", raw)
+            text = re.sub(r"\s+", " ", text).strip()
+            return text if len(text) >= min_content_len else ""
+
+        # Look for article content (greedy to capture nested tags)
         article_match = re.search(
-            r"<article[^>]*>(.*?)</article>",
+            r"<article[^>]*>(.*)</article>",
             html, flags=re.DOTALL | re.IGNORECASE
         )
         if article_match:
-            content = article_match.group(1)
-        else:
-            # Look for main content div
+            content = clean_and_check(article_match.group(1))
+
+        # Look for main tag
+        if not content:
             main_match = re.search(
-                r'<(main|div)[^>]*class="[^"]*content[^"]*"[^>]*>(.*?)</\1>',
+                r"<main[^>]*>(.*)</main>",
                 html, flags=re.DOTALL | re.IGNORECASE
             )
             if main_match:
-                content = main_match.group(2)
-            else:
-                # Look for post content (forums)
-                post_match = re.search(
-                    r'<div[^>]*class="[^"]*(?:post|message|thread)[^"]*"[^>]*>(.*?)</div>',
-                    html, flags=re.DOTALL | re.IGNORECASE
-                )
-                if post_match:
-                    content = post_match.group(1)
-                else:
-                    # Fall back to body
-                    body_match = re.search(
-                        r"<body[^>]*>(.*?)</body>",
-                        html, flags=re.DOTALL | re.IGNORECASE
-                    )
-                    if body_match:
-                        content = body_match.group(1)
+                content = clean_and_check(main_match.group(1))
+
+        # Look for post content (forums) - find all and concatenate
+        if not content:
+            post_matches = re.findall(
+                r'<div[^>]*class="[^"]*(?:post-content|message-body|postcontent|postbody)[^"]*"[^>]*>(.*?)</div>',
+                html, flags=re.DOTALL | re.IGNORECASE
+            )
+            if post_matches:
+                combined = " ".join(post_matches)
+                content = clean_and_check(combined)
+
+        # Fall back to body (most reliable for unknown layouts)
+        if not content:
+            body_match = re.search(
+                r"<body[^>]*>(.*)</body>",
+                html, flags=re.DOTALL | re.IGNORECASE
+            )
+            if body_match:
+                content = clean_and_check(body_match.group(1))
 
         # Remove remaining HTML tags
         content = re.sub(r"<[^>]+>", " ", content)
