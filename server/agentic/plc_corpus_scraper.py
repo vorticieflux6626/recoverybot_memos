@@ -40,6 +40,7 @@ import httpx
 
 from .content_cache import get_content_cache
 from .llm_config import get_llm_config
+from .user_agent_config import UserAgents
 from .domain_corpus import (
     DomainCorpus,
     DomainSchema,
@@ -465,7 +466,7 @@ class PLCCorpusScraper:
                     timeout=30.0,
                     follow_redirects=True,
                     headers={
-                        "User-Agent": "PLC-Corpus-Builder/1.0 (Educational/Research)",
+                        "User-Agent": UserAgents.PLC_CORPUS_BUILDER,
                         "Accept": "text/html,application/xhtml+xml"
                     }
                 ) as client:

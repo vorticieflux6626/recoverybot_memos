@@ -9,7 +9,7 @@ Based on the Implementation Plan for DeepSeek-R1 Query Classification.
 
 import json
 import logging
-import aiohttp
+import httpx
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from enum import Enum
@@ -144,12 +144,12 @@ class QueryClassifier:
             return self._available_models
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.ollama_url}/api/tags") as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        self._available_models = [m["name"] for m in data.get("models", [])]
-                        return self._available_models
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+                response = await client.get(f"{self.ollama_url}/api/tags")
+                if response.status_code == 200:
+                    data = response.json()
+                    self._available_models = [m["name"] for m in data.get("models", [])]
+                    return self._available_models
         except Exception as e:
             logger.warning(f"Failed to get Ollama models: {e}")
 
@@ -280,38 +280,37 @@ class QueryClassifier:
         logger.info(f"Classifying query with {model} via direct Ollama: {query[:50]}...")
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+                response = await client.post(
                     f"{self.ollama_url}/api/generate",
                     json={
                         "model": model,
                         "prompt": prompt,
                         "stream": False,
                         **CLASSIFIER_PARAMS
-                    },
-                    timeout=aiohttp.ClientTimeout(total=60)
-                ) as resp:
-                    if resp.status != 200:
-                        logger.error(f"Ollama API error: {resp.status}")
-                        return self._default_classification(query)
+                    }
+                )
+                if response.status_code != 200:
+                    logger.error(f"Ollama API error: {response.status_code}")
+                    return self._default_classification(query)
 
-                    data = await resp.json()
-                    response_text = data.get("response", "")
+                data = response.json()
+                response_text = data.get("response", "")
 
-                    # Track context utilization
-                    if request_id:
-                        metrics = get_performance_metrics()
-                        metrics.record_context_utilization(
-                            request_id=request_id,
-                            agent_name="query_classifier",
-                            model_name=model,
-                            input_text=prompt,
-                            output_text=response_text,
-                            context_window=get_model_context_window(model)
-                        )
+                # Track context utilization
+                if request_id:
+                    metrics = get_performance_metrics()
+                    metrics.record_context_utilization(
+                        request_id=request_id,
+                        agent_name="query_classifier",
+                        model_name=model,
+                        input_text=prompt,
+                        output_text=response_text,
+                        context_window=get_model_context_window(model)
+                    )
 
-                    # Parse the JSON response
-                    return self._parse_classification(response_text, query)
+                # Parse the JSON response
+                return self._parse_classification(response_text, query)
 
         except Exception as e:
             logger.error(f"Direct Ollama classification failed: {e}")

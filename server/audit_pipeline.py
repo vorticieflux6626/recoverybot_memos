@@ -5,7 +5,7 @@ Tests multiple presets, captures timing, SSE events, and response quality.
 """
 
 import asyncio
-import aiohttp
+import httpx
 import json
 import time
 from datetime import datetime
@@ -60,20 +60,20 @@ async def test_gateway_stream(query: str, preset: str, timeout: int = 180) -> di
     }
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout)) as client:
+            async with client.stream(
+                "POST",
                 f"{BASE_URL}/api/v1/search/gateway/stream",
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=timeout)
+                json=payload
             ) as response:
                 results["timing"]["first_byte"] = time.time() - start_time
 
-                if response.status != 200:
-                    results["errors"].append(f"HTTP {response.status}")
+                if response.status_code != 200:
+                    results["errors"].append(f"HTTP {response.status_code}")
                     return results
 
                 buffer = ""
-                async for chunk in response.content:
+                async for chunk in response.aiter_bytes():
                     text = chunk.decode('utf-8')
                     buffer += text
 
@@ -146,29 +146,27 @@ async def test_universal_search(query: str, preset: str, timeout: int = 180) -> 
     }
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout)) as client:
+            response = await client.post(
                 f"{BASE_URL}/api/v1/search/universal",
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=timeout)
-            ) as response:
-                results["timing"]["response_time"] = time.time() - start_time
+                json=payload
+            )
+            results["timing"]["response_time"] = time.time() - start_time
 
-                if response.status != 200:
-                    results["errors"].append(f"HTTP {response.status}")
-                    text = await response.text()
-                    results["errors"].append(text[:500])
-                    return results
+            if response.status_code != 200:
+                results["errors"].append(f"HTTP {response.status_code}")
+                results["errors"].append(response.text[:500])
+                return results
 
-                data = await response.json()
+            data = response.json()
 
-                if data.get("success"):
-                    resp_data = data.get("data", {})
-                    results["response"] = resp_data.get("synthesis", resp_data.get("response", ""))[:500]
-                    results["sources"] = resp_data.get("sources", [])
-                    results["confidence"] = resp_data.get("confidence")
-                else:
-                    results["errors"].append(data.get("errors", []))
+            if data.get("success"):
+                resp_data = data.get("data", {})
+                results["response"] = resp_data.get("synthesis", resp_data.get("response", ""))[:500]
+                results["sources"] = resp_data.get("sources", [])
+                results["confidence"] = resp_data.get("confidence")
+            else:
+                results["errors"].append(data.get("errors", []))
 
     except asyncio.TimeoutError:
         results["errors"].append(f"Timeout after {timeout}s")

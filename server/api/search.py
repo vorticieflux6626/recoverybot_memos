@@ -5558,82 +5558,82 @@ async def get_troubleshooting_path(request: TroubleshootRequest):
         settings = get_settings()
         pdf_api_url = getattr(settings, 'pdf_api_url', 'http://localhost:8002')
 
-        async with aiohttp.ClientSession() as session:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
             url = f"{pdf_api_url}/api/v1/search/hsea/troubleshoot/{request.error_code}"
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                data = resp.json()
 
-                    if data.get("success"):
-                        result = data.get("data", {})
-                        context = result.get("context", {})
-                        metadata = context.get("metadata", {})
+                if data.get("success"):
+                    result = data.get("data", {})
+                    context = result.get("context", {})
+                    metadata = context.get("metadata", {})
 
-                        # Build troubleshooting steps from the SRVO error info
-                        # The actual cause/remedy are in metadata
-                        steps = []
+                    # Build troubleshooting steps from the SRVO error info
+                    # The actual cause/remedy are in metadata
+                    steps = []
 
-                        # Step 1: Diagnosis (cause from metadata)
-                        cause = metadata.get("cause") or context.get("cause")
-                        if cause:
-                            steps.append({
-                                "node_id": f"{request.error_code}_diagnosis",
-                                "title": f"{metadata.get('title', request.error_code)} - Cause",
-                                "content": cause,
-                                "step_type": "diagnosis",
-                                "relevance_score": 1.0,
-                                "hop_number": 0,
-                                "metadata": {"error_code": request.error_code}
-                            })
+                    # Step 1: Diagnosis (cause from metadata)
+                    cause = metadata.get("cause") or context.get("cause")
+                    if cause:
+                        steps.append({
+                            "node_id": f"{request.error_code}_diagnosis",
+                            "title": f"{metadata.get('title', request.error_code)} - Cause",
+                            "content": cause,
+                            "step_type": "diagnosis",
+                            "relevance_score": 1.0,
+                            "hop_number": 0,
+                            "metadata": {"error_code": request.error_code}
+                        })
 
-                        # Step 2: Solution (remedy from metadata)
-                        remedy = metadata.get("remedy") or context.get("remedy")
-                        if remedy:
-                            steps.append({
-                                "node_id": f"{request.error_code}_remedy",
-                                "title": "Remedy",
-                                "content": remedy,
-                                "step_type": "solution",
-                                "relevance_score": 1.0,
-                                "hop_number": 1,
-                                "metadata": {"error_code": request.error_code}
-                            })
+                    # Step 2: Solution (remedy from metadata)
+                    remedy = metadata.get("remedy") or context.get("remedy")
+                    if remedy:
+                        steps.append({
+                            "node_id": f"{request.error_code}_remedy",
+                            "title": "Remedy",
+                            "content": remedy,
+                            "step_type": "solution",
+                            "relevance_score": 1.0,
+                            "hop_number": 1,
+                            "metadata": {"error_code": request.error_code}
+                        })
 
-                        # Step 3: Additional notes if present
-                        note = metadata.get("note")
-                        if note:
-                            steps.append({
-                                "node_id": f"{request.error_code}_note",
-                                "title": "Note",
-                                "content": note,
-                                "step_type": "info",
-                                "relevance_score": 0.9,
-                                "hop_number": 2,
-                                "metadata": {"error_code": request.error_code}
-                            })
+                    # Step 3: Additional notes if present
+                    note = metadata.get("note")
+                    if note:
+                        steps.append({
+                            "node_id": f"{request.error_code}_note",
+                            "title": "Note",
+                            "content": note,
+                            "step_type": "info",
+                            "relevance_score": 0.9,
+                            "hop_number": 2,
+                            "metadata": {"error_code": request.error_code}
+                        })
 
-                        # Extract related from PDF Tools response
-                        related = []
-                        for r in result.get("related_codes", []):
-                            code = r.get("error_code")
-                            if code:
-                                related.append(code)
+                    # Extract related from PDF Tools response
+                    related = []
+                    for r in result.get("related_codes", []):
+                        code = r.get("error_code")
+                        if code:
+                            related.append(code)
 
-                        return TroubleshootResponse(
-                            success=True,
-                            error_code=request.error_code,
-                            category=context.get("category"),
-                            steps=steps,
-                            related_errors=related
-                        )
-                    else:
-                        raise HTTPException(status_code=500, detail="PDF Tools returned error")
-                elif resp.status == 404:
-                    raise HTTPException(status_code=404, detail=f"Error code {request.error_code} not found")
+                    return TroubleshootResponse(
+                        success=True,
+                        error_code=request.error_code,
+                        category=context.get("category"),
+                        steps=steps,
+                        related_errors=related
+                    )
                 else:
-                    raise HTTPException(status_code=resp.status, detail=await resp.text())
+                    raise HTTPException(status_code=500, detail="PDF Tools returned error")
+            elif resp.status_code == 404:
+                raise HTTPException(status_code=404, detail=f"Error code {request.error_code} not found")
+            else:
+                raise HTTPException(status_code=resp.status_code, detail=resp.text)
 
-    except aiohttp.ClientError as e:
+    except httpx.HTTPError as e:
         logger.error(f"PDF Tools connection failed: {e}")
         raise HTTPException(status_code=503, detail=f"PDF Tools unavailable: {str(e)}")
     except Exception as e:
@@ -6248,7 +6248,7 @@ async def hsea_stats():
 # HSEA Sync from PDF Extraction Tools
 # =============================================================================
 
-import aiohttp
+import httpx
 
 class HSEASyncRequest(BaseModel):
     """Request model for syncing HSEA from PDF Tools."""
@@ -6282,7 +6282,7 @@ async def hsea_sync_from_pdf_tools(
 
     try:
         # Step 1: Fetch entities from PDF Tools
-        async with aiohttp.ClientSession() as session:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
             params = {
                 "limit": request.limit,
                 "offset": request.offset,
@@ -6291,17 +6291,16 @@ async def hsea_sync_from_pdf_tools(
             if request.category:
                 params["category"] = request.category
 
-            async with session.get(
+            resp = await client.get(
                 f"{pdf_api_url}/api/v1/search/hsea/export/entities",
-                params=params,
-                timeout=aiohttp.ClientTimeout(total=60)
-            ) as resp:
-                if resp.status != 200:
-                    raise HTTPException(
-                        status_code=resp.status,
-                        detail=f"PDF Tools export failed: {await resp.text()}"
-                    )
-                export_data = await resp.json()
+                params=params
+            )
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=resp.status_code,
+                    detail=f"PDF Tools export failed: {resp.text}"
+                )
+            export_data = resp.json()
 
         if not export_data.get("success"):
             raise HTTPException(
@@ -6314,27 +6313,26 @@ async def hsea_sync_from_pdf_tools(
 
         # Step 2: Generate embeddings if needed
         if request.generate_embeddings:
-            async with aiohttp.ClientSession() as session:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
                 for entity in entities:
                     # Create text for embedding from entity fields
                     embed_text = f"{entity['canonical_form']} {entity['title']} {entity.get('cause', '')} {entity.get('remedy', '')}"
                     embed_text = embed_text.strip()
 
                     try:
-                        async with session.post(
+                        resp = await client.post(
                             f"{pdf_api_url}/api/v1/embeddings/generate",
-                            json={"text": embed_text, "dimensions": [128, 256, 768]},
-                            timeout=aiohttp.ClientTimeout(total=30)
-                        ) as resp:
-                            if resp.status == 200:
-                                embed_data = await resp.json()
-                                if embed_data.get("success"):
-                                    embeddings = embed_data["data"]["embeddings"]
-                                    entity["embeddings"] = {
-                                        "systemic": embeddings.get("128d", []),
-                                        "structural": embeddings.get("256d", []),
-                                        "substantive": embeddings.get("768d", [])
-                                    }
+                            json={"text": embed_text, "dimensions": [128, 256, 768]}
+                        )
+                        if resp.status_code == 200:
+                            embed_data = resp.json()
+                            if embed_data.get("success"):
+                                embeddings = embed_data["data"]["embeddings"]
+                                entity["embeddings"] = {
+                                    "systemic": embeddings.get("128d", []),
+                                    "structural": embeddings.get("256d", []),
+                                    "substantive": embeddings.get("768d", [])
+                                }
                     except Exception as e:
                         logger.warning(f"Failed to generate embeddings for {entity['canonical_form']}: {e}")
 
@@ -6381,7 +6379,7 @@ async def hsea_sync_from_pdf_tools(
             "errors": []
         })
 
-    except aiohttp.ClientError as e:
+    except httpx.HTTPError as e:
         logger.error(f"HSEA sync connection error: {e}")
         raise HTTPException(
             status_code=503,
@@ -6404,15 +6402,12 @@ async def hsea_sync_status():
 
     try:
         # Get PDF Tools stats
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{pdf_api_url}/api/v1/search/hsea/export/stats",
-                timeout=aiohttp.ClientTimeout(total=30)
-            ) as resp:
-                if resp.status == 200:
-                    pdf_stats = await resp.json()
-                else:
-                    pdf_stats = {"success": False, "error": f"Status {resp.status}"}
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            resp = await client.get(f"{pdf_api_url}/api/v1/search/hsea/export/stats")
+            if resp.status_code == 200:
+                pdf_stats = resp.json()
+            else:
+                pdf_stats = {"success": False, "error": f"Status {resp.status_code}"}
 
         # Get memOS HSEA stats
         controller = get_hsea_controller()

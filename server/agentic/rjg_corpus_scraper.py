@@ -41,6 +41,7 @@ import httpx
 
 from .content_cache import get_content_cache
 from .llm_config import get_llm_config
+from .user_agent_config import UserAgents
 from .domain_corpus import (
     DomainCorpus,
     DomainSchema,
@@ -412,7 +413,7 @@ class RJGCorpusScraper:
                     timeout=30.0,
                     follow_redirects=True,
                     headers={
-                        "User-Agent": "RJG-Corpus-Builder/1.0 (Educational/Research)",
+                        "User-Agent": UserAgents.RJG_CORPUS_BUILDER,
                         "Accept": "text/html,application/xhtml+xml"
                     }
                 ) as client:

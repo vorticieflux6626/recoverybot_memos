@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 
 from models.ollama_model import OllamaModelSpec
+from agentic.user_agent_config import UserAgents
 
 logger = logging.getLogger("services.model_scraper")
 
@@ -68,7 +69,7 @@ class OllamaModelScraper:
             self._http_client = httpx.AsyncClient(
                 timeout=30.0,
                 follow_redirects=True,
-                headers={"User-Agent": "RecoveryBot-ModelScraper/1.0"}
+                headers={"User-Agent": UserAgents.MODEL_SCRAPER}
             )
         return self._http_client
 

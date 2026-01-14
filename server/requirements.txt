@@ -46,12 +46,14 @@ python-jose[cryptography]>=3.3.0 # JWT handling
 
 # Redis and Caching
 redis>=5.0.1                     # Redis client (includes redis.asyncio for async)
+msgpack>=1.0.7                   # MessagePack serialization for Redis cache (faster than JSON)
 qdrant-client>=1.6.0             # Qdrant vector DB for semantic cache
 
 # HTTP and Web
-httpx>=0.25.2                    # HTTP client for Ollama
-aiohttp>=3.9.0                   # Async HTTP client for web requests
+httpx>=0.25.2                    # Primary async HTTP client (replaces aiohttp in production)
+aiohttp>=3.9.0                   # Async HTTP (test files only - production migrated to httpx 2026-01)
 beautifulsoup4>=4.12.0           # HTML parsing for web scraping
+aiometer>=0.5.0                  # Async rate limiting for web scraping
 
 # LLM Integration
 openai>=1.3.8                    # OpenAI-compatible client

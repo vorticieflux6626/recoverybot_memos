@@ -24,6 +24,7 @@ import httpx
 
 from .models import WebSearchResult
 from .search_metrics import get_search_metrics
+from .user_agent_config import UserAgents, get_browser_user_agent
 
 # Lazy settings import to avoid circular dependencies
 _settings = None
@@ -682,7 +683,7 @@ class DuckDuckGoProvider(SearchProvider):
         for attempt in range(self.MAX_RETRIES + 1):
             try:
                 headers = {
-                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+                    "User-Agent": get_browser_user_agent()  # Browser UA needed for DDG
                 }
                 data = {"q": query}
 

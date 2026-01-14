@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
-import aiohttp
+import httpx
 
 logger = logging.getLogger("agentic.kv_cache_service")
 
@@ -139,24 +139,24 @@ class KVCacheService:
         # Stats
         self._stats = CacheStats()
 
-        # HTTP session
-        self._session: Optional[aiohttp.ClientSession] = None
+        # HTTP client
+        self._client: Optional[httpx.AsyncClient] = None
 
         logger.info(
             f"KVCacheService initialized: backend={backend.value}, "
             f"url={ollama_url}, threshold={warm_on_access_threshold}"
         )
 
-    async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create HTTP session"""
-        if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
-        return self._session
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create HTTP client"""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient()
+        return self._client
 
     async def close(self):
-        """Close HTTP session"""
-        if self._session and not self._session.closed:
-            await self._session.close()
+        """Close HTTP client"""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
     def _compute_hash(self, content: str) -> str:
         """Compute content hash for deduplication"""
@@ -251,7 +251,7 @@ class KVCacheService:
         a call with max_tokens=1 or stop sequence, we warm the cache
         without generating much output.
         """
-        session = await self._get_session()
+        client = await self._get_client()
 
         # Use generate endpoint with minimal output
         payload = {
@@ -266,17 +266,17 @@ class KVCacheService:
         }
 
         try:
-            async with session.post(
+            response = await client.post(
                 f"{self.ollama_url}/api/generate",
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=60)
-            ) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    logger.debug(f"Ollama warm response: {result.get('eval_count', 0)} tokens")
-                else:
-                    text = await response.text()
-                    logger.warning(f"Ollama warm failed: {response.status} - {text[:200]}")
+                timeout=httpx.Timeout(60.0)
+            )
+            if response.status_code == 200:
+                result = response.json()
+                logger.debug(f"Ollama warm response: {result.get('eval_count', 0)} tokens")
+            else:
+                text = response.text
+                logger.warning(f"Ollama warm failed: {response.status_code} - {text[:200]}")
 
         except asyncio.TimeoutError:
             logger.warning("Ollama warm request timed out")
@@ -295,7 +295,7 @@ class KVCacheService:
             logger.warning("vLLM URL not configured, skipping warm")
             return
 
-        session = await self._get_session()
+        client = await self._get_client()
 
         payload = {
             "model": model,
@@ -305,16 +305,16 @@ class KVCacheService:
         }
 
         try:
-            async with session.post(
+            response = await client.post(
                 f"{self.vllm_url}/v1/completions",
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=60)
-            ) as response:
-                if response.status == 200:
-                    logger.debug("vLLM prefix cached")
-                else:
-                    text = await response.text()
-                    logger.warning(f"vLLM warm failed: {response.status}")
+                timeout=httpx.Timeout(60.0)
+            )
+            if response.status_code == 200:
+                logger.debug("vLLM prefix cached")
+            else:
+                text = response.text
+                logger.warning(f"vLLM warm failed: {response.status_code}")
 
         except Exception as e:
             logger.error(f"vLLM warm error: {e}")

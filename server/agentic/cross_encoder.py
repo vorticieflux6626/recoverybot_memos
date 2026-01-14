@@ -19,7 +19,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
-import aiohttp
+import httpx
 import json
 
 from .llm_config import get_llm_config
@@ -84,7 +84,7 @@ class CrossEncoderReranker:
         self.model = model or llm_config.utility.cross_encoder.model
         self.batch_size = batch_size
         self.timeout = timeout
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._client: Optional[httpx.AsyncClient] = None
 
         # Statistics
         self.total_reranks = 0
@@ -92,13 +92,13 @@ class CrossEncoderReranker:
         self.total_time_ms = 0
         self.cache_hits = 0
 
-    async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create HTTP session."""
-        if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=self.timeout)
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create HTTP client."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(self.timeout)
             )
-        return self._session
+        return self._client
 
     async def _score_batch(
         self,
@@ -124,7 +124,7 @@ class CrossEncoderReranker:
         )
 
         try:
-            session = await self._get_session()
+            client = await self._get_client()
 
             payload = {
                 "model": self.model,
@@ -137,20 +137,20 @@ class CrossEncoderReranker:
                 }
             }
 
-            async with session.post(
+            response = await client.post(
                 f"{self.ollama_url}/api/generate",
                 json=payload
-            ) as response:
-                if response.status != 200:
-                    logger.warning(f"Cross-encoder LLM call failed: {response.status}")
-                    return [c.original_score for c in candidates]
+            )
+            if response.status_code != 200:
+                logger.warning(f"Cross-encoder LLM call failed: {response.status_code}")
+                return [c.original_score for c in candidates]
 
-                result = await response.json()
-                response_text = result.get("response", "").strip()
+            result = response.json()
+            response_text = result.get("response", "").strip()
 
-                # Parse scores from response
-                scores = self._parse_scores(response_text, len(candidates))
-                return scores
+            # Parse scores from response
+            scores = self._parse_scores(response_text, len(candidates))
+            return scores
 
         except Exception as e:
             logger.warning(f"Cross-encoder scoring failed: {e}")
@@ -277,9 +277,9 @@ class CrossEncoderReranker:
         }
 
     async def close(self):
-        """Close HTTP session."""
-        if self._session and not self._session.closed:
-            await self._session.close()
+        """Close HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
 
 # =============================================================================

@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
 from datetime import datetime, timezone
-import aiohttp
+import httpx
 
 from .llm_config import get_llm_config
 
@@ -470,8 +470,8 @@ JSON response:"""
 
     async def _call_ollama(self, prompt: str) -> str:
         """Call Ollama API"""
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+            response = await client.post(
                 f"{self.ollama_url}/api/generate",
                 json={
                     "model": self.planning_model,
@@ -481,13 +481,12 @@ JSON response:"""
                         "temperature": 0.3,
                         "num_predict": 2048
                     }
-                },
-                timeout=aiohttp.ClientTimeout(total=60)
-            ) as resp:
-                if resp.status != 200:
-                    raise Exception(f"Ollama API error: {resp.status}")
-                data = await resp.json()
-                return data.get("response", "")
+                }
+            )
+            if response.status_code != 200:
+                raise Exception(f"Ollama API error: {response.status_code}")
+            data = response.json()
+            return data.get("response", "")
 
     def _parse_planner_output(self, response: str, goal: str) -> PlannerOutput:
         """Parse LLM response into PlannerOutput"""

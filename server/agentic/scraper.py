@@ -24,11 +24,12 @@ import io
 import httpx
 import time
 
-from .content_cache import get_content_cache
+from .content_cache import get_content_cache, get_async_cache_adapter
 from .metrics import get_performance_metrics
 from .context_limits import get_model_context_window
 from .search_metrics import get_search_metrics
 from .llm_config import get_llm_config
+from .user_agent_config import UserAgents, get_browser_user_agent
 
 # Phase K.3: Table complexity scoring and Docling routing
 _table_scorer_instance = None
@@ -121,8 +122,10 @@ class ContentScraper:
     # Timeout for fetching
     FETCH_TIMEOUT = 30.0
 
-    # User agent for requests
-    USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    # User agent for requests (centralized config)
+    USER_AGENT = UserAgents.CONTENT_SCRAPER
+    # Browser-like UA for sites that block bots
+    BROWSER_USER_AGENT = get_browser_user_agent()
 
     # JS detection patterns in HTML content
     JS_FRAMEWORK_PATTERNS = [
@@ -456,10 +459,10 @@ class ContentScraper:
                 "error": f"Domain skipped: {skip_reason}"
             }
 
-        # Phase 2 Optimization: Check cache first
+        # Phase 2 Optimization: Check cache first (async Redis with fallback)
         if use_cache:
-            cache = get_content_cache()
-            cached = cache.get_content(url)
+            async_cache = get_async_cache_adapter()
+            cached = await async_cache.get_content(url)
             if cached:
                 logger.info(f"Cache hit for {url[:60]}...")
                 return cached
@@ -485,8 +488,7 @@ class ContentScraper:
                     duration_ms=duration_ms
                 )
                 if use_cache:
-                    cache = get_content_cache()
-                    cache.set_content(
+                    await async_cache.set_content(
                         url=url,
                         title=chain_result.get("title", ""),
                         content=chain_result.get("content", ""),
@@ -515,8 +517,7 @@ class ContentScraper:
                     duration_ms=duration_ms
                 )
                 if use_cache:
-                    cache = get_content_cache()
-                    cache.set_content(
+                    await async_cache.set_content(
                         url=url,
                         title=vl_result.get("title", ""),
                         content=vl_result.get("content", ""),
@@ -579,8 +580,7 @@ class ContentScraper:
 
             # Cache the result
             if use_cache and result.get("success"):
-                cache = get_content_cache()
-                cache.set_content(
+                await async_cache.set_content(
                     url=url,
                     title=result.get("title", ""),
                     content=result.get("content", ""),

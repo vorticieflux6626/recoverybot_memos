@@ -535,8 +535,149 @@ _cache_instance: Optional[ContentCache] = None
 
 
 def get_content_cache() -> ContentCache:
-    """Get the global content cache instance"""
+    """Get the global content cache instance (sync, SQLite-backed)"""
     global _cache_instance
     if _cache_instance is None:
         _cache_instance = ContentCache()
     return _cache_instance
+
+
+# =============================================================================
+# Async Redis Cache Integration (Phase 2 - 2026-01)
+# =============================================================================
+# The async methods below use the centralized Redis cache service for better
+# performance in async contexts. They provide the same interface as the sync
+# methods above but use Redis with circuit breaker and in-memory fallback.
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .redis_cache_service import RedisCacheService
+
+_redis_cache_instance: Optional["RedisCacheService"] = None
+
+
+async def get_async_content_cache() -> "RedisCacheService":
+    """
+    Get the async Redis cache instance for use in async contexts.
+
+    This is the preferred cache for async code paths (scraper, orchestrator).
+    Falls back to in-memory cache if Redis is unavailable.
+
+    Usage:
+        cache = await get_async_content_cache()
+        result = await cache.get_content(url)
+    """
+    global _redis_cache_instance
+    if _redis_cache_instance is None:
+        from .redis_cache_service import RedisCacheService
+        _redis_cache_instance = RedisCacheService()
+        await _redis_cache_instance.connect()
+    return _redis_cache_instance
+
+
+class AsyncContentCacheAdapter:
+    """
+    Adapter that provides async methods using Redis cache.
+
+    This allows gradual migration from sync SQLite to async Redis.
+    The sync ContentCache remains available for backward compatibility.
+    """
+
+    def __init__(self):
+        self._redis_cache: Optional["RedisCacheService"] = None
+        self._sync_cache: Optional[ContentCache] = None
+
+    async def _get_redis_cache(self) -> "RedisCacheService":
+        """Lazy initialization of Redis cache."""
+        if self._redis_cache is None:
+            self._redis_cache = await get_async_content_cache()
+        return self._redis_cache
+
+    def _get_sync_cache(self) -> ContentCache:
+        """Lazy initialization of sync fallback cache."""
+        if self._sync_cache is None:
+            self._sync_cache = get_content_cache()
+        return self._sync_cache
+
+    async def get_content(self, url: str) -> Optional[Dict[str, Any]]:
+        """Get cached content (async, Redis-backed)."""
+        cache = await self._get_redis_cache()
+        return await cache.get_content(url)
+
+    async def set_content(
+        self,
+        url: str,
+        title: str,
+        content: str,
+        content_type: str,
+        success: bool,
+        error: Optional[str] = None,
+        ttl_override: Optional[int] = None
+    ) -> bool:
+        """Cache content (async, Redis-backed)."""
+        cache = await self._get_redis_cache()
+        return await cache.set_content(
+            url=url,
+            title=title,
+            content=content,
+            content_type=content_type,
+            success=success,
+            error=error,
+            ttl_override=ttl_override
+        )
+
+    async def get_query_result(self, query: str) -> Optional[Dict[str, Any]]:
+        """Get cached query result (async, Redis-backed)."""
+        cache = await self._get_redis_cache()
+        return await cache.get_query_result(query)
+
+    async def set_query_result(
+        self,
+        query: str,
+        result: Dict[str, Any],
+        embedding: Optional[List[float]] = None,
+        ttl_override: Optional[int] = None
+    ) -> bool:
+        """Cache query result (async, Redis-backed)."""
+        cache = await self._get_redis_cache()
+        return await cache.set_query_result(
+            query=query,
+            result=result,
+            embedding=embedding,
+            ttl_override=ttl_override
+        )
+
+    async def find_similar_query(
+        self,
+        query_embedding: List[float],
+        similarity_threshold: float = 0.85
+    ) -> Optional[Dict[str, Any]]:
+        """Find similar cached query (async, Redis-backed)."""
+        cache = await self._get_redis_cache()
+        return await cache.find_similar_query(
+            query_embedding=query_embedding,
+            similarity_threshold=similarity_threshold
+        )
+
+    async def get_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        cache = await self._get_redis_cache()
+        return await cache.get_stats()
+
+    async def cleanup_expired(self) -> Tuple[int, int]:
+        """Cleanup expired entries."""
+        cache = await self._get_redis_cache()
+        return await cache.cleanup_expired()
+
+
+# Global async cache adapter instance
+_async_cache_adapter: Optional[AsyncContentCacheAdapter] = None
+
+
+def get_async_cache_adapter() -> AsyncContentCacheAdapter:
+    """Get the global async cache adapter instance."""
+    global _async_cache_adapter
+    if _async_cache_adapter is None:
+        _async_cache_adapter = AsyncContentCacheAdapter()
+    return _async_cache_adapter

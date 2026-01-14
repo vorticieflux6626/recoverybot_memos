@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-import aiohttp
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ class DoclingAdapter:
         circuit_breaker_timeout: float = 60.0,
     ):
         self.base_url = base_url.rstrip("/")
-        self.timeout = aiohttp.ClientTimeout(total=timeout)
+        self.timeout = httpx.Timeout(timeout)
         self.max_retries = max_retries
 
         # Circuit breaker state
@@ -133,14 +133,14 @@ class DoclingAdapter:
         self._cache_max_size = 100
 
         # HTTP client (created lazily)
-        self._client: Optional[aiohttp.ClientSession] = None
+        self._client: Optional[httpx.AsyncClient] = None
 
         logger.info(f"DoclingAdapter initialized with base_url={base_url}")
 
-    async def _get_client(self) -> aiohttp.ClientSession:
+    async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
-        if self._client is None or self._client.closed:
-            self._client = aiohttp.ClientSession(
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
                 timeout=self.timeout,
                 headers={"Content-Type": "application/json"}
             )
@@ -148,8 +148,8 @@ class DoclingAdapter:
 
     async def close(self) -> None:
         """Close HTTP client."""
-        if self._client and not self._client.closed:
-            await self._client.close()
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
     def _is_circuit_open(self) -> bool:
         """Check if circuit breaker is open."""
@@ -191,10 +191,10 @@ class DoclingAdapter:
         """Check if Docling service is healthy."""
         try:
             client = await self._get_client()
-            async with client.get(f"{self.base_url}/health") as response:
-                self._stats.last_health_check = datetime.now(timezone.utc)
-                self._stats.is_healthy = response.status == 200
-                return self._stats.is_healthy
+            response = await client.get(f"{self.base_url}/health")
+            self._stats.last_health_check = datetime.now(timezone.utc)
+            self._stats.is_healthy = response.status_code == 200
+            return self._stats.is_healthy
         except Exception as e:
             logger.warning(f"Docling health check failed: {e}")
             self._stats.last_health_check = datetime.now(timezone.utc)
@@ -255,23 +255,23 @@ class DoclingAdapter:
                 }
             }
 
-            async with client.post(
+            response = await client.post(
                 f"{self.base_url}/api/v1/documents/convert",
                 json=payload
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Docling conversion failed: {response.status} - {error_text}")
-                    self._record_failure()
-                    return None
+            )
+            if response.status_code != 200:
+                error_text = response.text
+                logger.error(f"Docling conversion failed: {response.status_code} - {error_text}")
+                self._record_failure()
+                return None
 
-                result = await response.json()
+            result = response.json()
 
         except asyncio.TimeoutError:
             logger.error(f"Docling request timeout for {source[:50]}")
             self._record_failure()
             return None
-        except aiohttp.ClientError as e:
+        except httpx.HTTPError as e:
             logger.error(f"Docling client error: {e}")
             self._record_failure()
             return None

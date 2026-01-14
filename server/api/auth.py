@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
 import jwt
-import requests
+import httpx
 from fastapi import APIRouter, HTTPException, Header, Depends
 from pydantic import BaseModel
 
@@ -83,14 +83,14 @@ async def login(credentials: dict):
     
     # Try PHP backend first
     try:
-        php_response = requests.post(
-            "https://deals.sparkonelabs.com/Recovery_Bot/api/auth/login",
-            json={"username": username, "password": password},
-            timeout=5
-        )
-        
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
+            php_response = await client.post(
+                "https://deals.sparkonelabs.com/Recovery_Bot/api/auth/login",
+                json={"username": username, "password": password}
+            )
+
         logger.info(f"PHP backend returned status {php_response.status_code}")
-        
+
         if php_response.status_code == 200:
             php_data = php_response.json()
             if php_data.get("success"):
@@ -103,7 +103,7 @@ async def login(credentials: dict):
                     refresh_token=php_data.get("refresh_token"),
                     expires_in=3600
                 )
-    
+
     except Exception as e:
         logger.warning(f"PHP backend error: {e}")
     
