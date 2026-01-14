@@ -27,6 +27,7 @@ from .search_metrics import get_search_metrics
 from .user_agent_config import UserAgents, get_browser_user_agent
 from .proxy_manager import get_proxy_manager
 from .cross_encoder_reranker import CrossEncoderReranker, RerankedResult
+from .fanuc_knowledge_base import expand_robotics_query, search_knowledge_base
 
 # Lazy settings import to avoid circular dependencies
 _settings = None
@@ -1207,6 +1208,18 @@ class SearcherAgent:
         "engineering.stackexchange.com",  # General engineering Q&A
         "linuxcnc.org",                # CNC retrofit community
 
+        # ===== Industrial Robotics Forums (Premium for Robot Queries) =====
+        "robotexchange.io",            # FANUC tips, how-to guides
+        "r/Fanuc",                     # Reddit FANUC community
+        "r/robotics",                  # Reddit robotics community
+        "r/PLC",                       # Reddit PLC community
+        "robotiq.com",                 # Universal Robots, grippers
+        "dof.robotiq.com",             # DoF community forum (UR, FANUC)
+        "ifr.org",                     # International Federation of Robotics
+        "roboticstomorrow.com",        # Industry news, technical articles
+        "coboticsworld.com",           # Collaborative robotics
+        "therobotreport.com",          # Robotics business/technology
+
         # ===== KraussMaffei Third-Party =====
         "pdfcoffee.com",               # MX1600 complete manual
         "opcturkey.com",               # MC4 Ethernet driver manual
@@ -1470,6 +1483,8 @@ class SearcherAgent:
         "fanuc.eu", "robot-forum.com", "techtransfer.fanucamerica.com",
         "fanucamerica.com", "diy-robotics.com", "therobotguyllc.com",
         "onerobotics.com", "mh142.com",  # KAREL tutorials, TP wiki
+        # Industrial Robotics Forums (Premium for Robot Queries)
+        "robotexchange.io", "dof.robotiq.com", "robotiq.com",
         # Industrial Forums (Highest Value for Troubleshooting)
         "control.com", "cnczone.com", "plctalk.net", "practicalmachinist.com",
         # Plastics Industry Technical
@@ -2161,11 +2176,47 @@ class SearcherAgent:
 
             # Map reranked results back to WebSearchResult
             reranked_results = []
+
+            # Detect if this is a robotics/FANUC query for domain-specific boosting
+            query_lower = query.lower()
+            is_robotics_query = any(kw in query_lower for kw in (
+                "fanuc", "robot", "servo", "motion", "cnc", "plc",
+                "gripper", "tcp", "teach pendant", "karel", "override"
+            ))
+
+            # Domain boost multipliers for robotics queries
+            ROBOTICS_DOMAIN_BOOST = {
+                "robot-forum.com": 1.15,        # Primary FANUC community
+                "robotexchange.io": 1.12,
+                "dof.robotiq.com": 1.10,
+                "fanuc.eu": 1.15,
+                "fanucamerica.com": 1.15,
+                "plctalk.net": 1.08,
+                "eng-tips.com": 1.08,
+                "practicalmachinist.com": 1.08,
+                "therobotguyllc.com": 1.10,
+                "crc2.frc.com": 1.12,           # FANUC CRC (official training)
+            }
+
             for rr in reranked:
                 idx = int(rr.doc_id)
                 original = candidates[idx]
                 # Update relevance score with rerank score (blend original and reranked)
-                original.relevance_score = 0.3 * original.relevance_score + 0.7 * rr.rerank_score
+                blended_score = 0.3 * original.relevance_score + 0.7 * rr.rerank_score
+
+                # Apply robotics domain boost if applicable
+                if is_robotics_query:
+                    domain = original.source_domain
+                    for boost_domain, multiplier in ROBOTICS_DOMAIN_BOOST.items():
+                        if boost_domain in domain:
+                            old_score = blended_score
+                            blended_score = min(1.0, blended_score * multiplier)
+                            logger.debug(
+                                f"Robotics boost: {domain} {old_score:.3f} -> {blended_score:.3f}"
+                            )
+                            break
+
+                original.relevance_score = blended_score
                 reranked_results.append(original)
 
             # Log reranked top results
@@ -2331,6 +2382,19 @@ class SearcherAgent:
             # Use SearXNG provider's detection (it has the patterns)
             query_type = self.searxng.detect_query_type(queries[0])
             logger.info(f"Auto-detected query type: {query_type}")
+
+        # Apply domain-specific query expansion for robotics/FANUC queries
+        # This adds synonyms and related terms to improve recall
+        if query_type in ("fanuc", "technical") or any(
+            kw in queries[0].lower() for kw in ("fanuc", "robot", "cnc", "servo", "motion")
+        ):
+            expanded_queries = []
+            for q in queries:
+                expanded = expand_robotics_query(q)
+                if expanded != q:
+                    logger.info(f"Query expansion: '{q[:50]}...' -> '{expanded[:80]}...'")
+                expanded_queries.append(expanded)
+            queries = expanded_queries
 
         # Execute searches in parallel
         tasks = [
