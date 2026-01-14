@@ -25,6 +25,9 @@ from urllib.parse import urlparse
 import aiometer
 import httpx
 
+from .proxy_manager import get_proxy_manager, ProxyManager
+from .retry_strategy import get_retry_strategy, UnifiedRetryStrategy
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -409,7 +412,7 @@ class UnifiedRateLimiter:
 
 class RateLimitedClient:
     """
-    Convenience wrapper for httpx.AsyncClient with rate limiting.
+    Convenience wrapper for httpx.AsyncClient with rate limiting and proxy support.
 
     Usage:
         limiter = get_rate_limiter()
@@ -422,16 +425,29 @@ class RateLimitedClient:
         self,
         limiter: UnifiedRateLimiter,
         timeout: float = 30.0,
+        use_proxy: bool = True,
         **client_kwargs
     ):
         self.limiter = limiter
         self.timeout = timeout
+        self.use_proxy = use_proxy
         self.client_kwargs = client_kwargs
         self._client: Optional[httpx.AsyncClient] = None
+        self._proxy_url: Optional[str] = None
+        self._proxy_manager: Optional[ProxyManager] = None
 
     async def __aenter__(self):
+        # Get proxy if enabled and proxies are configured
+        proxy_config = None
+        if self.use_proxy:
+            self._proxy_manager = get_proxy_manager()
+            if self._proxy_manager.has_proxies():
+                self._proxy_url = await self._proxy_manager.get_proxy()
+                proxy_config = self._proxy_manager.get_proxy_config(self._proxy_url)
+
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout),
+            proxy=proxy_config,
             **self.client_kwargs
         )
         return self
@@ -442,11 +458,26 @@ class RateLimitedClient:
 
     async def get(self, url: str, **kwargs) -> FetchResult:
         """GET request with rate limiting."""
-        return await self.limiter.fetch_url(self._client, url, "GET", **kwargs)
+        result = await self.limiter.fetch_url(self._client, url, "GET", **kwargs)
+        # Report proxy result for health tracking
+        if self._proxy_manager and self._proxy_url:
+            await self._proxy_manager.report_result(
+                self._proxy_url,
+                success=result.success,
+                latency_ms=result.duration_ms if hasattr(result, 'duration_ms') else 0
+            )
+        return result
 
     async def post(self, url: str, **kwargs) -> FetchResult:
         """POST request with rate limiting."""
-        return await self.limiter.fetch_url(self._client, url, "POST", **kwargs)
+        result = await self.limiter.fetch_url(self._client, url, "POST", **kwargs)
+        if self._proxy_manager and self._proxy_url:
+            await self._proxy_manager.report_result(
+                self._proxy_url,
+                success=result.success,
+                latency_ms=result.duration_ms if hasattr(result, 'duration_ms') else 0
+            )
+        return result
 
     async def fetch_all(self, urls: List[str], **kwargs) -> List[FetchResult]:
         """Fetch multiple URLs with rate limiting."""

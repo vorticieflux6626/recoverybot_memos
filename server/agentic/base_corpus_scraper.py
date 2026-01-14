@@ -48,6 +48,7 @@ from .redis_cache_service import get_redis_cache_service, RedisCacheService
 from .user_agent_config import get_user_agent, UserAgents
 from .domain_corpus import DomainCorpus, DomainSchema, CorpusBuilder
 from .llm_config import get_llm_config
+from .proxy_manager import get_proxy_manager
 
 logger = logging.getLogger("agentic.base_corpus_scraper")
 
@@ -490,10 +491,20 @@ class BaseCorpusScraper(ABC):
                         html = fetch_result.content.decode("utf-8", errors="replace")
                         status_code = fetch_result.status_code
                 else:
-                    # Fallback to direct httpx
+                    # Fallback to direct httpx (with optional proxy support)
+                    proxy_manager = get_proxy_manager()
+                    proxy_config = None
+                    proxy_url = None
+
+                    # Get proxy if available
+                    if proxy_manager.has_proxies():
+                        proxy_url = await proxy_manager.get_proxy()
+                        proxy_config = proxy_manager.get_proxy_config(proxy_url)
+
                     async with httpx.AsyncClient(
                         timeout=30.0,
                         follow_redirects=True,
+                        proxy=proxy_config,
                         headers={
                             "User-Agent": self.get_user_agent(),
                             "Accept": "text/html,application/xhtml+xml"
@@ -501,6 +512,14 @@ class BaseCorpusScraper(ABC):
                     ) as client:
                         response = await client.get(url)
                         status_code = response.status_code
+
+                        # Report proxy result for health tracking
+                        if proxy_manager.has_proxies() and proxy_url:
+                            await proxy_manager.report_result(
+                                proxy_url,
+                                success=(response.status_code == 200),
+                                latency_ms=(time.time() - start_time) * 1000
+                            )
 
                         if response.status_code != 200:
                             if attempt < self.max_retries - 1:

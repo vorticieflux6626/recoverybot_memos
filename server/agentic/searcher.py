@@ -25,6 +25,8 @@ import httpx
 from .models import WebSearchResult
 from .search_metrics import get_search_metrics
 from .user_agent_config import UserAgents, get_browser_user_agent
+from .proxy_manager import get_proxy_manager
+from .cross_encoder_reranker import CrossEncoderReranker, RerankedResult
 
 # Lazy settings import to avoid circular dependencies
 _settings = None
@@ -578,11 +580,19 @@ class BraveSearchProvider(SearchProvider):
         self._client: Optional[httpx.AsyncClient] = None
 
     async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create the shared HTTP client."""
+        """Get or create the shared HTTP client with proxy support."""
         if self._client is None or self._client.is_closed:
+            # Get proxy configuration
+            proxy_config = None
+            proxy_manager = get_proxy_manager()
+            if proxy_manager.has_proxies():
+                proxy_url = await proxy_manager.get_proxy()
+                proxy_config = proxy_manager.get_proxy_config(proxy_url)
+
             self._client = httpx.AsyncClient(
                 timeout=15.0,
-                limits=httpx.Limits(max_connections=50, max_keepalive_connections=10)
+                limits=httpx.Limits(max_connections=50, max_keepalive_connections=10),
+                proxy=proxy_config
             )
         return self._client
 
@@ -656,11 +666,19 @@ class DuckDuckGoProvider(SearchProvider):
         self._client: Optional[httpx.AsyncClient] = None
 
     async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create the shared HTTP client."""
+        """Get or create the shared HTTP client with proxy support."""
         if self._client is None or self._client.is_closed:
+            # Get proxy configuration
+            proxy_config = None
+            proxy_manager = get_proxy_manager()
+            if proxy_manager.has_proxies():
+                proxy_url = await proxy_manager.get_proxy()
+                proxy_config = proxy_manager.get_proxy_config(proxy_url)
+
             self._client = httpx.AsyncClient(
                 timeout=15.0,
-                limits=httpx.Limits(max_connections=50, max_keepalive_connections=10)
+                limits=httpx.Limits(max_connections=50, max_keepalive_connections=10),
+                proxy=proxy_config
             )
         return self._client
 
@@ -1864,6 +1882,32 @@ class SearcherAgent:
         self._embedding_model = None  # Lazy-load for semantic similarity
         self.last_provider: Optional[str] = None  # Track most recently used provider
 
+        # Cross-encoder reranking (Phase 4 scale improvement)
+        self._reranker: Optional[CrossEncoderReranker] = None
+        self._reranking_enabled = self._check_reranking_enabled()
+
+    def _check_reranking_enabled(self) -> bool:
+        """Check if cross-encoder reranking is enabled via environment."""
+        import os
+        enabled = os.environ.get("RERANK_ENABLED", "true").lower() in ("true", "1", "yes")
+        if enabled:
+            logger.info("Cross-encoder reranking ENABLED")
+        else:
+            logger.info("Cross-encoder reranking DISABLED")
+        return enabled
+
+    def _get_reranker(self) -> Optional[CrossEncoderReranker]:
+        """Lazy-load the cross-encoder reranker."""
+        if not self._reranking_enabled:
+            return None
+        if self._reranker is None:
+            self._reranker = CrossEncoderReranker()
+            if not self._reranker.is_available():
+                logger.warning("CrossEncoderReranker model not available, disabling reranking")
+                self._reranking_enabled = False
+                return None
+        return self._reranker
+
     def _stem_word(self, word: str) -> str:
         """Apply simple stemming to normalize a word to its base form."""
         if word.endswith('ing') and len(word) > 5:
@@ -2052,6 +2096,88 @@ class SearcherAgent:
             return self.DEFAULT_PREMIUM_BOOST
         else:
             return self.DEFAULT_TRUSTED_BOOST
+
+    async def _apply_cross_encoder_reranking(
+        self,
+        query: str,
+        results: List[WebSearchResult],
+        top_k: int = 50,
+        final_k: int = 10
+    ) -> List[WebSearchResult]:
+        """
+        Apply cross-encoder reranking for improved precision.
+
+        Takes the top candidates from initial retrieval and uses a
+        cross-encoder model (BGE-Reranker-v2-M3) to score query-document
+        pairs for more accurate relevance assessment.
+
+        Args:
+            query: Original search query
+            results: Initial results sorted by relevance
+            top_k: Number of candidates to rerank (default 50)
+            final_k: Number of results to return (default 10)
+
+        Returns:
+            Reranked results with updated scores
+        """
+        import os
+        reranker = self._get_reranker()
+        if not reranker:
+            return results[:final_k]
+
+        # Take top_k candidates for reranking
+        candidates = results[:top_k]
+        if len(candidates) < 3:
+            logger.info("Too few candidates for reranking, skipping")
+            return results
+
+        # Convert WebSearchResult to document format for reranker
+        documents = []
+        for i, r in enumerate(candidates):
+            documents.append({
+                "doc_id": str(i),
+                "content": f"{r.title}. {r.snippet}",
+                "score": r.relevance_score,
+                "metadata": {
+                    "url": r.url,
+                    "source_domain": r.source_domain,
+                    "title": r.title
+                }
+            })
+
+        # Run cross-encoder reranking
+        try:
+            reranked, stats = await reranker.rerank(
+                query=query,
+                documents=documents,
+                top_k=final_k,
+                score_threshold=float(os.environ.get("RERANK_SCORE_THRESHOLD", "0.0"))
+            )
+
+            logger.info(
+                f"Cross-encoder reranking: {stats.input_count} -> {stats.output_count} results "
+                f"in {stats.rerank_time_ms:.0f}ms (scores: {stats.min_score:.3f}-{stats.max_score:.3f})"
+            )
+
+            # Map reranked results back to WebSearchResult
+            reranked_results = []
+            for rr in reranked:
+                idx = int(rr.doc_id)
+                original = candidates[idx]
+                # Update relevance score with rerank score (blend original and reranked)
+                original.relevance_score = 0.3 * original.relevance_score + 0.7 * rr.rerank_score
+                reranked_results.append(original)
+
+            # Log reranked top results
+            logger.info(f"Top 5 results after cross-encoder reranking:")
+            for i, r in enumerate(reranked_results[:5], 1):
+                logger.info(f"  {i}. [{r.source_domain}] {r.title[:50]}... (score={r.relevance_score:.3f})")
+
+            return reranked_results
+
+        except Exception as e:
+            logger.error(f"Cross-encoder reranking failed: {e}")
+            return results[:final_k]
 
     def _apply_diversity_reranking(
         self,
@@ -2319,9 +2445,21 @@ class SearcherAgent:
         for i, r in enumerate(filtered_results[:5], 1):
             logger.info(f"  {i}. [{r.source_domain}] {r.title[:50]}... (score={r.relevance_score:.2f})")
 
+        # Apply cross-encoder reranking for improved precision (Phase 4)
+        # Uses BGE-Reranker-v2-M3 for accurate query-document relevance scoring
+        import os
+        rerank_top_k = int(os.environ.get("RERANK_TOP_K", "50"))
+        rerank_final_k = int(os.environ.get("RERANK_FINAL_K", "15"))
+        reranked_results = await self._apply_cross_encoder_reranking(
+            query=queries[0] if queries else "",
+            results=filtered_results,
+            top_k=rerank_top_k,
+            final_k=rerank_final_k
+        )
+
         # Apply diversity-aware reranking to ensure results from different categories
         diverse_results = self._apply_diversity_reranking(
-            filtered_results, target_categories=3, min_per_category=1
+            reranked_results, target_categories=3, min_per_category=1
         )
 
         return diverse_results
