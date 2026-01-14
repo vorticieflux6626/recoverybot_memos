@@ -287,6 +287,7 @@ class CorpusDocument:
     indexed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     embedding: Optional[List[float]] = None
     chunk_hashes: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)  # Domain-specific metadata
 
     def __post_init__(self):
         if not self.content_hash:
@@ -781,7 +782,8 @@ Extract all relevant entities and relationships. Return ONLY valid JSON:
         source_url: str = "",
         source_type: str = "unknown",
         title: str = "",
-        extract_entities: bool = True
+        extract_entities: bool = True,
+        metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Add document to corpus with optional entity extraction.
@@ -797,7 +799,8 @@ Extract all relevant entities and relationships. Return ONLY valid JSON:
             content=content,
             source_url=source_url,
             source_type=source_type,
-            title=title
+            title=title,
+            metadata=metadata or {}
         )
 
         # Generate embedding for document
@@ -1417,7 +1420,8 @@ class DomainCorpusManager:
         content: str,
         source_url: str = "",
         source_type: str = "unknown",
-        title: str = ""
+        title: str = "",
+        metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Add document to specified domain corpus"""
         builder = self.builders.get(domain_id)
@@ -1428,7 +1432,8 @@ class DomainCorpusManager:
             content=content,
             source_url=source_url,
             source_type=source_type,
-            title=title
+            title=title,
+            metadata=metadata
         )
 
     async def query(
