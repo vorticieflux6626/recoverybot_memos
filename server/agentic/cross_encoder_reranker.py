@@ -225,18 +225,21 @@ class CrossEncoderReranker:
             return [], stats
 
         if not self._load_model():
-            # Fallback: return documents as-is with original scores
+            # Fallback: return documents as-is with original scores, preserving metadata
             logger.warning("Reranker model not available, returning original order")
-            results = [
-                RerankedResult(
+            results = []
+            for i, doc in enumerate(documents):
+                metadata = doc.get("metadata", {}).copy()
+                for key in doc:
+                    if key not in ("doc_id", "content", "score", "metadata"):
+                        metadata[key] = doc[key]
+                results.append(RerankedResult(
                     doc_id=doc.get("doc_id", str(i)),
                     original_score=doc.get("score", 0.0),
                     rerank_score=doc.get("score", 0.0),
                     content=doc.get("content", ""),
-                    metadata=doc.get("metadata", {})
-                )
-                for i, doc in enumerate(documents)
-            ]
+                    metadata=metadata
+                ))
             return results[:top_k], stats
 
         # Run reranking in thread pool to not block async
@@ -290,12 +293,20 @@ class CrossEncoderReranker:
             for i, doc in enumerate(documents):
                 score = float(scores[i]) if i < len(scores) else 0.0
                 if score >= score_threshold:
+                    # Preserve all document fields in metadata
+                    # Standard fields: doc_id, content, score, metadata
+                    # Everything else goes into metadata for preservation
+                    metadata = doc.get("metadata", {}).copy()
+                    for key in doc:
+                        if key not in ("doc_id", "content", "score", "metadata"):
+                            metadata[key] = doc[key]
+
                     results.append(RerankedResult(
                         doc_id=doc.get("doc_id", str(i)),
                         original_score=doc.get("score", 0.0),
                         rerank_score=score,
                         content=doc.get("content", ""),
-                        metadata=doc.get("metadata", {})
+                        metadata=metadata
                     ))
 
             # Sort by rerank score
@@ -325,17 +336,20 @@ class CrossEncoderReranker:
 
         except Exception as e:
             logger.error(f"Reranking failed: {e}")
-            # Return original order on error
-            results = [
-                RerankedResult(
+            # Return original order on error, preserving metadata
+            results = []
+            for i, doc in enumerate(documents):
+                metadata = doc.get("metadata", {}).copy()
+                for key in doc:
+                    if key not in ("doc_id", "content", "score", "metadata"):
+                        metadata[key] = doc[key]
+                results.append(RerankedResult(
                     doc_id=doc.get("doc_id", str(i)),
                     original_score=doc.get("score", 0.0),
                     rerank_score=doc.get("score", 0.0),
                     content=doc.get("content", ""),
-                    metadata=doc.get("metadata", {})
-                )
-                for i, doc in enumerate(documents)
-            ]
+                    metadata=metadata
+                ))
             stats.rerank_time_ms = (time.time() - start_time) * 1000
             return results[:top_k], stats
 
