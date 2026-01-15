@@ -1813,6 +1813,503 @@ class DocumentGraphService:
         return context
 
     # ============================================
+    # ELECTRICAL FAULT GRAPH (Phase 52)
+    # ============================================
+
+    async def get_electrical_stats(self) -> Dict[str, Any]:
+        """
+        Get electrical fault graph statistics.
+
+        Returns:
+            Dict with node counts, controller list, edge types
+        """
+        if not self.is_available:
+            return {}
+
+        cache_key = self._cache_key("electrical_stats")
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            response = await self.client.get("/api/v1/faults/electrical/stats")
+            response.raise_for_status()
+            data = response.json()
+            result = data.get("data", data)
+            self._set_cached(cache_key, result, ttl=600)
+            return result
+        except Exception as e:
+            logger.error(f"Get electrical stats failed: {e}")
+            return {}
+
+    async def get_electrical_controllers(self) -> List[str]:
+        """Get list of supported FANUC controllers."""
+        if not self.is_available:
+            return []
+
+        try:
+            response = await self.client.get("/api/v1/faults/electrical/controllers")
+            response.raise_for_status()
+            data = response.json()
+            return data.get("data", {}).get("controllers", [])
+        except Exception as e:
+            logger.error(f"Get electrical controllers failed: {e}")
+            return []
+
+    async def get_electrical_circuit(
+        self,
+        controller: str
+    ) -> Dict[str, Any]:
+        """
+        Get electrical circuit layout for a controller.
+
+        Args:
+            controller: Controller model (e.g., 'R-30iB')
+
+        Returns:
+            Dict with power supply, amplifiers, motors, protection devices
+        """
+        if not self.is_available:
+            return {}
+
+        cache_key = self._cache_key("electrical_circuit", controller)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            response = await self.client.get(f"/api/v1/faults/electrical/circuit/{controller}")
+            response.raise_for_status()
+            data = response.json()
+            result = data.get("data", data)
+            self._set_cached(cache_key, result)
+            return result
+        except Exception as e:
+            logger.error(f"Get electrical circuit failed: {e}")
+            return {}
+
+    async def get_electrical_fault_path(
+        self,
+        error_code: str,
+        controller: Optional[str] = None,
+        axis_number: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Get electrical fault propagation path for an error code.
+
+        Args:
+            error_code: FANUC error code (e.g., 'SRVO-030')
+            controller: Controller model (default: R-30iB)
+            axis_number: Affected axis (1-6)
+
+        Returns:
+            Dict with fault node, affected components, propagation path
+        """
+        if not self.is_available:
+            return {}
+
+        try:
+            request_body = {
+                "error_code": error_code.upper().strip(),
+                "controller": controller or "R-30iB"
+            }
+            if axis_number:
+                request_body["axis_number"] = axis_number
+
+            response = await self.client.post(
+                "/api/v1/faults/electrical/fault-path",
+                json=request_body
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("data", data)
+        except Exception as e:
+            logger.error(f"Get electrical fault path failed: {e}")
+            return {}
+
+    # ============================================
+    # MECHANICAL FAULT GRAPH (Phase 52)
+    # ============================================
+
+    async def get_mechanical_stats(self) -> Dict[str, Any]:
+        """
+        Get mechanical fault graph statistics.
+
+        Returns:
+            Dict with node counts, robot models, component types
+        """
+        if not self.is_available:
+            return {}
+
+        cache_key = self._cache_key("mechanical_stats")
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            response = await self.client.get("/api/v1/faults/mechanical/stats")
+            response.raise_for_status()
+            data = response.json()
+            result = data.get("data", data)
+            self._set_cached(cache_key, result, ttl=600)
+            return result
+        except Exception as e:
+            logger.error(f"Get mechanical stats failed: {e}")
+            return {}
+
+    async def get_mechanical_robots(self) -> List[str]:
+        """Get list of supported robot models."""
+        if not self.is_available:
+            return []
+
+        try:
+            response = await self.client.get("/api/v1/faults/mechanical/robots")
+            response.raise_for_status()
+            data = response.json()
+            return data.get("data", {}).get("robots", [])
+        except Exception as e:
+            logger.error(f"Get mechanical robots failed: {e}")
+            return []
+
+    async def get_axis_components(
+        self,
+        robot_model: str,
+        axis_number: int
+    ) -> Dict[str, Any]:
+        """
+        Get mechanical components for a robot axis.
+
+        Args:
+            robot_model: Robot model (e.g., 'M-16iB')
+            axis_number: Axis number (1-6)
+
+        Returns:
+            Dict with bearings, gears, reducer, motor, lubrication points
+        """
+        if not self.is_available:
+            return {}
+
+        cache_key = self._cache_key("axis_components", robot_model, axis_number)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            response = await self.client.get(
+                f"/api/v1/faults/mechanical/axis/{robot_model}/{axis_number}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            result = data.get("data", data)
+            self._set_cached(cache_key, result)
+            return result
+        except Exception as e:
+            logger.error(f"Get axis components failed: {e}")
+            return {}
+
+    async def get_mechanical_fault_path(
+        self,
+        error_code: str,
+        robot_model: Optional[str] = None,
+        axis_number: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Get mechanical fault propagation path for an error code.
+
+        Args:
+            error_code: FANUC error code (e.g., 'SRVO-002')
+            robot_model: Robot model (default: M-16iB)
+            axis_number: Affected axis (1-6)
+
+        Returns:
+            Dict with fault node, affected components, wear indicators
+        """
+        if not self.is_available:
+            return {}
+
+        try:
+            request_body = {
+                "error_code": error_code.upper().strip(),
+                "robot_model": robot_model or "M-16iB"
+            }
+            if axis_number:
+                request_body["axis_number"] = axis_number
+
+            response = await self.client.post(
+                "/api/v1/faults/mechanical/fault-path",
+                json=request_body
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("data", data)
+        except Exception as e:
+            logger.error(f"Get mechanical fault path failed: {e}")
+            return {}
+
+    # ============================================
+    # CROSS-DOMAIN INTEGRATION (Phase 52)
+    # ============================================
+
+    async def get_integration_stats(self) -> Dict[str, Any]:
+        """
+        Get cross-domain integration graph statistics.
+
+        Returns:
+            Dict with correlation counts, edge types, domain coverage
+        """
+        if not self.is_available:
+            return {}
+
+        cache_key = self._cache_key("integration_stats")
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            response = await self.client.get("/api/v1/faults/integration/stats")
+            response.raise_for_status()
+            data = response.json()
+            result = data.get("data", data)
+            self._set_cached(cache_key, result, ttl=600)
+            return result
+        except Exception as e:
+            logger.error(f"Get integration stats failed: {e}")
+            return {}
+
+    async def get_robot_imm_correlations(
+        self,
+        error_code: str,
+        max_results: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Find IMM states correlated with a robot error code.
+
+        Used for cross-domain troubleshooting in robot-IMM workcells.
+
+        Args:
+            error_code: FANUC error code (e.g., 'SRVO-063')
+            max_results: Maximum correlations to return
+
+        Returns:
+            List of IMM states with correlation strength and edge type
+        """
+        if not self.is_available:
+            return []
+
+        try:
+            response = await self.client.post(
+                "/api/v1/faults/integration/correlate",
+                json={
+                    "error_code": error_code.upper().strip(),
+                    "max_results": max_results
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("data", {}).get("correlations", [])
+        except Exception as e:
+            logger.error(f"Get robot-IMM correlations failed: {e}")
+            return []
+
+    async def diagnose_workcell_issue(
+        self,
+        error_code: str,
+        imm_state: Optional[str] = None,
+        include_electrical: bool = True,
+        include_mechanical: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Cross-domain diagnosis for robot-IMM workcell issues.
+
+        Combines electrical, mechanical, and IMM domain knowledge
+        to provide comprehensive troubleshooting guidance.
+
+        Args:
+            error_code: Robot error code
+            imm_state: Optional IMM state (e.g., 'mold_stuck')
+            include_electrical: Include electrical fault analysis
+            include_mechanical: Include mechanical fault analysis
+
+        Returns:
+            Dict with multi-domain diagnostic information
+        """
+        if not self.is_available:
+            return {}
+
+        try:
+            request_body = {
+                "error_code": error_code.upper().strip(),
+                "include_electrical": include_electrical,
+                "include_mechanical": include_mechanical
+            }
+            if imm_state:
+                request_body["imm_state"] = imm_state
+
+            response = await self.client.post(
+                "/api/v1/faults/integration/diagnose",
+                json=request_body
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("data", data)
+        except Exception as e:
+            logger.error(f"Diagnose workcell issue failed: {e}")
+            return {}
+
+    async def get_pcb_fault_info(
+        self,
+        error_code: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get PCB-level fault information for an error code.
+
+        Returns affected connectors, pins, and diagnostic procedures.
+
+        Args:
+            error_code: FANUC error code (e.g., 'SRVO-062')
+
+        Returns:
+            Dict with connector, pin, signal, and diagnostic info
+        """
+        if not self.is_available:
+            return None
+
+        cache_key = self._cache_key("pcb_fault", error_code)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            response = await self.client.get(
+                f"/api/v1/faults/electrical/pcb/{error_code.upper().strip()}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            result = data.get("data", data)
+            self._set_cached(cache_key, result)
+            return result
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            logger.error(f"Get PCB fault info error: {e.response.status_code}")
+            return None
+        except Exception as e:
+            logger.error(f"Get PCB fault info failed: {e}")
+            return None
+
+    async def get_enhanced_fault_context(
+        self,
+        error_code: str,
+        robot_model: Optional[str] = None,
+        controller: Optional[str] = None,
+        axis_number: Optional[int] = None,
+        max_tokens: int = 4000
+    ) -> str:
+        """
+        Get comprehensive fault context for RAG synthesis.
+
+        Combines electrical, mechanical, PCB, and cross-domain info
+        into structured context for LLM troubleshooting.
+
+        Args:
+            error_code: FANUC error code
+            robot_model: Robot model for mechanical context
+            controller: Controller model for electrical context
+            axis_number: Axis number for specific component info
+            max_tokens: Token limit for output
+
+        Returns:
+            Structured fault diagnosis context string
+        """
+        context_parts = []
+        error_code = error_code.upper().strip()
+
+        # 1. Basic HSEA troubleshooting context
+        hsea_data = await self.hsea_troubleshoot(error_code)
+        if hsea_data and "context" in hsea_data:
+            ctx = hsea_data["context"]
+            metadata = ctx.get("metadata", {})
+
+            context_parts.append(f"## Error Code: {error_code}")
+            context_parts.append(f"**Category:** {metadata.get('category', 'Unknown')}")
+            context_parts.append(f"**Title:** {metadata.get('full_title', ctx.get('title', ''))}")
+
+            if metadata.get("cause"):
+                context_parts.append(f"**Cause:** {metadata['cause']}")
+            if metadata.get("remedy"):
+                context_parts.append(f"**Remedy:** {metadata['remedy']}")
+            context_parts.append("")
+
+        # 2. Electrical fault path
+        electrical = await self.get_electrical_fault_path(
+            error_code,
+            controller=controller,
+            axis_number=axis_number
+        )
+        if electrical:
+            context_parts.append("## Electrical Analysis")
+            if "fault_node" in electrical:
+                fault = electrical["fault_node"]
+                context_parts.append(f"**Fault Type:** {fault.get('fault_type', 'Unknown')}")
+                context_parts.append(f"**Affected Component:** {fault.get('component', 'Unknown')}")
+            if "propagation_path" in electrical:
+                path = electrical["propagation_path"]
+                context_parts.append(f"**Propagation:** {' → '.join(path[:5])}")
+            context_parts.append("")
+
+        # 3. Mechanical fault path
+        mechanical = await self.get_mechanical_fault_path(
+            error_code,
+            robot_model=robot_model,
+            axis_number=axis_number
+        )
+        if mechanical:
+            context_parts.append("## Mechanical Analysis")
+            if "affected_components" in mechanical:
+                comps = mechanical["affected_components"]
+                context_parts.append(f"**Affected Components:** {', '.join(comps[:5])}")
+            if "wear_indicators" in mechanical:
+                indicators = mechanical["wear_indicators"]
+                context_parts.append(f"**Wear Indicators:** {', '.join(indicators[:3])}")
+            context_parts.append("")
+
+        # 4. PCB-level info
+        pcb_info = await self.get_pcb_fault_info(error_code)
+        if pcb_info:
+            context_parts.append("## PCB/Connector Level")
+            context_parts.append(f"**Affected Signal:** {pcb_info.get('affected_signal', 'Unknown')}")
+            if "affected_connectors" in pcb_info:
+                context_parts.append(f"**Connectors:** {', '.join(pcb_info['affected_connectors'])}")
+            if "affected_pins" in pcb_info:
+                pins_str = "; ".join(
+                    f"{conn}: pins {','.join(pins)}"
+                    for conn, pins in pcb_info["affected_pins"].items()
+                )
+                context_parts.append(f"**Pins:** {pins_str}")
+            if "diagnostic" in pcb_info:
+                context_parts.append(f"**Diagnostic:** {pcb_info['diagnostic']}")
+            context_parts.append("")
+
+        # 5. Cross-domain correlations
+        correlations = await self.get_robot_imm_correlations(error_code, max_results=3)
+        if correlations:
+            context_parts.append("## Cross-Domain Correlations (Robot ↔ IMM)")
+            for corr in correlations:
+                imm_state = corr.get("imm_state", "unknown")
+                edge_type = corr.get("edge_type", "correlates_with")
+                strength = corr.get("strength", 0)
+                context_parts.append(f"- {imm_state} ({edge_type}, strength: {strength:.2f})")
+            context_parts.append("")
+
+        context = "\n".join(context_parts)
+
+        # Token limit enforcement
+        if len(context) > max_tokens * 4:
+            context = context[:max_tokens * 4] + "\n\n[Context truncated...]"
+
+        return context
+
+    # ============================================
     # LIFECYCLE
     # ============================================
 

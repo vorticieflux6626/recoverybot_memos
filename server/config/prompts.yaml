@@ -43,6 +43,56 @@ instructions:
     - Injection molding machines and hot runner systems
     - Industrial sensors, encoders, and servo drives
 
+  electrical_fault_expertise: |
+    For ELECTRICAL FAULT DIAGNOSIS, you understand:
+    - Power distribution: PSU → circuit breakers → contactors → servo amplifiers
+    - Servo amplifier models: A06B-6114-H105 (αi), A06B-6117 series
+    - Controller hierarchy: R-30iB has 6 servo axes (J1-J6) with dedicated amplifiers
+    - Fault propagation: overcurrent → amplifier protection → E-stop cascade
+    - PCB-level signals: +24V control, 0V reference, PE ground, FSSB fiber optic
+    Key error patterns:
+    - SRVO-030: Brake hold / motor overheat (check TH1/TH2 thermistor pins)
+    - SRVO-036: Position error / brake slip (check brake pins 5,6 on SERVO_AMP_17PIN)
+    - SRVO-047: LVAL undervoltage (DC bus issue, not FSSB)
+    - SRVO-055/056/057/058: Actual FSSB communication errors
+
+  mechanical_fault_expertise: |
+    For MECHANICAL FAULT DIAGNOSIS, you understand:
+    - Robot axis components: bearings, gears, reducers (harmonic drives, RV), shafts
+    - Wear patterns: bearing noise → vibration → position error → axis fault
+    - Lubrication: grease points, oil levels, re-greasing intervals
+    - Axis specifications vary by robot model (M-16iB, M-20iA, R-2000 series)
+    Diagnostic approach:
+    1. Identify affected axis from error code (J1-J6)
+    2. Check mechanical components: reducer, bearings, motor coupling
+    3. Assess wear indicators: vibration, backlash, temperature
+    4. Recommend maintenance: lubrication, replacement, alignment
+
+  pcb_connector_expertise: |
+    For PCB/CONNECTOR-LEVEL TROUBLESHOOTING, you understand:
+    - EE_12PIN: End effector connector (RI1-RI6 inputs, RO7-RO8 outputs, +24V/0V power)
+    - ENCODER_17PIN: Serial encoder (SD/RD differential pairs, +5V power, battery backup)
+    - TBOP13: Safety terminal block (EAS dual-channel fence, SVOFF1/2, SFSPD, NTED)
+    - TBOP20: Robot I/O terminal (RDO1-8 outputs, RDI1-8 inputs, power rails)
+    - FSSB_8PIN: Fiber optic servo bus (TX+/TX-, RX+/RX-, 150Mbps)
+    - MOTOR_POWER_4PIN: Motor phases (U, V, W, PE protective earth)
+    Pin-level diagnosis:
+    - SRVO-002: E-stop pressed (COP1 pin 4)
+    - SRVO-004: Encoder pulse error (ENCODER_17PIN pins F, H - REQ signal)
+    - SRVO-062: Battery zero (ENCODER_17PIN pins J, K, N, T - replace batteries)
+
+  cross_domain_expertise: |
+    For ROBOT-IMM WORKCELL INTEGRATION, you understand:
+    - Two-robot workcell: Press robot (R-2000) + Degate robot (M-16iB/M-20iA)
+    - Direct relay control: Robot DO → relay coil → IMM signal (no PLC)
+    - Standard relay mapping: K1=mold_close, K2=mold_open, K3=inject, K4=eject
+    - Safety circuits: Door interlocks, E-stops, light curtains
+    Cross-domain correlations:
+    - SRVO-063 (collision) ↔ IMM: high_clamp_pressure, mold_stuck, part_not_ejected
+    - SRVO-002 (path blocked) ↔ IMM: part_stuck, runner_stuck, mold_flash
+    - MOTN-017 (timeout) ↔ IMM: cycle_timeout, injection_slow, cooling_extended
+    Always check both robot AND IMM status when diagnosing workcell issues.
+
   citation_requirement: |
     CITATION REQUIREMENTS:
     - Every factual claim MUST include [Source N] citation
@@ -782,6 +832,14 @@ templates:
 # Metadata
 # -----------------------------------------------------------------------------
 metadata:
-  version: "1.0.0"
-  last_updated: "2026-01-09"
+  version: "1.1.0"
+  last_updated: "2026-01-14"
   description: "Central prompt configuration for memOS agentic pipeline"
+  changelog:
+    - version: "1.1.0"
+      date: "2026-01-14"
+      changes:
+        - "Added electrical_fault_expertise for Phase 52 integration"
+        - "Added mechanical_fault_expertise for Phase 52 integration"
+        - "Added pcb_connector_expertise for Phase 53 integration"
+        - "Added cross_domain_expertise for workcell troubleshooting"
