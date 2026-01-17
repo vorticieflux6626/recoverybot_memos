@@ -30,7 +30,8 @@ from .models import (
     SearchState,
     SearchMode,
     ConfidenceLevel,
-    WebSearchResult
+    WebSearchResult,
+    TroubleshootingDiagram
 )
 from .analyzer import QueryAnalyzer
 from .planner import PlannerAgent
@@ -464,7 +465,8 @@ class BaseSearchPipeline(ABC):
         request_id: str,
         search_trace: List[Dict[str, Any]],
         execution_time_ms: int,
-        enhancement_metadata: Optional[Dict[str, Any]] = None
+        enhancement_metadata: Optional[Dict[str, Any]] = None,
+        diagram: Optional[TroubleshootingDiagram] = None
     ) -> SearchResponse:
         """Build a complete search response."""
         return SearchResponse(
@@ -476,7 +478,8 @@ class BaseSearchPipeline(ABC):
                 confidence_score=confidence,
                 confidence_level=self.get_confidence_level(confidence),
                 verification_status="verified" if confidence >= 0.7 else "partial",
-                search_trace=search_trace
+                search_trace=search_trace,
+                diagram=diagram
             ),
             meta=SearchMeta(
                 request_id=request_id,

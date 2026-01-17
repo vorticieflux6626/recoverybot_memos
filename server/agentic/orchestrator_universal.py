@@ -48,7 +48,8 @@ from .models import (
     SearchMode,
     ConfidenceLevel,
     WebSearchResult,
-    QueryAnalysis
+    QueryAnalysis,
+    TroubleshootingDiagram
 )
 from . import events  # For SSE event emission in non-streaming path
 from .events import (
@@ -58,7 +59,9 @@ from .events import (
     llm_call_start, llm_call_complete,
     # VL (Vision-Language) scraping events
     vl_scraping_start, vl_scraping_screenshot, vl_scraping_extracting,
-    vl_scraping_complete, vl_scraping_failed
+    vl_scraping_complete, vl_scraping_failed,
+    # Diagram events (PDF Extraction Tools integration)
+    diagram_generating, diagram_generated
 )
 
 # Core agents (always available)
@@ -5163,6 +5166,64 @@ class UniversalOrchestrator(BaseSearchPipeline):
             except Exception as e:
                 logger.warning(f"[{request_id}] Contrastive retriever recording failed: {e}")
 
+        # PHASE 12.12: Diagram Integration (PDF Extraction Tools)
+        # Fetch troubleshooting diagram for FANUC error codes
+        diagram: Optional[TroubleshootingDiagram] = None
+        try:
+            doc_service = self._get_document_graph_service()
+            error_codes = doc_service.extract_error_codes(request.query)
+
+            if error_codes:
+                # Check first error code for diagram availability
+                error_code = error_codes[0]
+                logger.info(f"[{request_id}] Checking diagram for error code: {error_code}")
+
+                # Emit diagram generating event
+                await self.emit_event(
+                    EventType.DIAGRAM_GENERATING,
+                    {"error_code": error_code},
+                    request_id,
+                    message=f"Checking for troubleshooting diagram for {error_code}..."
+                )
+
+                if await doc_service.check_diagram_available(error_code):
+                    diagram_data = await doc_service.get_troubleshooting_diagram(error_code)
+
+                    if diagram_data and diagram_data.get("content"):
+                        diagram = TroubleshootingDiagram(
+                            type=diagram_data.get("type", "flowchart"),
+                            format=diagram_data.get("format", "html"),
+                            content=diagram_data.get("content", ""),
+                            error_code=error_code,
+                            title=diagram_data.get("title"),
+                            parts_needed=diagram_data.get("parts_needed", []),
+                            tools_needed=diagram_data.get("tools_needed", []),
+                            components_affected=diagram_data.get("components_affected", []),
+                            mastering_required=diagram_data.get("mastering_required", False)
+                        )
+
+                        # Emit diagram generated event
+                        await self.emit_event(
+                            EventType.DIAGRAM_GENERATED,
+                            {
+                                "error_code": error_code,
+                                "diagram_type": diagram.type,
+                                "diagram_format": diagram.format,
+                                "has_content": bool(diagram.content)
+                            },
+                            request_id,
+                            message=f"Troubleshooting diagram available for {error_code}"
+                        )
+
+                        enhancement_metadata["features_used"].append("diagram_integration")
+                        logger.info(f"[{request_id}] Diagram fetched for {error_code}: {len(diagram.content)} chars")
+                    else:
+                        logger.debug(f"[{request_id}] No diagram content for {error_code}")
+                else:
+                    logger.debug(f"[{request_id}] No diagram available for {error_code}")
+        except Exception as e:
+            logger.warning(f"[{request_id}] Diagram fetch failed: {e}")
+
         return self.build_response(
             synthesis=synthesis,
             sources=self._get_sources(state),
@@ -5172,7 +5233,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
             request_id=request_id,
             search_trace=search_trace,
             execution_time_ms=execution_time_ms,
-            enhancement_metadata=enhancement_metadata
+            enhancement_metadata=enhancement_metadata,
+            diagram=diagram
         )
 
     # ===== Phase Implementations =====
