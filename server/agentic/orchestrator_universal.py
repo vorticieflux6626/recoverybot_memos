@@ -5202,14 +5202,22 @@ class UniversalOrchestrator(BaseSearchPipeline):
                             mastering_required=diagram_data.get("mastering_required", False)
                         )
 
-                        # Emit diagram generated event
+                        # Emit diagram generated event with full diagram object
+                        # Android client expects the complete diagram including HTML content
                         await self.emit_event(
                             EventType.DIAGRAM_GENERATED,
                             {
-                                "error_code": error_code,
-                                "diagram_type": diagram.type,
-                                "diagram_format": diagram.format,
-                                "has_content": bool(diagram.content)
+                                "diagram": {
+                                    "type": diagram.type,
+                                    "format": diagram.format,
+                                    "content": diagram.content,
+                                    "error_code": error_code,
+                                    "title": diagram.title,
+                                    "parts_needed": diagram.parts_needed,
+                                    "tools_needed": diagram.tools_needed,
+                                    "components_affected": diagram.components_affected,
+                                    "mastering_required": diagram.mastering_required
+                                }
                             },
                             request_id,
                             message=f"Troubleshooting diagram available for {error_code}"
