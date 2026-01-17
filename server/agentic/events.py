@@ -63,6 +63,10 @@ class EventType(str, Enum):
     SYNTHESIZING = "synthesizing"
     SYNTHESIS_COMPLETE = "synthesis_complete"
 
+    # Diagram Generation (PDF Extraction Tools integration)
+    DIAGRAM_GENERATING = "diagram_generating"
+    DIAGRAM_GENERATED = "diagram_generated"
+
     # Model selection
     MODEL_SELECTED = "model_selected"
     MODEL_LOADING = "model_loading"
@@ -806,6 +810,54 @@ def synthesis_complete(request_id: str, answer_length: int, confidence: float) -
         message="Answer synthesized",
         progress_percent=95,
         data={"answer_length": answer_length, "confidence": confidence}
+    )
+
+
+def diagram_generating(request_id: str, error_code: str = "") -> SearchEvent:
+    """
+    Diagram generation starting event (PDF Extraction Tools integration).
+
+    Args:
+        request_id: Unique request identifier
+        error_code: Optional FANUC error code (e.g., "SRVO-062")
+    """
+    message = "Generating troubleshooting diagram"
+    if error_code:
+        message = f"Generating troubleshooting diagram for {error_code}"
+
+    return SearchEvent(
+        event_type=EventType.DIAGRAM_GENERATING,
+        request_id=request_id,
+        message=message,
+        progress_percent=90,
+        data={"error_code": error_code} if error_code else {}
+    )
+
+
+def diagram_generated(
+    request_id: str,
+    diagram: Dict[str, Any],
+    error_code: str = ""
+) -> SearchEvent:
+    """
+    Diagram successfully generated event.
+
+    Args:
+        request_id: Unique request identifier
+        diagram: The generated diagram data (type, format, content, etc.)
+        error_code: Associated FANUC error code if applicable
+    """
+    return SearchEvent(
+        event_type=EventType.DIAGRAM_GENERATED,
+        request_id=request_id,
+        message="Diagram generated",
+        progress_percent=92,
+        data={
+            "diagram": diagram,
+            "error_code": error_code,
+            "type": diagram.get("type", ""),
+            "format": diagram.get("format", "")
+        }
     )
 
 

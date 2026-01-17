@@ -213,6 +213,42 @@ class DocumentGraphService:
             return False
         return self._health_status is not False
 
+    async def check_diagram_available(self, error_code: str) -> bool:
+        """
+        Check if a troubleshooting diagram is available for an error code.
+
+        Lightweight check - just tests if diagram exists via the error-info endpoint.
+
+        Args:
+            error_code: FANUC error code (e.g., 'SRVO-062')
+
+        Returns:
+            True if diagram available, False otherwise
+        """
+        if not self.is_available:
+            return False
+
+        # Check cache first
+        cache_key = self._cache_key("diagram_available", error_code)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            response = await self.client.get(
+                f"/api/v1/diagrams/error-info/{error_code.upper()}",
+                timeout=5.0
+            )
+            is_available = response.status_code == 200
+
+            # Cache for 1 hour (diagrams don't change often)
+            self._set_cached(cache_key, is_available, ttl=3600)
+            return is_available
+
+        except Exception as e:
+            logger.debug(f"Diagram availability check failed for {error_code}: {e}")
+            return False
+
     # ============================================
     # CACHING
     # ============================================
@@ -350,6 +386,109 @@ class DocumentGraphService:
             logger.error(f"PDF API search failed: {e}")
             self._record_failure()
             return []
+
+    # ============================================
+    # DIAGRAM OPERATIONS
+    # ============================================
+
+    async def get_troubleshooting_diagram(
+        self,
+        error_code: str,
+        style: str = "dark",
+        diagram_format: str = "html"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fetch troubleshooting diagram from PDF Extraction Tools API.
+
+        Retrieves visual flowcharts for FANUC error codes that can be
+        rendered in Android WebView.
+
+        Args:
+            error_code: FANUC error code (e.g., 'SRVO-062')
+            style: Visual theme ('dark', 'light', 'print')
+            diagram_format: Output format ('html', 'mermaid', 'svg')
+
+        Returns:
+            Diagram dict with content, or None if not available
+        """
+        if not self.is_available:
+            return None
+
+        # Normalize error code
+        error_code = error_code.upper().strip()
+
+        # Check cache
+        cache_key = self._cache_key("diagram", error_code, style, diagram_format)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            logger.debug(f"Cache hit for diagram: {error_code}")
+            return cached
+
+        try:
+            response = await self.client.get(
+                f"/api/v1/diagrams/html/{error_code}",
+                params={"style": style, "format": diagram_format},
+                timeout=10.0
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            # Handle unified response format
+            if data.get("success") and data.get("data"):
+                diagram_data = data["data"]
+                # Content can be in 'content' or 'html' field depending on endpoint
+                content = diagram_data.get("content") or diagram_data.get("html", "")
+                result = {
+                    "type": diagram_data.get("diagram_type", "flowchart"),
+                    "format": "html" if diagram_data.get("html") else diagram_data.get("format", diagram_format),
+                    "content": content,
+                    "error_code": diagram_data.get("error_code", error_code),
+                    "title": diagram_data.get("title"),
+                    "parts_needed": diagram_data.get("parts_needed", []),
+                    "tools_needed": diagram_data.get("tools_needed", []),
+                    "components_affected": diagram_data.get("components_affected", []),
+                    "mastering_required": diagram_data.get("mastering_required", False)
+                }
+
+                # Cache for 10 minutes
+                self._set_cached(cache_key, result, ttl=600)
+                logger.info(f"Retrieved diagram for {error_code}")
+                return result
+
+            return None
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.debug(f"No diagram available for {error_code}")
+            else:
+                logger.error(f"Diagram fetch error: {e.response.status_code}")
+            return None
+        except Exception as e:
+            logger.error(f"Diagram fetch failed for {error_code}: {e}")
+            return None
+
+    def extract_error_codes(self, text: str) -> List[str]:
+        """
+        Extract FANUC error codes from text.
+
+        Args:
+            text: Text to search for error codes
+
+        Returns:
+            List of unique error codes found (e.g., ['SRVO-062', 'MOTN-017'])
+        """
+        # Pattern for FANUC alarm codes
+        pattern = r'(SRVO|MOTN|SYST|HOST|INTP|PRIO|COMM|VISI|SRIO|FILE|MACR|PALL|SPOT|ARC|DISP|CVIS)-(\d{3,4})'
+        matches = re.findall(pattern, text.upper())
+        # Return unique codes in order found
+        seen = set()
+        result = []
+        for prefix, num in matches:
+            code = f"{prefix}-{num}"
+            if code not in seen:
+                seen.add(code)
+                result.append(code)
+        return result
 
     # ============================================
     # PATHRAG TRAVERSAL

@@ -330,6 +330,22 @@ class SearchMeta(BaseModel):
     enhancement_metadata: Optional[Dict[str, Any]] = None
 
 
+class TroubleshootingDiagram(BaseModel):
+    """
+    Visual troubleshooting diagram from PDF Extraction Tools.
+    Used for rendering flowcharts in Android WebView.
+    """
+    type: str = Field(description="Diagram type: flowchart, pinout, circuit")
+    format: str = Field(description="Content format: html, mermaid, svg")
+    content: str = Field(description="Diagram content (HTML for WebView)")
+    error_code: Optional[str] = Field(default=None, description="Associated error code")
+    title: Optional[str] = Field(default=None, description="Diagram title")
+    parts_needed: List[str] = Field(default_factory=list, description="Required parts")
+    tools_needed: List[str] = Field(default_factory=list, description="Required tools")
+    components_affected: List[str] = Field(default_factory=list, description="Affected components")
+    mastering_required: bool = Field(default=False, description="Robot mastering needed after repair")
+
+
 class SearchResultData(BaseModel):
     """Data portion of search response"""
     synthesized_context: str = Field(..., description="The synthesized answer")
@@ -352,6 +368,11 @@ class SearchResultData(BaseModel):
     search_trace: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="Trace of agent actions for debugging"
+    )
+    # Troubleshooting diagram support (PDF Extraction Tools integration)
+    diagram: Optional[TroubleshootingDiagram] = Field(
+        default=None,
+        description="Optional troubleshooting diagram for error codes"
     )
 
 
