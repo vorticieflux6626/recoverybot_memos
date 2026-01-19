@@ -39,6 +39,7 @@ class Instructions:
     industrial_expertise: str = ""
     citation_requirement: str = ""
     cross_domain_constraints: str = ""
+    diagram_capability: str = ""
 
 
 @dataclass

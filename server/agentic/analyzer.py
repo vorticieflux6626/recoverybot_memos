@@ -139,10 +139,10 @@ class QueryAnalyzer:
             (r"motor\s+(?:power\s+)?(?:cable|harness|wiring)", 0.85, "MOTOR_POWER"),
             (r"(?:e-?stop|emergency\s+stop)\s+(?:harness|wiring|cable)", 0.85, "SAFETY_ESTOP"),
             (r"operator\s+panel\s+(?:harness|wiring|cable)", 0.85, "OPERATOR_PANEL"),
-            # Specific COP connector patterns
-            (r"cop1\s+(?:cable\s+)?(?:pinout|wiring|harness)", 0.9, "COP1"),
-            (r"cop2\s+(?:cable\s+)?(?:pinout|wiring|harness)", 0.9, "COP2"),
-            (r"cop1?\s+(?:harness|wiring|cable)", 0.85, "COP1"),
+            # Specific COP connector patterns (exclude "pinout" - that's PINOUT type)
+            (r"cop1\s+(?:cable\s+)?(?:wiring|harness|cable)", 0.9, "COP1"),
+            (r"cop2\s+(?:cable\s+)?(?:wiring|harness|cable)", 0.9, "COP2"),
+            (r"cop[12]?\s+(?:harness|wiring|cable)", 0.85, "COP1"),
             (r"(?:fssb|fiber\s+optic)\s+(?:cable|harness)", 0.85, "FSSB_FIBER"),
             (r"wire\s+(?:colors?|routing|diagram)", 0.75, None),
         ],
@@ -155,8 +155,9 @@ class QueryAnalyzer:
             (r"cop2\s+(?:pinout|pins?|connector)", 0.9, "COP2"),
             # TBOP connectors - match TBOP followed by number anywhere
             (r"tbop(\d+)", 0.9, None),
-            (r"encoder\s+(?:connector\s+)?pinout", 0.85, "ENCODER_17PIN"),
-            (r"pinout\s+(?:for\s+)?(?:the\s+)?encoder", 0.85, "ENCODER_17PIN"),
+            (r"encoder\s+(?:17[- ]?pin\s+)?(?:connector\s+)?pinout", 0.85, "ENCODER_17PIN"),
+            (r"17[- ]?pin\s+(?:encoder\s+)?pinout", 0.9, "ENCODER_17PIN"),
+            (r"pinout\s+(?:for\s+)?(?:the\s+)?(?:17[- ]?pin\s+)?encoder", 0.85, "ENCODER_17PIN"),
             # Reverse pattern: "pinout for X connector"
             (r"(?:pinout|pin\s+assignment)\s+(?:for|of)\s+(?:the\s+)?encoder", 0.9, "ENCODER_17PIN"),
             (r"jf[123]\s+(?:pinout|pins?|connector)", 0.9, None),
