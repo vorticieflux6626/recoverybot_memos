@@ -146,21 +146,53 @@ instructions:
     - Only claim relationships if explicitly stated in sources
 
   diagram_capability: |
-    VISUAL TROUBLESHOOTING DIAGRAMS:
-    For these FANUC error codes, interactive flowcharts are available:
-    - SRVO-001, SRVO-002, SRVO-006 (Safety/E-Stop)
-    - SRVO-023, SRVO-030, SRVO-065 (Servo/Communication)
-    - SRVO-062, SRVO-063 (Encoder/Battery)
-    - MOTN-017, MOTN-023 (Motion)
-    - SYST-001, HOST-005 (System/Host)
+    DIAGRAM GENERATION CAPABILITIES (Phase 50):
+
+    The system can generate these types of technical diagrams:
+
+    1. **TROUBLESHOOTING FLOWCHARTS** - For FANUC error codes:
+       - SRVO-001, SRVO-002, SRVO-006 (Safety/E-Stop)
+       - SRVO-023, SRVO-030, SRVO-065 (Servo/Communication)
+       - SRVO-062, SRVO-063 (Encoder/Battery)
+       - MOTN-017, MOTN-023 (Motion)
+       - SYST-001, HOST-005 (System/Host)
+
+    2. **CIRCUIT DIAGRAMS** - Electrical schematics:
+       - POWER_DISTRIBUTION: 24V power supply distribution
+       - SERVO_DRIVE: Servo amplifier and motor circuit
+       - ENCODER_INTERFACE: Encoder to servo amp connection
+       - SAFETY_CIRCUIT: Dual-channel E-stop with PNOZ
+       - FSSB_COMMUNICATION: Fiber optic servo bus
+       - PSU: Power supply unit circuits
+
+    3. **WIRING HARNESS DIAGRAMS** - Cable routing and colors:
+       - ENCODER_17PIN: 17-pin encoder cable (13 wires)
+       - MOTOR_POWER: Motor phases U/V/W + PE (4 wires)
+       - SAFETY_ESTOP: Dual-channel E-stop (5 wires)
+       - OPERATOR_PANEL: COP1 operator panel (12 wires)
+       - FSSB_FIBER: Fiber optic cable (2 fibers)
+
+    4. **PINOUT DIAGRAMS** - Connector pin assignments:
+       - COP1, COP2: Operator panel connectors
+       - TBOP13, TBOP14, TBOP20: Safety terminal blocks
+       - ENCODER_17PIN, JF1, JF2, JF3: Encoder connectors
+       - MOTOR_POWER_4PIN: Motor power connector
 
     When diagrams are included in the response:
-    1. Reference them: "See the troubleshooting flowchart below"
+    1. Reference them: "See the [circuit/harness/pinout] diagram below"
     2. Mention required parts from the diagram metadata
     3. Mention required tools from the diagram metadata
-    4. Note if mastering is required after repair
+    4. For pinouts, reference specific pin assignments when explaining wiring
+    5. For harnesses, mention wire colors when relevant
+    6. Note if mastering is required after repair
 
-    The Android client will render diagrams automatically in a WebView.
+    Users can request diagrams by asking:
+    - "Show me the servo drive circuit"
+    - "What's the pinout for COP1?"
+    - "Show encoder wiring harness"
+    - "Draw the troubleshooting flowchart for SRVO-063"
+
+    The Android client renders diagrams automatically in a WebView.
 
 # -----------------------------------------------------------------------------
 # System Prompts (core prefixes)
@@ -220,6 +252,31 @@ agent_prompts:
       4. Overall adequacy score (0-100)
 
       Return JSON with your analysis.
+
+    diagram_classification: |
+      Classify if the user is requesting a technical diagram.
+
+      DIAGRAM REQUEST TYPES:
+      - circuit: Electrical schematic, power distribution, servo drive circuit
+      - harness: Wiring harness, cable routing, wire colors
+      - pinout: Connector pinout, pin assignments, terminal layout
+      - flowchart: Troubleshooting steps, diagnostic procedure
+      - none: No diagram requested
+
+      Extract from the query:
+      - diagram_type: One of the above types
+      - diagram_subtype: Specific variant (e.g., "SERVO_DRIVE", "ENCODER_17PIN", "COP1")
+      - confidence: 0.0-1.0
+
+      USER QUERY: {query}
+
+      Return JSON:
+      {
+        "diagram_requested": true/false,
+        "diagram_type": "circuit|harness|pinout|flowchart|none",
+        "diagram_subtype": "specific variant or null",
+        "confidence": 0.0-1.0
+      }
 
   # ---------------------------------------------------------------------------
   # Planner Agent

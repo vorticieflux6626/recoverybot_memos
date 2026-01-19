@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import httpx
 
-from .models import QueryAnalysis, SearchPlan
+from .models import QueryAnalysis, SearchPlan, DiagramIntent, DiagramType
 from .context_limits import get_analyzer_limits, ANALYZER_LIMITS, get_model_context_window
 from .metrics import get_performance_metrics
 from .acronym_dictionary import expand_acronyms, get_acronym_info, get_related_terms
@@ -106,6 +106,72 @@ class QueryAnalyzer:
         # Acronym Expansion (Part E.1)
         self._enable_acronym_expansion = enable_acronym_expansion
 
+    # Diagram intent detection patterns
+    DIAGRAM_INTENT_PATTERNS = {
+        DiagramType.CIRCUIT: [
+            (r"show\s+(?:me\s+)?(?:a\s+)?(?:the\s+)?circuit\s*(?:diagram|schematic)?", 0.9, None),
+            (r"draw\s+(?:me\s+)?(?:a\s+)?(?:the\s+)?(?:circuit\s+)?schematic", 0.9, None),
+            (r"electrical\s+schematic", 0.85, None),
+            (r"wiring\s+schematic", 0.8, None),
+            (r"(?:circuit|schematic)\s+for\s+(servo|power|encoder|safety|fssb)", 0.85, None),
+            # Reverse pattern: "circuit diagram for X"
+            (r"circuit\s+(?:diagram|schematic)\s+(?:for|of)\s+(?:the\s+)?(servo|power|encoder|safety)", 0.9, None),
+            # Servo drive/amplifier patterns - multiple orderings
+            (r"servo\s+(?:drive|amp(?:lifier)?)\s+circuit", 0.9, "SERVO_DRIVE"),
+            (r"(?:servo\s+drive|amplifier)\s+(?:circuit|schematic)", 0.9, "SERVO_DRIVE"),
+            (r"circuit\s+(?:diagram|schematic)?\s+(?:for\s+)?servo\s+drive", 0.9, "SERVO_DRIVE"),
+            (r"(?:for|of)\s+servo\s+drive", 0.85, "SERVO_DRIVE"),
+            # Power supply patterns - PSU patterns first with higher priority when "psu" mentioned
+            (r"psu\s+(?:power\s+supply\s+)?(?:circuit|schematic|diagram)?", 0.95, "PSU"),
+            (r"power\s+(?:distribution|supply)\s+(?:circuit|schematic|diagram)", 0.9, "POWER_DISTRIBUTION"),
+            (r"encoder\s+(?:interface|circuit)\s+(?:diagram|schematic)?", 0.85, "ENCODER_INTERFACE"),
+            (r"safety\s+(?:circuit|relay)\s+(?:diagram|schematic)?", 0.85, "SAFETY_CIRCUIT"),
+            (r"fssb\s+(?:communication|circuit|diagram)", 0.85, "FSSB_COMMUNICATION"),
+            (r"e-?stop\s+(?:circuit|wiring|schematic)", 0.85, "SAFETY_CIRCUIT"),
+        ],
+        DiagramType.HARNESS: [
+            (r"show\s+(?:me\s+)?(?:a\s+)?(?:the\s+)?(?:wiring\s+)?harness", 0.9, None),
+            (r"(?:cable|wiring)\s+(?:diagram|harness)", 0.85, None),
+            (r"(?:connector|cable)\s+(?:routing|wiring)", 0.8, None),
+            (r"harness\s+(?:diagram\s+)?for\s+(encoder|motor|safety|operator|fssb)", 0.85, None),
+            (r"encoder\s+(?:17[- ]?pin\s+)?(?:cable|harness|wiring)", 0.9, "ENCODER_17PIN"),
+            (r"17[- ]?pin\s+encoder", 0.9, "ENCODER_17PIN"),
+            (r"motor\s+(?:power\s+)?(?:cable|harness|wiring)", 0.85, "MOTOR_POWER"),
+            (r"(?:e-?stop|emergency\s+stop)\s+(?:harness|wiring|cable)", 0.85, "SAFETY_ESTOP"),
+            (r"operator\s+panel\s+(?:harness|wiring|cable)", 0.85, "OPERATOR_PANEL"),
+            # Specific COP connector patterns
+            (r"cop1\s+(?:cable\s+)?(?:pinout|wiring|harness)", 0.9, "COP1"),
+            (r"cop2\s+(?:cable\s+)?(?:pinout|wiring|harness)", 0.9, "COP2"),
+            (r"cop1?\s+(?:harness|wiring|cable)", 0.85, "COP1"),
+            (r"(?:fssb|fiber\s+optic)\s+(?:cable|harness)", 0.85, "FSSB_FIBER"),
+            (r"wire\s+(?:colors?|routing|diagram)", 0.75, None),
+        ],
+        DiagramType.PINOUT: [
+            (r"show\s+(?:me\s+)?(?:a\s+)?(?:the\s+)?pinout", 0.9, None),
+            (r"(?:connector|pin)\s+(?:pinout|assignment|diagram)", 0.85, None),
+            (r"(?:which|what)\s+pins?\s+(?:connect|go|are)", 0.75, None),
+            (r"pin\s+(?:mapping|configuration|layout|assignment)", 0.8, None),
+            (r"cop1\s+(?:pinout|pins?|connector)", 0.9, "COP1"),
+            (r"cop2\s+(?:pinout|pins?|connector)", 0.9, "COP2"),
+            # TBOP connectors - match TBOP followed by number anywhere
+            (r"tbop(\d+)", 0.9, None),
+            (r"encoder\s+(?:connector\s+)?pinout", 0.85, "ENCODER_17PIN"),
+            (r"pinout\s+(?:for\s+)?(?:the\s+)?encoder", 0.85, "ENCODER_17PIN"),
+            # Reverse pattern: "pinout for X connector"
+            (r"(?:pinout|pin\s+assignment)\s+(?:for|of)\s+(?:the\s+)?encoder", 0.9, "ENCODER_17PIN"),
+            (r"jf[123]\s+(?:pinout|pins?|connector)", 0.9, None),
+            (r"motor\s+(?:connector\s+)?pinout", 0.85, "MOTOR_POWER_4PIN"),
+        ],
+        DiagramType.FLOWCHART: [
+            (r"troubleshoot(?:ing)?\s+(?:flowchart|steps|diagram|process)", 0.9, None),
+            (r"diagnostic\s+(?:flowchart|steps|procedure|process)", 0.85, None),
+            (r"(?:flowchart|diagram)\s+(?:of|for)\s+(?:the\s+)?(?:troubleshooting|diagnostic|repair)", 0.9, None),
+            (r"(?:how\s+(?:do\s+i|to)\s+)?(?:fix|troubleshoot|diagnose)\s+(srvo|motn|syst|host)", 0.7, None),
+            (r"(?:srvo|motn|syst|host)-?\d{3}\s+(?:flowchart|diagram|steps)", 0.9, None),
+            (r"show\s+(?:me\s+)?(?:the\s+)?(?:troubleshooting|diagnostic)\s+(?:flowchart|diagram|process)", 0.9, None),
+        ],
+    }
+
     def _expand_query_acronyms(self, query: str) -> tuple[str, List[str]]:
         """
         Expand known industrial acronyms in query.
@@ -132,6 +198,70 @@ class QueryAnalyzer:
 
         return expanded, related
 
+    def detect_diagram_intent(self, query: str) -> DiagramIntent:
+        """
+        Detect if user is requesting a diagram and what type.
+
+        Uses pattern matching to identify diagram-related requests in the query.
+        Returns DiagramIntent with type, subtype, and confidence.
+
+        Args:
+            query: The user's query text
+
+        Returns:
+            DiagramIntent with detected diagram request information
+        """
+        query_lower = query.lower()
+        best_match: Optional[tuple[DiagramType, str, float, Optional[str]]] = None
+
+        for diagram_type, patterns in self.DIAGRAM_INTENT_PATTERNS.items():
+            for pattern_tuple in patterns:
+                pattern, confidence, subtype = pattern_tuple
+                match = re.search(pattern, query_lower)
+                if match:
+                    # Extract subtype from capture group if pattern has one and subtype not preset
+                    detected_subtype = subtype
+                    if detected_subtype is None and match.groups():
+                        # Map common terms to subtypes
+                        captured = match.group(1).upper() if match.groups() else None
+                        if captured:
+                            # Check if it's a TBOP number pattern
+                            if captured.isdigit():
+                                detected_subtype = f"TBOP{captured}"
+                            else:
+                                subtype_map = {
+                                    "SERVO": "SERVO_DRIVE",
+                                    "POWER": "POWER_DISTRIBUTION",
+                                    "ENCODER": "ENCODER_INTERFACE" if diagram_type == DiagramType.CIRCUIT else "ENCODER_17PIN",
+                                    "SAFETY": "SAFETY_CIRCUIT" if diagram_type == DiagramType.CIRCUIT else "SAFETY_ESTOP",
+                                    "FSSB": "FSSB_COMMUNICATION" if diagram_type == DiagramType.CIRCUIT else "FSSB_FIBER",
+                                    "OPERATOR": "OPERATOR_PANEL",
+                                    "MOTOR": "MOTOR_POWER",
+                                }
+                                detected_subtype = subtype_map.get(captured)
+
+                    # Prefer patterns with higher confidence, or same confidence but with subtype
+                    should_replace = (
+                        best_match is None
+                        or confidence > best_match[2]
+                        or (confidence == best_match[2] and detected_subtype and not best_match[3])
+                    )
+                    if should_replace:
+                        best_match = (diagram_type, match.group(0), confidence, detected_subtype)
+
+        if best_match:
+            diagram_type, detected_from, confidence, subtype = best_match
+            logger.info(f"Diagram intent detected: type={diagram_type.value}, subtype={subtype}, confidence={confidence:.2f}")
+            return DiagramIntent(
+                requested=True,
+                diagram_type=diagram_type,
+                diagram_subtype=subtype,
+                confidence=confidence,
+                detected_from=detected_from
+            )
+
+        return DiagramIntent(requested=False)
+
     async def analyze(
         self,
         query: str,
@@ -157,6 +287,11 @@ class QueryAnalyzer:
         - estimated_complexity: low, medium, high
         """
         logger.info(f"Analyzing query (gateway={use_gateway}): {query[:100]}...")
+
+        # Detect diagram intent first (rule-based, fast)
+        diagram_intent = self.detect_diagram_intent(query)
+        if diagram_intent.requested:
+            logger.info(f"Diagram request detected: {diagram_intent.diagram_type.value if diagram_intent.diagram_type else 'unknown'}")
 
         # Expand industrial acronyms for better understanding
         expanded_query, related_terms = self._expand_query_acronyms(query)
@@ -199,8 +334,12 @@ class QueryAnalyzer:
             except Exception as e:
                 logger.warning(f"Semantic query parsing failed, using LLM queries: {e}")
 
+            # Add diagram intent to analysis
+            analysis.diagram_intent = diagram_intent
+
             logger.info(f"Query analysis: requires_search={analysis.requires_search}, "
-                       f"type={analysis.query_type}, complexity={analysis.estimated_complexity}")
+                       f"type={analysis.query_type}, complexity={analysis.estimated_complexity}, "
+                       f"diagram_intent={diagram_intent.requested}")
             return analysis
         except Exception as e:
             logger.error(f"Query analysis failed: {e}")
@@ -212,7 +351,8 @@ class QueryAnalyzer:
                 key_topics=[query],
                 suggested_queries=[query],
                 estimated_complexity="medium",
-                confidence=0.3
+                confidence=0.3,
+                diagram_intent=diagram_intent  # Still include detected diagram intent
             )
 
     async def create_search_plan(

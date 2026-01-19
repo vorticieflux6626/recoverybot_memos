@@ -49,7 +49,9 @@ from .models import (
     ConfidenceLevel,
     WebSearchResult,
     QueryAnalysis,
-    TroubleshootingDiagram
+    TroubleshootingDiagram,
+    DiagramType,
+    DiagramIntent
 )
 from . import events  # For SSE event emission in non-streaming path
 from .events import (
@@ -484,6 +486,14 @@ class FeatureConfig:
     # Maps SRVO errors to physical robot components (motors, encoders, brakes)
     enable_machine_entity_context: bool = False  # Error-to-component mapping via PDF Tools API
 
+    # Diagram Generation (Layer 3) - Phase 50 (January 2026)
+    # Controls generation of technical diagrams: circuits, harnesses, pinouts
+    enable_circuit_diagrams: bool = False         # Electrical circuit schematics (SVG)
+    enable_harness_diagrams: bool = False         # Wiring harness diagrams (SVG)
+    enable_pinout_diagrams: bool = False          # Connector pinout diagrams (SVG)
+    enable_auto_diagram_generation: bool = False  # Auto-generate diagrams based on context
+    diagram_theme: str = "dark"                   # dark/light/print/fanuc_yellow
+
     # LLM Gateway (Layer 3) - Unified LLM routing
     enable_gateway_routing: bool = False   # Route LLM calls through gateway service
 
@@ -590,6 +600,11 @@ PRESET_CONFIGS = {
         cross_domain_severity_threshold="warning",
         # Machine Entity Graph (Phase 49)
         enable_machine_entity_context=True,  # Error-to-component mapping
+        # Diagram Generation (Phase 50) - user-requested diagrams
+        enable_circuit_diagrams=True,
+        enable_harness_diagrams=True,
+        enable_pinout_diagrams=True,
+        enable_auto_diagram_generation=False,  # Only on explicit request
         # Mem0 memory extraction (user preferences, cross-session context)
         enable_mem0_extraction=True
     ),
@@ -664,6 +679,11 @@ PRESET_CONFIGS = {
         cross_domain_severity_threshold="critical",  # Stricter for research
         # Machine Entity Graph (Phase 49)
         enable_machine_entity_context=True,  # Error-to-component mapping
+        # Diagram Generation (Phase 50) - auto-generation enabled for research
+        enable_circuit_diagrams=True,
+        enable_harness_diagrams=True,
+        enable_pinout_diagrams=True,
+        enable_auto_diagram_generation=True,  # Auto-generate when context suggests
         # Mem0 memory extraction (user preferences, cross-session context)
         enable_mem0_extraction=True
     ),
@@ -748,6 +768,11 @@ PRESET_CONFIGS = {
         cross_domain_severity_threshold="critical",  # Maximum strictness for FULL
         # Machine Entity Graph (Phase 49)
         enable_machine_entity_context=True,  # Error-to-component mapping
+        # Diagram Generation (Phase 50) - full diagram suite with auto-generation
+        enable_circuit_diagrams=True,
+        enable_harness_diagrams=True,
+        enable_pinout_diagrams=True,
+        enable_auto_diagram_generation=True,  # Auto-generate when context suggests
         # Mem0 memory extraction (user preferences, cross-session context)
         enable_mem0_extraction=True
     )
@@ -1741,6 +1766,102 @@ class UniversalOrchestrator(BaseSearchPipeline):
         if self._document_graph_service is None:
             self._document_graph_service = get_document_graph_service()
         return self._document_graph_service
+
+    async def _detect_diagram_opportunity(
+        self,
+        query: str,
+        synthesis: str,
+        request_id: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Detect when a diagram would be helpful based on query and synthesis context.
+
+        Returns list of diagram suggestions sorted by confidence.
+
+        Phase 50: Auto-diagram generation based on content analysis.
+        """
+        import re
+        suggestions = []
+
+        combined_text = f"{query} {synthesis}".lower()
+
+        # Circuit diagram opportunities
+        if re.search(r'servo\s*(?:amplifier|drive|amp)|power\s*supply|srvo-\d{3}', combined_text):
+            suggestions.append({
+                "type": "circuit",
+                "subtype": "SERVO_DRIVE",
+                "confidence": 0.8,
+                "reason": "Servo amplifier or drive discussion detected"
+            })
+
+        if re.search(r'power\s*distribution|24v|dc\s*bus|psu', combined_text):
+            suggestions.append({
+                "type": "circuit",
+                "subtype": "POWER_DISTRIBUTION",
+                "confidence": 0.75,
+                "reason": "Power distribution discussion detected"
+            })
+
+        if re.search(r'safety\s*(?:circuit|relay)|e-?stop|emergency\s*stop', combined_text):
+            suggestions.append({
+                "type": "circuit",
+                "subtype": "SAFETY_CIRCUIT",
+                "confidence": 0.85,
+                "reason": "Safety circuit discussion detected"
+            })
+
+        # Harness diagram opportunities
+        if re.search(r'encoder\s*(?:cable|wiring|feedback)|17[- ]?pin|pulse\s*coder', combined_text):
+            suggestions.append({
+                "type": "harness",
+                "subtype": "ENCODER_17PIN",
+                "confidence": 0.9,
+                "reason": "Encoder cable or feedback discussion detected"
+            })
+
+        if re.search(r'motor\s*(?:cable|wiring|power)|phase\s*(?:u|v|w)', combined_text):
+            suggestions.append({
+                "type": "harness",
+                "subtype": "MOTOR_POWER",
+                "confidence": 0.8,
+                "reason": "Motor power cable discussion detected"
+            })
+
+        if re.search(r'fssb|fiber\s*optic|cop10', combined_text):
+            suggestions.append({
+                "type": "harness",
+                "subtype": "FSSB_FIBER",
+                "confidence": 0.75,
+                "reason": "FSSB fiber optic discussion detected"
+            })
+
+        # Pinout diagram opportunities
+        if re.search(r'cop1\s*(?:pinout|connector|pin)', combined_text):
+            suggestions.append({
+                "type": "pinout",
+                "subtype": "COP1",
+                "confidence": 0.9,
+                "reason": "COP1 connector discussion detected"
+            })
+
+        if re.search(r'tbop\d+|safety\s*terminal', combined_text):
+            # Extract TBOP number if present
+            match = re.search(r'tbop(\d+)', combined_text)
+            subtype = f"TBOP{match.group(1)}" if match else "TBOP13"
+            suggestions.append({
+                "type": "pinout",
+                "subtype": subtype,
+                "confidence": 0.85,
+                "reason": "Safety terminal block discussion detected"
+            })
+
+        # Sort by confidence descending
+        suggestions.sort(key=lambda x: x["confidence"], reverse=True)
+
+        if suggestions:
+            logger.debug(f"[{request_id}] Detected {len(suggestions)} diagram opportunities")
+
+        return suggestions
 
     async def _search_technical_docs(self, query: str) -> Optional[str]:
         """
@@ -5166,71 +5287,207 @@ class UniversalOrchestrator(BaseSearchPipeline):
             except Exception as e:
                 logger.warning(f"[{request_id}] Contrastive retriever recording failed: {e}")
 
-        # PHASE 12.12: Diagram Integration (PDF Extraction Tools)
-        # Fetch troubleshooting diagram for FANUC error codes
+        # PHASE 12.12: Diagram Integration (PDF Extraction Tools) - Phase 50 Enhanced
+        # Handles: user-requested diagrams, error code flowcharts, auto-generation
         diagram: Optional[TroubleshootingDiagram] = None
         try:
             doc_service = self._get_document_graph_service()
-            error_codes = doc_service.extract_error_codes(request.query)
+            diagram_generated = False
 
-            if error_codes:
-                # Check first error code for diagram availability
-                error_code = error_codes[0]
-                logger.info(f"[{request_id}] Checking diagram for error code: {error_code}")
+            # Priority 1: Check if user explicitly requested a diagram
+            if query_analysis and query_analysis.diagram_intent and query_analysis.diagram_intent.requested:
+                intent = query_analysis.diagram_intent
+                logger.info(f"[{request_id}] User requested diagram: type={intent.diagram_type}, subtype={intent.diagram_subtype}")
 
                 # Emit diagram generating event
                 await self.emit_event(
                     EventType.DIAGRAM_GENERATING,
-                    {"error_code": error_code},
+                    {
+                        "diagram_type": intent.diagram_type.value if intent.diagram_type else "unknown",
+                        "subtype": intent.diagram_subtype
+                    },
                     request_id,
-                    message=f"Checking for troubleshooting diagram for {error_code}..."
+                    message=f"Generating {intent.diagram_type.value if intent.diagram_type else 'diagram'}..."
                 )
 
-                if await doc_service.check_diagram_available(error_code):
-                    diagram_data = await doc_service.get_troubleshooting_diagram(error_code)
+                # Generate diagram based on type
+                diagram_data = None
+                if intent.diagram_type == DiagramType.CIRCUIT and self.config.enable_circuit_diagrams:
+                    circuit_type = intent.diagram_subtype or "SERVO_DRIVE"
+                    diagram_data = await doc_service.get_circuit_diagram(
+                        circuit_type=circuit_type,
+                        theme=self.config.diagram_theme
+                    )
+                    if diagram_data:
+                        diagram_data["circuit_type"] = circuit_type
+
+                elif intent.diagram_type == DiagramType.HARNESS and self.config.enable_harness_diagrams:
+                    harness_type = intent.diagram_subtype or "ENCODER_17PIN"
+                    diagram_data = await doc_service.get_harness_diagram(
+                        harness_type=harness_type,
+                        theme=self.config.diagram_theme
+                    )
+                    if diagram_data:
+                        diagram_data["harness_type"] = harness_type
+
+                elif intent.diagram_type == DiagramType.PINOUT and self.config.enable_pinout_diagrams:
+                    connector_type = intent.diagram_subtype or "COP1"
+                    diagram_data = await doc_service.get_pinout_diagram(
+                        connector_type=connector_type,
+                        theme=self.config.diagram_theme
+                    )
+                    if diagram_data:
+                        diagram_data["connector_type"] = connector_type
+
+                elif intent.diagram_type == DiagramType.FLOWCHART:
+                    # Try to extract error code from query for flowchart
+                    error_codes = doc_service.extract_error_codes(request.query)
+                    if error_codes and await doc_service.check_diagram_available(error_codes[0]):
+                        diagram_data = await doc_service.get_troubleshooting_diagram(error_codes[0])
+                        if diagram_data:
+                            diagram_data["error_code"] = error_codes[0]
+
+                if diagram_data and diagram_data.get("content"):
+                    diagram = TroubleshootingDiagram(
+                        type=diagram_data.get("type", intent.diagram_type.value if intent.diagram_type else "flowchart"),
+                        format=diagram_data.get("format", "html"),
+                        content=diagram_data.get("content", ""),
+                        error_code=diagram_data.get("error_code"),
+                        circuit_type=diagram_data.get("circuit_type"),
+                        harness_type=diagram_data.get("harness_type"),
+                        connector_type=diagram_data.get("connector_type"),
+                        title=diagram_data.get("title"),
+                        parts_needed=diagram_data.get("parts_needed", []),
+                        tools_needed=diagram_data.get("tools_needed", []),
+                        components_affected=diagram_data.get("components_affected", []),
+                        wire_colors=diagram_data.get("wire_colors", {}),
+                        pin_assignments=diagram_data.get("pin_assignments", {}),
+                        mastering_required=diagram_data.get("mastering_required", False)
+                    )
+                    diagram_generated = True
+                    enhancement_metadata["features_used"].append(f"diagram_{intent.diagram_type.value}")
+                    logger.info(f"[{request_id}] User-requested diagram generated: {intent.diagram_type.value}")
+
+            # Priority 2: Auto-generate flowchart for error codes (existing behavior)
+            if not diagram_generated:
+                error_codes = doc_service.extract_error_codes(request.query)
+                if error_codes:
+                    error_code = error_codes[0]
+                    logger.info(f"[{request_id}] Checking diagram for error code: {error_code}")
+
+                    await self.emit_event(
+                        EventType.DIAGRAM_GENERATING,
+                        {"error_code": error_code},
+                        request_id,
+                        message=f"Checking for troubleshooting diagram for {error_code}..."
+                    )
+
+                    if await doc_service.check_diagram_available(error_code):
+                        diagram_data = await doc_service.get_troubleshooting_diagram(error_code)
+
+                        if diagram_data and diagram_data.get("content"):
+                            diagram = TroubleshootingDiagram(
+                                type=diagram_data.get("type", "flowchart"),
+                                format=diagram_data.get("format", "html"),
+                                content=diagram_data.get("content", ""),
+                                error_code=error_code,
+                                title=diagram_data.get("title"),
+                                parts_needed=diagram_data.get("parts_needed", []),
+                                tools_needed=diagram_data.get("tools_needed", []),
+                                components_affected=diagram_data.get("components_affected", []),
+                                mastering_required=diagram_data.get("mastering_required", False)
+                            )
+                            diagram_generated = True
+                            enhancement_metadata["features_used"].append("diagram_integration")
+                            logger.info(f"[{request_id}] Diagram fetched for {error_code}: {len(diagram.content)} chars")
+
+            # Priority 3: Auto-generate diagrams based on context (if enabled)
+            if not diagram_generated and self.config.enable_auto_diagram_generation:
+                suggestions = await self._detect_diagram_opportunity(request.query, synthesis, request_id)
+                if suggestions:
+                    best_suggestion = suggestions[0]
+                    logger.info(f"[{request_id}] Auto-generating diagram: {best_suggestion['type']}/{best_suggestion['subtype']}")
+
+                    await self.emit_event(
+                        EventType.DIAGRAM_GENERATING,
+                        {
+                            "diagram_type": best_suggestion["type"],
+                            "subtype": best_suggestion["subtype"],
+                            "auto_generated": True
+                        },
+                        request_id,
+                        message=f"Auto-generating {best_suggestion['type']} diagram..."
+                    )
+
+                    diagram_data = None
+                    if best_suggestion["type"] == "circuit" and self.config.enable_circuit_diagrams:
+                        diagram_data = await doc_service.get_circuit_diagram(
+                            circuit_type=best_suggestion["subtype"],
+                            theme=self.config.diagram_theme
+                        )
+                        if diagram_data:
+                            diagram_data["circuit_type"] = best_suggestion["subtype"]
+                    elif best_suggestion["type"] == "harness" and self.config.enable_harness_diagrams:
+                        diagram_data = await doc_service.get_harness_diagram(
+                            harness_type=best_suggestion["subtype"],
+                            theme=self.config.diagram_theme
+                        )
+                        if diagram_data:
+                            diagram_data["harness_type"] = best_suggestion["subtype"]
+                    elif best_suggestion["type"] == "pinout" and self.config.enable_pinout_diagrams:
+                        diagram_data = await doc_service.get_pinout_diagram(
+                            connector_type=best_suggestion["subtype"],
+                            theme=self.config.diagram_theme
+                        )
+                        if diagram_data:
+                            diagram_data["connector_type"] = best_suggestion["subtype"]
 
                     if diagram_data and diagram_data.get("content"):
                         diagram = TroubleshootingDiagram(
-                            type=diagram_data.get("type", "flowchart"),
+                            type=diagram_data.get("type", best_suggestion["type"]),
                             format=diagram_data.get("format", "html"),
                             content=diagram_data.get("content", ""),
-                            error_code=error_code,
+                            circuit_type=diagram_data.get("circuit_type"),
+                            harness_type=diagram_data.get("harness_type"),
+                            connector_type=diagram_data.get("connector_type"),
                             title=diagram_data.get("title"),
                             parts_needed=diagram_data.get("parts_needed", []),
                             tools_needed=diagram_data.get("tools_needed", []),
                             components_affected=diagram_data.get("components_affected", []),
-                            mastering_required=diagram_data.get("mastering_required", False)
+                            wire_colors=diagram_data.get("wire_colors", {}),
+                            pin_assignments=diagram_data.get("pin_assignments", {})
                         )
+                        enhancement_metadata["features_used"].append(f"auto_diagram_{best_suggestion['type']}")
+                        logger.info(f"[{request_id}] Auto-generated diagram: {best_suggestion['type']}")
 
-                        # Emit diagram generated event with full diagram object
-                        # Android client expects the complete diagram including HTML content
-                        await self.emit_event(
-                            EventType.DIAGRAM_GENERATED,
-                            {
-                                "diagram": {
-                                    "type": diagram.type,
-                                    "format": diagram.format,
-                                    "content": diagram.content,
-                                    "error_code": error_code,
-                                    "title": diagram.title,
-                                    "parts_needed": diagram.parts_needed,
-                                    "tools_needed": diagram.tools_needed,
-                                    "components_affected": diagram.components_affected,
-                                    "mastering_required": diagram.mastering_required
-                                }
-                            },
-                            request_id,
-                            message=f"Troubleshooting diagram available for {error_code}"
-                        )
+            # Emit diagram generated event if we have a diagram
+            if diagram:
+                await self.emit_event(
+                    EventType.DIAGRAM_GENERATED,
+                    {
+                        "diagram": {
+                            "type": diagram.type,
+                            "format": diagram.format,
+                            "content": diagram.content,
+                            "error_code": diagram.error_code,
+                            "circuit_type": diagram.circuit_type,
+                            "harness_type": diagram.harness_type,
+                            "connector_type": diagram.connector_type,
+                            "title": diagram.title,
+                            "parts_needed": diagram.parts_needed,
+                            "tools_needed": diagram.tools_needed,
+                            "components_affected": diagram.components_affected,
+                            "wire_colors": diagram.wire_colors,
+                            "pin_assignments": diagram.pin_assignments,
+                            "mastering_required": getattr(diagram, 'mastering_required', False)
+                        }
+                    },
+                    request_id,
+                    message=f"Diagram available: {diagram.type}"
+                )
 
-                        enhancement_metadata["features_used"].append("diagram_integration")
-                        logger.info(f"[{request_id}] Diagram fetched for {error_code}: {len(diagram.content)} chars")
-                    else:
-                        logger.debug(f"[{request_id}] No diagram content for {error_code}")
-                else:
-                    logger.debug(f"[{request_id}] No diagram available for {error_code}")
         except Exception as e:
-            logger.warning(f"[{request_id}] Diagram fetch failed: {e}")
+            logger.warning(f"[{request_id}] Diagram generation failed: {e}")
 
         return self.build_response(
             synthesis=synthesis,

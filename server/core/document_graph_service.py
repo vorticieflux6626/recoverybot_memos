@@ -491,6 +491,288 @@ class DocumentGraphService:
         return result
 
     # ============================================
+    # CIRCUIT, HARNESS, PINOUT DIAGRAMS
+    # ============================================
+
+    async def get_circuit_diagram(
+        self,
+        circuit_type: str,
+        theme: str = "dark"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fetch circuit diagram from PDF Extraction Tools API.
+
+        Retrieves SVG circuit schematics for electrical systems that can be
+        rendered in Android WebView.
+
+        Args:
+            circuit_type: Type of circuit diagram:
+                - POWER_DISTRIBUTION: 24V power supply distribution
+                - SERVO_DRIVE: Servo amplifier and motor circuit
+                - ENCODER_INTERFACE: Encoder to servo amp connection
+                - SAFETY_CIRCUIT: Dual-channel E-stop with PNOZ
+                - FSSB_COMMUNICATION: Fiber optic servo bus
+            theme: Visual theme ('dark', 'light', 'print', 'fanuc_yellow')
+
+        Returns:
+            Diagram dict with SVG content, or None if not available
+        """
+        if not self.is_available:
+            return None
+
+        circuit_type = circuit_type.upper().strip()
+
+        # Check cache
+        cache_key = self._cache_key("circuit", circuit_type, theme)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            logger.debug(f"Cache hit for circuit diagram: {circuit_type}")
+            return cached
+
+        try:
+            response = await self.client.get(
+                f"/api/v1/diagrams/circuits/{circuit_type}",
+                params={"theme": theme},
+                timeout=15.0
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            # Handle unified response format
+            if data.get("success") and data.get("data"):
+                diagram_data = data["data"]
+                result = {
+                    "type": "circuit",
+                    "format": diagram_data.get("format", "svg"),
+                    "content": diagram_data.get("svg", diagram_data.get("content", "")),
+                    "circuit_type": circuit_type,
+                    "title": diagram_data.get("title", f"{circuit_type.replace('_', ' ').title()} Circuit"),
+                    "description": diagram_data.get("description", ""),
+                    "components": diagram_data.get("components", []),
+                    "connections": diagram_data.get("connections", []),
+                }
+
+                # Cache for 10 minutes
+                self._set_cached(cache_key, result, ttl=600)
+                logger.info(f"Retrieved circuit diagram: {circuit_type}")
+                return result
+
+            return None
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.debug(f"Circuit diagram not available: {circuit_type}")
+            else:
+                logger.error(f"Circuit diagram fetch error: {e.response.status_code}")
+            return None
+        except Exception as e:
+            logger.error(f"Circuit diagram fetch failed for {circuit_type}: {e}")
+            return None
+
+    async def get_harness_diagram(
+        self,
+        harness_type: str,
+        theme: str = "dark"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fetch wiring harness diagram from PDF Extraction Tools API.
+
+        Retrieves SVG harness diagrams showing cable routing and wire colors
+        that can be rendered in Android WebView.
+
+        Args:
+            harness_type: Type of wiring harness:
+                - ENCODER_17PIN: 17-pin encoder cable (13 wires)
+                - MOTOR_POWER: Motor phases U/V/W + PE (4 wires)
+                - SAFETY_ESTOP: Dual-channel E-stop (5 wires)
+                - OPERATOR_PANEL: COP1 operator panel (12 wires)
+                - FSSB_FIBER: Fiber optic cable (2 fibers)
+            theme: Visual theme ('dark', 'light', 'print')
+
+        Returns:
+            Diagram dict with SVG content and wire specifications, or None if not available
+        """
+        if not self.is_available:
+            return None
+
+        harness_type = harness_type.upper().strip()
+
+        # Check cache
+        cache_key = self._cache_key("harness", harness_type, theme)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            logger.debug(f"Cache hit for harness diagram: {harness_type}")
+            return cached
+
+        try:
+            response = await self.client.get(
+                f"/api/v1/diagrams/harnesses/{harness_type}",
+                params={"theme": theme},
+                timeout=15.0
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            # Handle unified response format
+            if data.get("success") and data.get("data"):
+                diagram_data = data["data"]
+                result = {
+                    "type": "harness",
+                    "format": diagram_data.get("format", "svg"),
+                    "content": diagram_data.get("svg", diagram_data.get("content", "")),
+                    "harness_type": harness_type,
+                    "title": diagram_data.get("title", f"{harness_type.replace('_', ' ').title()} Harness"),
+                    "description": diagram_data.get("description", ""),
+                    "wire_colors": diagram_data.get("wire_colors", {}),
+                    "wire_count": diagram_data.get("wire_count", 0),
+                    "source_connector": diagram_data.get("source_connector", ""),
+                    "target_connector": diagram_data.get("target_connector", ""),
+                    "signals": diagram_data.get("signals", []),
+                }
+
+                # Cache for 10 minutes
+                self._set_cached(cache_key, result, ttl=600)
+                logger.info(f"Retrieved harness diagram: {harness_type}")
+                return result
+
+            return None
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.debug(f"Harness diagram not available: {harness_type}")
+            else:
+                logger.error(f"Harness diagram fetch error: {e.response.status_code}")
+            return None
+        except Exception as e:
+            logger.error(f"Harness diagram fetch failed for {harness_type}: {e}")
+            return None
+
+    async def get_pinout_diagram(
+        self,
+        connector_type: str,
+        theme: str = "dark"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fetch connector pinout diagram from PDF Extraction Tools API.
+
+        Retrieves pin assignment diagrams for FANUC connectors.
+
+        Args:
+            connector_type: Connector identifier:
+                - COP1, COP2: Operator panel connectors
+                - ENCODER_17PIN: 17-pin encoder connector
+                - TBOP13, TBOP14, TBOP20: Safety terminal blocks
+                - MOTOR_POWER_4PIN: Motor power connector
+                - JF1, JF2, JF3: FANUC serial pulsecoder connectors
+            theme: Visual theme ('dark', 'light', 'print')
+
+        Returns:
+            Diagram dict with pinout content and pin assignments, or None if not available
+        """
+        if not self.is_available:
+            return None
+
+        connector_type = connector_type.upper().strip()
+
+        # Check cache
+        cache_key = self._cache_key("pinout", connector_type, theme)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            logger.debug(f"Cache hit for pinout diagram: {connector_type}")
+            return cached
+
+        try:
+            # Pinouts are typically part of the connector info endpoint
+            response = await self.client.get(
+                f"/api/v1/diagrams/connectors/{connector_type}/pinout",
+                params={"theme": theme},
+                timeout=15.0
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            # Handle unified response format
+            if data.get("success") and data.get("data"):
+                diagram_data = data["data"]
+                result = {
+                    "type": "pinout",
+                    "format": diagram_data.get("format", "svg"),
+                    "content": diagram_data.get("svg", diagram_data.get("content", "")),
+                    "connector_type": connector_type,
+                    "title": diagram_data.get("title", f"{connector_type} Pinout"),
+                    "description": diagram_data.get("description", ""),
+                    "pin_count": diagram_data.get("pin_count", 0),
+                    "pin_assignments": diagram_data.get("pin_assignments", {}),
+                    "connector_style": diagram_data.get("connector_style", "rectangular"),
+                    "gender": diagram_data.get("gender", ""),
+                }
+
+                # Cache for 10 minutes
+                self._set_cached(cache_key, result, ttl=600)
+                logger.info(f"Retrieved pinout diagram: {connector_type}")
+                return result
+
+            return None
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.debug(f"Pinout diagram not available: {connector_type}")
+            else:
+                logger.error(f"Pinout diagram fetch error: {e.response.status_code}")
+            return None
+        except Exception as e:
+            logger.error(f"Pinout diagram fetch failed for {connector_type}: {e}")
+            return None
+
+    async def get_available_diagram_types(self) -> Dict[str, List[str]]:
+        """
+        Get lists of available diagram types from the API.
+
+        Returns:
+            Dict with lists of available circuit, harness, and pinout types
+        """
+        result = {
+            "circuits": [],
+            "harnesses": [],
+            "connectors": [],
+            "flowcharts": []
+        }
+
+        if not self.is_available:
+            return result
+
+        try:
+            # Fetch available types in parallel
+            async def fetch_types(endpoint: str) -> List[str]:
+                try:
+                    response = await self.client.get(endpoint, timeout=5.0)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get("success"):
+                            return data.get("data", {}).get("types", [])
+                except Exception:
+                    pass
+                return []
+
+            circuits, harnesses, errors = await asyncio.gather(
+                fetch_types("/api/v1/diagrams/circuits/types"),
+                fetch_types("/api/v1/diagrams/harnesses/types"),
+                fetch_types("/api/v1/diagrams/supported-errors"),
+                return_exceptions=True
+            )
+
+            result["circuits"] = circuits if isinstance(circuits, list) else []
+            result["harnesses"] = harnesses if isinstance(harnesses, list) else []
+            result["flowcharts"] = errors if isinstance(errors, list) else []
+
+            logger.debug(f"Available diagram types: {sum(len(v) for v in result.values())} total")
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to fetch diagram types: {e}")
+            return result
+
+    # ============================================
     # PATHRAG TRAVERSAL
     # ============================================
 
