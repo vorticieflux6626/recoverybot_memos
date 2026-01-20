@@ -280,19 +280,26 @@ JSON:"""
             if '?' in sentence:
                 continue
 
-            # Skip meta-statements
+            # Skip meta-statements about the synthesis itself (not factual content)
+            # Note: "based on" and "according to" are NOT skipped because they often
+            # precede factual claims like "Based on FANUC docs, SRVO-062 indicates..."
             skip_phrases = [
-                'this synthesis', 'the search', 'based on',
-                'according to', 'sources indicate', 'it appears'
+                'this synthesis', 'the search results', 'sources indicate',
+                'it appears that', 'in summary', 'to summarize', 'as discussed'
             ]
             if any(phrase in sentence.lower() for phrase in skip_phrases):
                 continue
 
-            # Look for factual indicators
+            # Look for factual indicators (expanded for technical documentation)
             factual_indicators = [
+                # General verbs
                 'is', 'are', 'was', 'were', 'has', 'have',
                 'reduces', 'increases', 'helps', 'causes',
-                'provides', 'includes', 'contains'
+                'provides', 'includes', 'contains',
+                # Technical verbs common in troubleshooting
+                'indicates', 'requires', 'occurs', 'results',
+                'should', 'must', 'will', 'can', 'may',
+                'means', 'prevents', 'enables', 'triggers'
             ]
             if any(ind in sentence.lower().split() for ind in factual_indicators):
                 claims.append(sentence)

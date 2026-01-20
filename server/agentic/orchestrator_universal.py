@@ -5699,10 +5699,10 @@ class UniversalOrchestrator(BaseSearchPipeline):
         self._graph_state.complete("A")
         self._graph_state.enter("P")
 
-        # Emit iteration start event
+        # Emit planning phase event (not iteration - iteration events are emitted by the main loop)
         await self.emit_event(
-            EventType.ITERATION_START,
-            {"iteration": 1, "max_iterations": request.max_iterations},
+            EventType.PLANNING_SEARCH,
+            {"max_iterations": request.max_iterations},
             request_id,
             message=f"Planning search strategy...",
             graph_line=self._graph_state.to_line()
