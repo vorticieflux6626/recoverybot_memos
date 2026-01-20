@@ -520,18 +520,19 @@ class DocumentGraphService:
         if not self.is_available:
             return None
 
-        circuit_type = circuit_type.upper().strip()
+        # API expects lowercase type names
+        circuit_type_normalized = circuit_type.lower().strip()
 
-        # Check cache
-        cache_key = self._cache_key("circuit", circuit_type, theme)
+        # Check cache (use normalized for cache key)
+        cache_key = self._cache_key("circuit", circuit_type_normalized, theme)
         cached = self._get_cached(cache_key)
         if cached is not None:
-            logger.debug(f"Cache hit for circuit diagram: {circuit_type}")
+            logger.debug(f"Cache hit for circuit diagram: {circuit_type_normalized}")
             return cached
 
         try:
             response = await self.client.get(
-                f"/api/v1/diagrams/circuits/{circuit_type}",
+                f"/api/v1/diagrams/circuits/{circuit_type_normalized}",
                 params={"theme": theme},
                 timeout=15.0
             )
@@ -544,9 +545,9 @@ class DocumentGraphService:
                 result = {
                     "type": "circuit",
                     "format": diagram_data.get("format", "svg"),
-                    "content": diagram_data.get("svg", diagram_data.get("content", "")),
-                    "circuit_type": circuit_type,
-                    "title": diagram_data.get("title", f"{circuit_type.replace('_', ' ').title()} Circuit"),
+                    "content": diagram_data.get("svg_content", diagram_data.get("svg", diagram_data.get("content", ""))),
+                    "circuit_type": circuit_type_normalized.upper(),  # Store uppercase for display
+                    "title": diagram_data.get("title", f"{circuit_type_normalized.replace('_', ' ').title()} Circuit"),
                     "description": diagram_data.get("description", ""),
                     "components": diagram_data.get("components", []),
                     "connections": diagram_data.get("connections", []),
@@ -554,7 +555,7 @@ class DocumentGraphService:
 
                 # Cache for 10 minutes
                 self._set_cached(cache_key, result, ttl=600)
-                logger.info(f"Retrieved circuit diagram: {circuit_type}")
+                logger.info(f"Retrieved circuit diagram: {circuit_type_normalized}")
                 return result
 
             return None
@@ -595,18 +596,19 @@ class DocumentGraphService:
         if not self.is_available:
             return None
 
-        harness_type = harness_type.upper().strip()
+        # API expects lowercase type names
+        harness_type_normalized = harness_type.lower().strip()
 
-        # Check cache
-        cache_key = self._cache_key("harness", harness_type, theme)
+        # Check cache (use normalized for cache key)
+        cache_key = self._cache_key("harness", harness_type_normalized, theme)
         cached = self._get_cached(cache_key)
         if cached is not None:
-            logger.debug(f"Cache hit for harness diagram: {harness_type}")
+            logger.debug(f"Cache hit for harness diagram: {harness_type_normalized}")
             return cached
 
         try:
             response = await self.client.get(
-                f"/api/v1/diagrams/harnesses/{harness_type}",
+                f"/api/v1/diagrams/harnesses/{harness_type_normalized}",
                 params={"theme": theme},
                 timeout=15.0
             )
@@ -619,9 +621,9 @@ class DocumentGraphService:
                 result = {
                     "type": "harness",
                     "format": diagram_data.get("format", "svg"),
-                    "content": diagram_data.get("svg", diagram_data.get("content", "")),
-                    "harness_type": harness_type,
-                    "title": diagram_data.get("title", f"{harness_type.replace('_', ' ').title()} Harness"),
+                    "content": diagram_data.get("svg_content", diagram_data.get("svg", diagram_data.get("content", ""))),
+                    "harness_type": harness_type_normalized.upper(),  # Store uppercase for display
+                    "title": diagram_data.get("title", f"{harness_type_normalized.replace('_', ' ').title()} Harness"),
                     "description": diagram_data.get("description", ""),
                     "wire_colors": diagram_data.get("wire_colors", {}),
                     "wire_count": diagram_data.get("wire_count", 0),
@@ -632,7 +634,7 @@ class DocumentGraphService:
 
                 # Cache for 10 minutes
                 self._set_cached(cache_key, result, ttl=600)
-                logger.info(f"Retrieved harness diagram: {harness_type}")
+                logger.info(f"Retrieved harness diagram: {harness_type_normalized}")
                 return result
 
             return None
@@ -672,19 +674,20 @@ class DocumentGraphService:
         if not self.is_available:
             return None
 
-        connector_type = connector_type.upper().strip()
+        # API expects lowercase type names
+        connector_type_normalized = connector_type.lower().strip()
 
-        # Check cache
-        cache_key = self._cache_key("pinout", connector_type, theme)
+        # Check cache (use normalized for cache key)
+        cache_key = self._cache_key("pinout", connector_type_normalized, theme)
         cached = self._get_cached(cache_key)
         if cached is not None:
-            logger.debug(f"Cache hit for pinout diagram: {connector_type}")
+            logger.debug(f"Cache hit for pinout diagram: {connector_type_normalized}")
             return cached
 
         try:
             # Pinouts are typically part of the connector info endpoint
             response = await self.client.get(
-                f"/api/v1/diagrams/connectors/{connector_type}/pinout",
+                f"/api/v1/diagrams/connectors/{connector_type_normalized}/pinout",
                 params={"theme": theme},
                 timeout=15.0
             )
@@ -697,9 +700,9 @@ class DocumentGraphService:
                 result = {
                     "type": "pinout",
                     "format": diagram_data.get("format", "svg"),
-                    "content": diagram_data.get("svg", diagram_data.get("content", "")),
-                    "connector_type": connector_type,
-                    "title": diagram_data.get("title", f"{connector_type} Pinout"),
+                    "content": diagram_data.get("svg_content", diagram_data.get("svg", diagram_data.get("content", ""))),
+                    "connector_type": connector_type_normalized.upper(),  # Store uppercase for display
+                    "title": diagram_data.get("title", f"{connector_type_normalized.upper()} Pinout"),
                     "description": diagram_data.get("description", ""),
                     "pin_count": diagram_data.get("pin_count", 0),
                     "pin_assignments": diagram_data.get("pin_assignments", {}),
@@ -709,7 +712,7 @@ class DocumentGraphService:
 
                 # Cache for 10 minutes
                 self._set_cached(cache_key, result, ttl=600)
-                logger.info(f"Retrieved pinout diagram: {connector_type}")
+                logger.info(f"Retrieved pinout diagram: {connector_type_normalized}")
                 return result
 
             return None
