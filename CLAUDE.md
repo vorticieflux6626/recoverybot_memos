@@ -1,6 +1,6 @@
 # memOS Server
 
-> **Updated**: 2026-01-13 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.90.0
+> **Updated**: 2026-01-19 | **Parent**: [Root CLAUDE.md](../CLAUDE.md) | **Version**: 0.91.0
 
 ## Quick Reference
 
@@ -262,6 +262,7 @@ All major implementation phases are **COMPLETE**. See [server/docs/IMPLEMENTATIO
 | **Part F** | Benchmark test suite, technical accuracy scorer | ✅ Complete |
 | **Part G.1-G.7** | RAG foundation, hierarchical retrieval, agent coordination, hyperbolic embeddings, OT fusion, TSDAE | ✅ Complete |
 | **Part K.2-K.3** | Docling processor, table complexity routing | ✅ Complete |
+| **Phase 50** | Extended diagram integration (circuit, harness, pinout, flowchart) with intent detection | ✅ Complete |
 
 ### Test Coverage
 - Unit tests: 359 passing
@@ -451,6 +452,52 @@ results = await document_graph_service.search_documentation("SRVO-063")
 for r in results:
     if r.source_document:
         print(f"{r.source_document.citation_name} (p. {r.source_document.page_number})")
+```
+
+### Phase 50: Extended Diagram Integration (2026-01-19)
+
+User-requested and auto-generated technical diagrams for industrial troubleshooting.
+
+**Diagram Types Supported:**
+
+| Type | Subtype Examples | Source | Status |
+|------|------------------|--------|--------|
+| **Circuit** | SERVO_DRIVE, POWER_DISTRIBUTION, ENCODER_INTERFACE | PDF Tools API | ✅ Working |
+| **Harness** | ENCODER_17PIN, MOTOR_POWER, SAFETY_ESTOP | PDF Tools API | ✅ Working |
+| **Flowchart** | SRVO-062, SRVO-063, MOTN-017 (33+ error codes) | PDF Tools API | ✅ Working |
+| **Pinout** | COP1, COP2, TBOP13, ENCODER_17PIN | PDF Tools API | 🔲 Needs endpoint |
+
+**Key Components:**
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `DiagramIntent` | `agentic/models.py` | Intent detection result model |
+| `DIAGRAM_INTENT_PATTERNS` | `agentic/analyzer.py` | 40+ regex patterns for diagram detection |
+| `detect_diagram_intent()` | `agentic/analyzer.py` | Pattern-based intent extraction |
+| `get_circuit_diagram()` | `core/document_graph_service.py` | Fetch SVG circuit from PDF Tools |
+| `get_harness_diagram()` | `core/document_graph_service.py` | Fetch SVG harness from PDF Tools |
+| `_detect_diagram_opportunity()` | `agentic/orchestrator_universal.py` | Auto-suggest diagrams from synthesis |
+
+**Feature Flags (FeatureConfig):**
+```python
+enable_circuit_diagrams: bool = False    # ENHANCED+
+enable_harness_diagrams: bool = False    # ENHANCED+
+enable_pinout_diagrams: bool = False     # ENHANCED+
+auto_generate_diagrams: bool = False     # RESEARCH+
+```
+
+**Usage:**
+```python
+from agentic.analyzer import QueryAnalyzer
+
+analyzer = QueryAnalyzer()
+intent = analyzer.detect_diagram_intent("show me the servo drive circuit diagram")
+# DiagramIntent(requested=True, diagram_type=CIRCUIT, diagram_subtype='SERVO_DRIVE', confidence=0.9)
+
+# Fetch diagram
+from core.document_graph_service import document_graph_service
+diagram = await document_graph_service.get_circuit_diagram("SERVO_DRIVE", theme="dark")
+# Returns: {"type": "circuit", "format": "svg", "content": "<svg...>", ...}
 ```
 
 ---
