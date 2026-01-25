@@ -1,6 +1,6 @@
 # memOS + MCP_Node_Editor Integration Plan
 
-> **Created**: 2026-01-25 | **Version**: 1.3.0 | **Status**: Phase 2 Complete
+> **Created**: 2026-01-25 | **Version**: 1.4.0 | **Status**: Phase 3 Complete
 > **Last Updated**: 2026-01-25
 
 ## Executive Summary
@@ -75,6 +75,45 @@ Feature Flag UI fully implemented with preset selector and collapsible layer sec
 - **Active Count Badges**: Per-layer and total active feature counts
 - **API Status Indicator**: Real-time connection status to memOS API (localhost:8001)
 - **Save Configuration**: POST to `/api/v1/config/feature-flags` endpoint
+
+## Phase 3 Completion Summary (2026-01-25)
+
+Pipeline Visualization implemented - generates visual node pipeline from feature flags:
+
+| Component | Function | Status |
+|-----------|----------|--------|
+| Generate Pipeline Button | `memos_generate_pipeline()` | ✅ Complete |
+| Flag-to-Node Mapping | `MEMOS_FLAG_TO_NODE` | ✅ Complete |
+| Pipeline Flow Definition | `MEMOS_PIPELINE_FLOW` | ✅ Complete |
+| Node Positioning | Snake-pattern layout (4 per row) | ✅ Complete |
+| Auto-Connection | Sequential node linking | ✅ Complete |
+
+**Files Modified:**
+- `pipeline-editor-enhanced.html`: +180 lines (CSS + JavaScript)
+
+**Pipeline Flow (13 stages):**
+```
+User Query → Query Analyzer → [HyDE?] → [Entity Tracker?] →
+Web Search → [CRAG Evaluator?] → [Cross-Encoder?] → [Context Curator?] →
+[Technical Docs?] → Synthesizer → [Self-Reflection?] → [RAGAS?] → Output
+```
+
+**Features:**
+- **"Generate Pipeline" button** in memOS tab status bar
+- **Canvas clearing** with confirmation before generation
+- **Snake-pattern layout**: Nodes arranged in rows of 4 with alternating direction
+- **Automatic connections**: Sequential flow from input to output
+- **Fallback handling**: Missing node types use llm_prompt placeholder
+- **Visual feedback**: Alert showing node/connection counts after generation
+
+**Node Counts by Preset:**
+| Preset | Core Nodes | Optional Nodes | Total |
+|--------|------------|----------------|-------|
+| MINIMAL | 5 | 0 | 5 |
+| BALANCED | 5 | 2-3 | 7-8 |
+| ENHANCED | 5 | 6-8 | 11-13 |
+| RESEARCH | 5 | 8-10 | 13-15 |
+| FULL | 5 | 8+ | 13+ |
 
 ---
 
