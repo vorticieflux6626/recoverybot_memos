@@ -158,7 +158,9 @@ class MemOSSettings(BaseSettings):
     enable_cors: bool = True
     cors_origins: List[str] = [
         "http://localhost:3000",
-        "http://localhost:8000", 
+        "http://localhost:8000",
+        "http://localhost:8081",  # MCP Node Editor Documentation
+        "http://localhost:8082",  # MCP Node Editor Pipeline Editor
         "https://deals.sparkonelabs.com"
     ]
     
