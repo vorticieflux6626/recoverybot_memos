@@ -22,8 +22,19 @@ from functools import partial
 from typing import Any, Callable, Dict, List, Optional, TypeVar
 from urllib.parse import urlparse
 
-import aiometer
 import httpx
+
+# Optional aiometer import with fallback
+try:
+    import aiometer
+    AIOMETER_AVAILABLE = True
+except ImportError:
+    aiometer = None  # type: ignore
+    AIOMETER_AVAILABLE = False
+    logging.getLogger(__name__).warning(
+        "aiometer not installed - using fallback rate limiter. "
+        "Install with: pip install aiometer>=0.5.0"
+    )
 
 from .proxy_manager import get_proxy_manager, ProxyManager
 from .retry_strategy import get_retry_strategy, UnifiedRetryStrategy
@@ -353,12 +364,27 @@ class UnifiedRateLimiter:
                 for _, url in url_tuples
             ]
 
-            # Run with aiometer rate limiting
-            domain_results = await aiometer.run_all(
-                jobs,
-                max_at_once=config.max_concurrent,
-                max_per_second=current_rate
-            )
+            # Run with rate limiting
+            if AIOMETER_AVAILABLE:
+                # Use aiometer for sophisticated rate limiting
+                domain_results = await aiometer.run_all(
+                    jobs,
+                    max_at_once=config.max_concurrent,
+                    max_per_second=current_rate
+                )
+            else:
+                # Fallback: semaphore-based concurrency limit (no per-second limiting)
+                semaphore = asyncio.Semaphore(config.max_concurrent)
+
+                async def rate_limited_job(job):
+                    async with semaphore:
+                        # Simple delay between requests as rough rate limit
+                        await asyncio.sleep(1.0 / current_rate)
+                        return await job()
+
+                domain_results = await asyncio.gather(
+                    *[rate_limited_job(job) for job in jobs]
+                )
 
             # Store results at original indices
             for (original_idx, _), result in zip(url_tuples, domain_results):
