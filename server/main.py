@@ -93,6 +93,15 @@ except ImportError as e:
     CONFIG_ENABLED = False
     logging.getLogger("memos_server").warning(f"LLM Config API disabled: {e}")
 
+# Troubleshooting Task Tracker router (replaces quest system)
+try:
+    from api.troubleshooting import router as troubleshooting_router
+    TROUBLESHOOTING_ENABLED = True
+except ImportError as e:
+    troubleshooting_router = None
+    TROUBLESHOOTING_ENABLED = False
+    logging.getLogger("memos_server").warning(f"Troubleshooting API disabled: {e}")
+
 # Configure logging
 setup_logging()
 logger = logging.getLogger("memos_server")
@@ -206,6 +215,11 @@ if OBSERVABILITY_ENABLED and observability_router:
 if CONFIG_ENABLED and config_router:
     app.include_router(config_router)
     logger.info("LLM config endpoints enabled at /api/v1/config/*")
+
+# Include troubleshooting task tracker router (replaces quest system)
+if TROUBLESHOOTING_ENABLED and troubleshooting_router:
+    app.include_router(troubleshooting_router)
+    logger.info("Troubleshooting endpoints enabled at /api/v1/troubleshooting/*")
 
 # Mount static files for Sherpa-ONNX TTS models
 # Models are served from: /api/models/sherpa-onnx/{model_dir}/{file}

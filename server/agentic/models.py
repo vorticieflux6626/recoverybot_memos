@@ -161,6 +161,16 @@ class SearchRequest(BaseModel):
         description="Maximum total characters for synthesis prompt (should be ~1.5x context window)"
     )
 
+    # Troubleshooting Task Tracker integration (Phase 4)
+    session_id: Optional[str] = Field(
+        None,
+        description="Troubleshooting session ID for pipeline task tracking"
+    )
+    troubleshooting_mode: bool = Field(
+        default=False,
+        description="Enable troubleshooting mode with automatic task tracking"
+    )
+
 
 class SimpleSearchRequest(BaseModel):
     """Request for simple (non-agentic) search"""

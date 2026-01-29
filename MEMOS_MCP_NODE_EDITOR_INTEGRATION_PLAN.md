@@ -1,6 +1,6 @@
 # memOS + MCP_Node_Editor Integration Plan
 
-> **Created**: 2026-01-25 | **Version**: 1.4.0 | **Status**: Phase 3 Complete
+> **Created**: 2026-01-25 | **Version**: 1.5.0 | **Status**: Phase 4 Complete
 > **Last Updated**: 2026-01-25
 
 ## Executive Summary
@@ -114,6 +114,40 @@ Web Search → [CRAG Evaluator?] → [Cross-Encoder?] → [Context Curator?] →
 | ENHANCED | 5 | 6-8 | 11-13 |
 | RESEARCH | 5 | 8-10 | 13-15 |
 | FULL | 5 | 8+ | 13+ |
+
+## Phase 4 Completion Summary (2026-01-25)
+
+unified_dashboard Agent Console enhanced with 6 observability tabs:
+
+| Tab | Component | API Endpoint | Status |
+|-----|-----------|--------------|--------|
+| Overview | AgentConsole (existing) | SSE `/api/agent/events/:id` | ✅ Enhanced |
+| Decisions | DecisionLogTab | `/api/agent/observability/:id/decisions` | ✅ Complete |
+| Context Flow | ContextFlowTab | `/api/agent/observability/:id/context-flow` | ✅ Complete |
+| LLM Calls | LLMCallsTab | `/api/agent/observability/:id/llm-calls` | ✅ Complete |
+| Scratchpad | ScratchpadTab | `/api/agent/observability/:id/scratchpad` | ✅ Complete |
+| Confidence | ConfidenceTab | `/api/agent/observability/:id/confidence` | ✅ Complete |
+
+**Files Created:**
+- `unified_dashboard/server/routes/agent.ts`: +5 observability proxy endpoints
+- `unified_dashboard/src/components/agent/tabs/DecisionLogTab.tsx`: Decision timeline with expandable cards
+- `unified_dashboard/src/components/agent/tabs/ContextFlowTab.tsx`: Token flow visualization (simplified Sankey)
+- `unified_dashboard/src/components/agent/tabs/LLMCallsTab.tsx`: LLM call metrics with sorting
+- `unified_dashboard/src/components/agent/tabs/ScratchpadTab.tsx`: Change history + current state views
+- `unified_dashboard/src/components/agent/tabs/ConfidenceTab.tsx`: Signal breakdown with circular progress
+- `unified_dashboard/src/components/agent/tabs/index.ts`: Tab exports
+
+**Files Modified:**
+- `unified_dashboard/src/components/agent/AgentConsole.tsx`: Added tabbed interface with 6 tabs
+
+**Features:**
+- **Tab Navigation**: Overview, Decisions, Context Flow, LLM Calls, Scratchpad, Confidence
+- **Decision Log**: Expandable timeline with reasoning, alternatives, and context JSON
+- **Context Flow**: Summary stats (transfers, tokens, agents), token flow bars, transfer timeline
+- **LLM Calls**: Aggregates (avg latency, total tokens, success rate), sortable call list
+- **Scratchpad**: Toggle between change history and current state view, color-coded operations
+- **Confidence**: Circular progress gauge, signal breakdown with weights, confidence evolution history
+- **Empty State Handling**: All tabs show helpful placeholder when no run is selected
 
 ---
 
@@ -570,16 +604,16 @@ agent/
 
 ## Summary Timeline
 
-| Phase | Description | Duration | Dependencies |
-|-------|-------------|----------|--------------|
-| **Phase 0** | MCP_Node_Editor Blockers | 4-7 days | None |
-| **Phase 1** | Core Agent Nodes | 5-7 days | Phase 0 |
-| **Phase 2** | Feature Flag UI | 4-5 days | Phase 1 |
-| **Phase 3** | Runtime Integration | 6-8 days | Phase 1, 2 |
-| **Phase 4** | Dashboard Enhancement | 7-10 days | Phase 3 |
-| **Phase 5** | Advanced Features | 18-27 days | Phase 4 |
+| Phase | Description | Duration | Dependencies | Status |
+|-------|-------------|----------|--------------|--------|
+| **Phase 0** | MCP_Node_Editor Blockers | 4-7 days | None | ✅ Complete |
+| **Phase 1** | Core Agent Nodes | 5-7 days | Phase 0 | ✅ Complete |
+| **Phase 2** | Feature Flag UI | 4-5 days | Phase 1 | ✅ Complete |
+| **Phase 3** | Runtime Integration | 6-8 days | Phase 1, 2 | ✅ Complete |
+| **Phase 4** | Dashboard Enhancement | 7-10 days | Phase 3 | ✅ Complete |
+| **Phase 5** | Advanced Features | 18-27 days | Phase 4 | Pending |
 
-**Total Estimated Time**: 6-9 weeks
+**Total Estimated Time**: 6-9 weeks (Phases 0-4 complete in 1 day)
 
 ---
 
@@ -627,4 +661,4 @@ agent/
 
 ---
 
-*Last Updated: 2026-01-25*
+*Last Updated: 2026-01-25 (Phase 4 Complete)*

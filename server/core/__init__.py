@@ -11,9 +11,26 @@ from .embedding_service import EmbeddingService
 from .privacy_service import PrivacyService
 from .encryption_service import EncryptionService
 
+# Troubleshooting Task Tracker (Phase 2: Quest System Re-implementation)
+from .troubleshooting_service import TroubleshootingService, troubleshooting_service
+from .troubleshooting_tracker import (
+    TroubleshootingTaskTracker,
+    create_tracker,
+    track_pipeline_task,
+    PIPELINE_HOOKS,
+)
+
 __all__ = [
+    # Memory services
     "MemoryService",
     "EmbeddingService",
     "PrivacyService",
-    "EncryptionService"
+    "EncryptionService",
+    # Troubleshooting services
+    "TroubleshootingService",
+    "troubleshooting_service",
+    "TroubleshootingTaskTracker",
+    "create_tracker",
+    "track_pipeline_task",
+    "PIPELINE_HOOKS",
 ]

@@ -172,6 +172,15 @@ from .mem0_adapter import (
     ConversationContext
 )
 
+# Troubleshooting Task Tracker (Phase 4)
+from core.troubleshooting_tracker import (
+    TroubleshootingTaskTracker,
+    TaskContext,
+    PIPELINE_HOOKS,
+    create_tracker,
+    track_pipeline_task
+)
+
 # PDF Extraction Tools integration
 from core.document_graph_service import (
     DocumentGraphService,
@@ -938,6 +947,10 @@ class UniversalOrchestrator(BaseSearchPipeline):
         # Phase 48: Cross-Domain Hallucination Mitigation
         self._cross_domain_validator: Optional[CrossDomainValidator] = None
 
+        # Troubleshooting Task Tracker (Phase 4)
+        # Tracks pipeline stages for troubleshooting session progress
+        self._troubleshooting_tracker: Optional[TroubleshootingTaskTracker] = None
+
         # Graph visualization state for SSE events
         self._graph_state = UniversalGraphState()
 
@@ -978,6 +991,72 @@ class UniversalOrchestrator(BaseSearchPipeline):
     def full(cls, **kwargs) -> "UniversalOrchestrator":
         """Create full orchestrator - everything enabled."""
         return cls(preset=OrchestratorPreset.FULL, **kwargs)
+
+    # ===== Troubleshooting Task Tracker (Phase 4) =====
+
+    def _init_troubleshooting_tracker(
+        self,
+        request: SearchRequest,
+        request_id: str
+    ) -> Optional[TroubleshootingTaskTracker]:
+        """
+        Initialize troubleshooting task tracker if session_id is provided.
+
+        The tracker will automatically record pipeline stages (document retrieval,
+        graph traversal, entity grounding, cross-domain validation, synthesis)
+        to provide progress tracking for troubleshooting sessions.
+
+        Returns:
+            TroubleshootingTaskTracker if session_id provided, None otherwise
+        """
+        if not request.session_id:
+            return None
+
+        if not request.troubleshooting_mode:
+            return None
+
+        try:
+            tracker = create_tracker(
+                session_id=request.session_id,
+                user_id=request.user_id
+            )
+            tracker.start_pipeline(metadata={
+                "request_id": request_id,
+                "preset": self.preset.value,
+                "query": request.query[:100]
+            })
+            logger.info(f"[{request_id}] Troubleshooting tracker initialized for session {request.session_id}")
+            return tracker
+        except Exception as e:
+            logger.warning(f"[{request_id}] Failed to initialize troubleshooting tracker: {e}")
+            return None
+
+    def _get_troubleshooting_tracker(self) -> Optional[TroubleshootingTaskTracker]:
+        """Get the current troubleshooting tracker (if any)."""
+        return self._troubleshooting_tracker
+
+    async def _complete_troubleshooting_tracker(
+        self,
+        success: bool,
+        request_id: str
+    ) -> None:
+        """
+        Complete the troubleshooting tracker and flush metrics to database.
+
+        Args:
+            success: Whether the pipeline completed successfully
+            request_id: Request ID for logging
+        """
+        if not self._troubleshooting_tracker:
+            return
+
+        try:
+            await self._troubleshooting_tracker.complete_pipeline(success=success)
+            logger.info(f"[{request_id}] Troubleshooting tracker completed: success={success}")
+        except Exception as e:
+            logger.warning(f"[{request_id}] Failed to complete troubleshooting tracker: {e}")
+        finally:
+            self._troubleshooting_tracker = None
 
     # ===== LLM Debug Tracking =====
 
@@ -2252,6 +2331,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
         scratchpad_observer = get_scratchpad_observer(request_id, None, verbose=verbose_mode)
         obs_aggregator = ObservabilityAggregator(request_id, request.query, self.preset.value)
 
+        # Initialize troubleshooting tracker (Phase 4)
+        self._troubleshooting_tracker = self._init_troubleshooting_tracker(request, request_id)
+
         # Track metrics if enabled
         if self.config.enable_metrics:
             metrics = self._get_metrics()
@@ -2336,6 +2418,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     # Non-blocking: log and continue
                     logger.warning(f"[{request_id}] Mem0 extraction failed: {mem0_err}")
 
+            # ===== TROUBLESHOOTING: Complete tracker on success =====
+            await self._complete_troubleshooting_tracker(success=True, request_id=request_id)
+
             return response
 
         except Exception as e:
@@ -2360,6 +2445,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 dashboard.store_request(obs_record, sse_events=sse_events)
             except Exception as obs_err:
                 logger.warning(f"[{request_id}] Failed request observability failed: {obs_err}")
+
+            # ===== TROUBLESHOOTING: Complete tracker on failure =====
+            await self._complete_troubleshooting_tracker(success=False, request_id=request_id)
 
             return self.build_error_response(
                 str(e),
@@ -4365,7 +4453,23 @@ class UniversalOrchestrator(BaseSearchPipeline):
         technical_context = None
         if self.config.enable_technical_docs:
             try:
-                technical_context = await self._search_technical_docs(request.query)
+                # Track task execution for troubleshooting sessions (Phase 4)
+                tracker = self._get_troubleshooting_tracker()
+                if tracker:
+                    async with tracker.track_task("_search_technical_docs") as ctx:
+                        ctx.set_input({"query": request.query[:200]})
+                        technical_context = await self._search_technical_docs(request.query)
+                        if technical_context:
+                            ctx.set_output({
+                                "result_count": 1,
+                                "context_length": len(technical_context),
+                                "traversal_mode": self.config.technical_traversal_mode
+                            })
+                        else:
+                            ctx.set_output({"result_count": 0, "context_length": 0})
+                else:
+                    technical_context = await self._search_technical_docs(request.query)
+
                 if technical_context:
                     enhancement_metadata["features_used"].append("technical_docs")
                     # Merge technical context with domain context
@@ -5566,18 +5670,50 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     ])
                 logger.info(f"[{request_id}] Directive propagation: {len(state.key_topics)} topics, {len(state.priority_domains)} domains, {len(state.active_constraints)} constraints")
 
+            duration_ms = int((time.time() - start) * 1000)
             search_trace.append({
                 "step": "analyze",
                 "requires_search": analysis.requires_search,
                 "query_type": analysis.query_type,
                 "complexity": analysis.estimated_complexity,
-                "duration_ms": int((time.time() - start) * 1000)
+                "duration_ms": duration_ms
             })
 
             self._record_timing("query_analysis", time.time() - start)
+
+            # Record task for troubleshooting tracker (Phase 4)
+            tracker = self._get_troubleshooting_tracker()
+            if tracker:
+                tracker.record_task_sync(
+                    "_analyze_query",
+                    input_data={
+                        "query_length": len(request.query),
+                        "has_context": bool(request.context)
+                    },
+                    output_data={
+                        "requires_search": analysis.requires_search,
+                        "query_type": analysis.query_type,
+                        "complexity": analysis.estimated_complexity,
+                        "key_topics_count": len(analysis.key_topics) if analysis.key_topics else 0,
+                        "priority_domains_count": len(analysis.priority_domains) if analysis.priority_domains else 0
+                    },
+                    duration_ms=duration_ms
+                )
+
             return analysis
         except Exception as e:
             logger.warning(f"[{request_id}] Query analysis failed: {e}")
+
+            # Record failed task for troubleshooting tracker
+            tracker = self._get_troubleshooting_tracker()
+            if tracker:
+                tracker.record_task_sync(
+                    "_analyze_query",
+                    input_data={"query_length": len(request.query)},
+                    error=str(e),
+                    duration_ms=int((time.time() - start) * 1000)
+                )
+
             return None
 
     async def _phase_entity_extraction(
@@ -5588,10 +5724,12 @@ class UniversalOrchestrator(BaseSearchPipeline):
     ):
         """Phase 1.5: Entity extraction."""
         start = time.time()
+        entities_count = 0
         try:
-            tracker = self._get_entity_tracker()
-            entities = await tracker.extract_entities(request.query)
+            entity_tracker = self._get_entity_tracker()
+            entities = await entity_tracker.extract_entities(request.query)
             if entities:
+                entities_count = len(entities)
                 # add_entity() expects Dict, EntityState.to_dict() provides that
                 for entity in entities:
                     scratchpad.add_entity(entity.to_dict())
@@ -5606,9 +5744,31 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 )
                 logger.info(f"[{request_id}] Published {len(entities)} entities to public space")
 
+            duration_ms = int((time.time() - start) * 1000)
             self._record_timing("entity_tracking", time.time() - start)
+
+            # Record task for troubleshooting tracker (Phase 4)
+            ts_tracker = self._get_troubleshooting_tracker()
+            if ts_tracker:
+                ts_tracker.record_task_sync(
+                    "_extract_entities",
+                    input_data={"query_length": len(request.query)},
+                    output_data={"entities_found": entities_count},
+                    duration_ms=duration_ms
+                )
+
         except Exception as e:
             logger.warning(f"[{request_id}] Entity extraction failed: {e}")
+
+            # Record failed task for troubleshooting tracker
+            ts_tracker = self._get_troubleshooting_tracker()
+            if ts_tracker:
+                ts_tracker.record_task_sync(
+                    "_extract_entities",
+                    input_data={"query_length": len(request.query)},
+                    error=str(e),
+                    duration_ms=int((time.time() - start) * 1000)
+                )
 
     async def _phase_hyde_expansion(
         self,
@@ -5620,12 +5780,39 @@ class UniversalOrchestrator(BaseSearchPipeline):
         try:
             expander = self._get_hyde_expander()
             result = await expander.expand(query, mode=HyDEMode.SINGLE)
+            duration_ms = int((time.time() - start) * 1000)
             self._record_timing("hyde", time.time() - start)
-            if result.hypothetical_documents:
-                return result.hypothetical_documents[0]
-            return query
+
+            expanded_query = result.hypothetical_documents[0] if result.hypothetical_documents else query
+
+            # Record task for troubleshooting tracker (Phase 4)
+            tracker = self._get_troubleshooting_tracker()
+            if tracker:
+                tracker.record_task_sync(
+                    "_hyde_expand",
+                    input_data={"query_length": len(query)},
+                    output_data={
+                        "expanded_length": len(expanded_query),
+                        "expansion_ratio": len(expanded_query) / len(query) if query else 1.0,
+                        "documents_generated": len(result.hypothetical_documents) if result.hypothetical_documents else 0
+                    },
+                    duration_ms=duration_ms
+                )
+
+            return expanded_query
         except Exception as e:
             logger.warning(f"[{request_id}] HyDE expansion failed: {e}")
+
+            # Record failed task for troubleshooting tracker
+            tracker = self._get_troubleshooting_tracker()
+            if tracker:
+                tracker.record_task_sync(
+                    "_hyde_expand",
+                    input_data={"query_length": len(query)},
+                    error=str(e),
+                    duration_ms=int((time.time() - start) * 1000)
+                )
+
             return query
 
     async def _phase_thought_library(
@@ -5921,6 +6108,25 @@ class UniversalOrchestrator(BaseSearchPipeline):
             "duration_ms": search_duration_ms
         })
         self._record_timing("search", time.time() - start)
+
+        # Record task for troubleshooting tracker (Phase 4)
+        tracker = self._get_troubleshooting_tracker()
+        if tracker:
+            tracker.record_task_sync(
+                "_search_web",
+                input_data={
+                    "queries_count": len(queries),
+                    "queries_to_search": len(queries_to_search),
+                    "engines": engines_list
+                },
+                output_data={
+                    "results_found": len(state.raw_results),
+                    "queries_from_cache": cached_hits,
+                    "findings_recorded": findings_recorded,
+                    "unique_sources": len(set(r.url for r in state.raw_results if hasattr(r, 'url')))
+                },
+                duration_ms=search_duration_ms
+            )
 
         # Notify graph cache after search phase (for caching results)
         await self._graph_after_agent(
@@ -6362,6 +6568,26 @@ class UniversalOrchestrator(BaseSearchPipeline):
         })
         self._record_timing("scraping", time.time() - start)
 
+        # Record task for troubleshooting tracker (Phase 4)
+        tracker = self._get_troubleshooting_tracker()
+        if tracker:
+            total_chars = sum(len(c) for c in scraped_content)
+            tracker.record_task_sync(
+                "_scrape_content",
+                input_data={
+                    "urls_to_scrape": len(urls_to_scrape),
+                    "url_relevance_filter": self.config.enable_url_relevance_filter
+                },
+                output_data={
+                    "urls_attempted": len(state.urls_attempted),
+                    "urls_succeeded": len(scraped_content),
+                    "urls_failed": len(state.urls_failed),
+                    "total_chars_scraped": total_chars,
+                    "avg_chars_per_url": total_chars // len(scraped_content) if scraped_content else 0
+                },
+                duration_ms=scrape_duration_ms
+            )
+
         # Notify graph cache after scrape phase (for caching findings)
         await self._graph_after_agent(
             request_id,
@@ -6736,15 +6962,37 @@ class UniversalOrchestrator(BaseSearchPipeline):
             context_window=get_model_context_window(DEFAULT_PIPELINE_CONFIG.synthesizer_model)
         )
 
+        duration_ms = int((time.time() - start) * 1000)
         search_trace.append({
             "step": "synthesize",
             "sources_count": len(scraped_content_dicts),
             "synthesis_length": len(synthesis),
             "total_input_chars": total_input_chars,
             "context_utilization": total_input_chars / (get_model_context_window(DEFAULT_PIPELINE_CONFIG.synthesizer_model) * 4),
-            "duration_ms": int((time.time() - start) * 1000)
+            "duration_ms": duration_ms
         })
         self._record_timing("synthesis", time.time() - start)
+
+        # Record task for troubleshooting tracker (Phase 4)
+        tracker = self._get_troubleshooting_tracker()
+        if tracker:
+            tracker.record_task_sync(
+                "_synthesize",
+                input_data={
+                    "sources_count": len(scraped_content_dicts),
+                    "query_length": len(request.query),
+                    "additional_context_length": additional_context_chars
+                },
+                output_data={
+                    "synthesis_length": len(synthesis),
+                    "total_input_chars": total_input_chars,
+                    "context_utilization": total_input_chars / (get_model_context_window(DEFAULT_PIPELINE_CONFIG.synthesizer_model) * 4),
+                    "model_used": synthesis_model,
+                    "flare_augmented": self.config.enable_flare_retrieval and len(scraped_content_dicts) > len(scraped_content)
+                },
+                duration_ms=duration_ms
+            )
+
         return synthesis
 
     async def _phase_cross_domain_validation(
@@ -6773,6 +7021,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
         start = time.time()
         logger.info(f"[{request_id}] Phase 9.5: Cross-domain validation starting...")
+
+        # Track task execution for troubleshooting sessions (Phase 4)
+        tracker = self._get_troubleshooting_tracker()
 
         try:
             validator = self._get_cross_domain_validator()
@@ -6819,12 +7070,39 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 final_synthesis = result.revised_text
                 logger.info(f"[{request_id}] Synthesis revised to remove spurious claims")
 
+            duration_ms = int((time.time() - start) * 1000)
             self._record_timing("cross_domain_validation", time.time() - start)
+
+            # Record task for troubleshooting tracker
+            if tracker:
+                tracker.record_task_sync(
+                    "_validate_cross_domain",
+                    input_data={"synthesis_length": len(synthesis)},
+                    output_data={
+                        "total_claims": result.total_claims,
+                        "critical_issues": result.critical_issues,
+                        "warnings": result.warnings,
+                        "issues_found": result.critical_issues + result.warnings
+                    },
+                    duration_ms=duration_ms
+                )
+
             return final_synthesis, result
 
         except Exception as e:
             logger.error(f"[{request_id}] Cross-domain validation failed: {e}")
+            duration_ms = int((time.time() - start) * 1000)
             self._record_timing("cross_domain_validation", time.time() - start)
+
+            # Record failed task for troubleshooting tracker
+            if tracker:
+                tracker.record_task_sync(
+                    "_validate_cross_domain",
+                    input_data={"synthesis_length": len(synthesis)},
+                    error=str(e),
+                    duration_ms=duration_ms
+                )
+
             # Don't block on validation failure - return original synthesis
             return synthesis, None
 
@@ -6862,11 +7140,41 @@ class UniversalOrchestrator(BaseSearchPipeline):
             # Mark reflect complete
             self._graph_state.complete("R")
 
+            duration_ms = int((time.time() - start) * 1000)
             self._record_timing("self_reflection", time.time() - start)
+
+            # Record task for troubleshooting tracker (Phase 4)
+            tracker = self._get_troubleshooting_tracker()
+            if tracker:
+                tracker.record_task_sync(
+                    "_self_reflect",
+                    input_data={
+                        "synthesis_length": len(synthesis),
+                        "sources_count": len(scraped_content[:5])
+                    },
+                    output_data={
+                        "confidence": result.confidence if result else None,
+                        "issues_found": len(result.issues) if result and result.issues else 0,
+                        "improvements_suggested": len(result.improvements) if result and result.improvements else 0
+                    },
+                    duration_ms=duration_ms
+                )
+
             return result
         except Exception as e:
             logger.warning(f"[{request_id}] Self-reflection failed: {e}")
             self._graph_state.complete("R")  # Still mark complete even on failure
+
+            # Record failed task for troubleshooting tracker
+            tracker = self._get_troubleshooting_tracker()
+            if tracker:
+                tracker.record_task_sync(
+                    "_self_reflect",
+                    input_data={"synthesis_length": len(synthesis)},
+                    error=str(e),
+                    duration_ms=int((time.time() - start) * 1000)
+                )
+
             return None
 
     async def _phase_ragas_evaluation(
@@ -6908,13 +7216,45 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 contexts=contexts
             )
 
+            duration_ms = int((time.time() - start) * 1000)
             logger.info(f"[{request_id}] RAGAS evaluation: faith={result.faithfulness:.2f}, "
                        f"claims={len(result.claims)}/{sum(1 for v in result.claim_verifications if v.supported)} supported")
 
             self._record_timing("ragas", time.time() - start)
+
+            # Record task for troubleshooting tracker (Phase 4)
+            tracker = self._get_troubleshooting_tracker()
+            if tracker:
+                supported_claims = sum(1 for v in result.claim_verifications if v.supported)
+                tracker.record_task_sync(
+                    "_ragas_evaluate",
+                    input_data={
+                        "synthesis_length": len(synthesis),
+                        "contexts_count": len(contexts)
+                    },
+                    output_data={
+                        "faithfulness": result.faithfulness,
+                        "total_claims": len(result.claims),
+                        "supported_claims": supported_claims,
+                        "unsupported_claims": len(result.claims) - supported_claims
+                    },
+                    duration_ms=duration_ms
+                )
+
             return result
         except Exception as e:
             logger.warning(f"[{request_id}] RAGAS evaluation failed: {e}")
+
+            # Record failed task for troubleshooting tracker
+            tracker = self._get_troubleshooting_tracker()
+            if tracker:
+                tracker.record_task_sync(
+                    "_ragas_evaluate",
+                    input_data={"synthesis_length": len(synthesis)},
+                    error=str(e),
+                    duration_ms=int((time.time() - start) * 1000)
+                )
+
             return None
 
     async def _phase_experience_distillation(
