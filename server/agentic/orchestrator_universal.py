@@ -994,10 +994,11 @@ class UniversalOrchestrator(BaseSearchPipeline):
 
     # ===== Troubleshooting Task Tracker (Phase 4) =====
 
-    def _init_troubleshooting_tracker(
+    async def _init_troubleshooting_tracker(
         self,
         request: SearchRequest,
-        request_id: str
+        request_id: str,
+        emitter: Optional[EventEmitter] = None
     ) -> Optional[TroubleshootingTaskTracker]:
         """
         Initialize troubleshooting task tracker if session_id is provided.
@@ -1005,6 +1006,11 @@ class UniversalOrchestrator(BaseSearchPipeline):
         The tracker will automatically record pipeline stages (document retrieval,
         graph traversal, entity grounding, cross-domain validation, synthesis)
         to provide progress tracking for troubleshooting sessions.
+
+        Args:
+            request: Search request with optional session_id
+            request_id: Request ID for logging and SSE events
+            emitter: Optional EventEmitter for real-time SSE updates
 
         Returns:
             TroubleshootingTaskTracker if session_id provided, None otherwise
@@ -1018,14 +1024,19 @@ class UniversalOrchestrator(BaseSearchPipeline):
         try:
             tracker = create_tracker(
                 session_id=request.session_id,
-                user_id=request.user_id
+                user_id=request.user_id,
+                emitter=emitter,
+                request_id=request_id
             )
-            tracker.start_pipeline(metadata={
-                "request_id": request_id,
-                "preset": self.preset.value,
-                "query": request.query[:100]
-            })
-            logger.info(f"[{request_id}] Troubleshooting tracker initialized for session {request.session_id}")
+            await tracker.start_pipeline(
+                metadata={
+                    "request_id": request_id,
+                    "preset": self.preset.value,
+                    "query": request.query[:100]
+                },
+                query=request.query
+            )
+            logger.info(f"[{request_id}] Troubleshooting tracker initialized for session {request.session_id} (SSE enabled: {emitter is not None})")
             return tracker
         except Exception as e:
             logger.warning(f"[{request_id}] Failed to initialize troubleshooting tracker: {e}")
@@ -2331,8 +2342,8 @@ class UniversalOrchestrator(BaseSearchPipeline):
         scratchpad_observer = get_scratchpad_observer(request_id, None, verbose=verbose_mode)
         obs_aggregator = ObservabilityAggregator(request_id, request.query, self.preset.value)
 
-        # Initialize troubleshooting tracker (Phase 4)
-        self._troubleshooting_tracker = self._init_troubleshooting_tracker(request, request_id)
+        # Initialize troubleshooting tracker (Phase 4) - no emitter in non-streaming path
+        self._troubleshooting_tracker = await self._init_troubleshooting_tracker(request, request_id)
 
         # Track metrics if enabled
         if self.config.enable_metrics:
@@ -2519,6 +2530,11 @@ class UniversalOrchestrator(BaseSearchPipeline):
         if self.config.enable_graph_cache:
             graph_cache = self._get_graph_cache()
             await graph_cache.start_workflow(request_id, request.query)
+
+        # Initialize troubleshooting tracker with SSE emitter for real-time task progress
+        self._troubleshooting_tracker = await self._init_troubleshooting_tracker(
+            request, request_id, emitter=emitter
+        )
 
         try:
             # PHASE 1: Query Analysis
@@ -4071,6 +4087,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
             except Exception as obs_err:
                 logger.warning(f"[{request_id}] Observability aggregation failed: {obs_err}")
 
+            # ===== TROUBLESHOOTING: Complete tracker on success =====
+            await self._complete_troubleshooting_tracker(success=True, request_id=request_id)
+
             return response
 
         except Exception as e:
@@ -4096,6 +4115,9 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 dashboard.store_request(obs_record, sse_events=sse_events)
             except Exception as obs_err:
                 logger.warning(f"[{request_id}] Failed request observability failed: {obs_err}")
+
+            # ===== TROUBLESHOOTING: Complete tracker on failure =====
+            await self._complete_troubleshooting_tracker(success=False, request_id=request_id)
 
             return self.build_error_response(
                 str(e),

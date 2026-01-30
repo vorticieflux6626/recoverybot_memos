@@ -25,7 +25,7 @@ import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +33,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.troubleshooting import TaskState, TaskExecutionType
 from config.database import get_async_db
 
+# Type hint for EventEmitter - actual import is deferred to avoid circular imports
+if TYPE_CHECKING:
+    from agentic.events import EventEmitter
+
 logger = logging.getLogger(__name__)
+
+# Number of workflow tasks that the Android client expects
+WORKFLOW_TASK_COUNT = 6  # Query Analysis, Entity Extraction, Technical Doc Search, Cross-Domain Validation, Synthesis, User Verification
 
 
 # =============================================================================
@@ -42,8 +49,25 @@ logger = logging.getLogger(__name__)
 
 # Maps pipeline method names to task metadata
 PIPELINE_HOOKS = {
+    "_analyze_query": {
+        "name": "Query Analysis",
+        "workflow_task": "Query Analysis",  # Maps to workflow task name
+        "description": "Analyze query to extract entities and intent",
+        "execution_type": TaskExecutionType.AUTOMATIC,
+        "timeout_seconds": 30,
+        "verification_criteria": {},
+    },
+    "_extract_entities": {
+        "name": "Entity Extraction",
+        "workflow_task": "Entity Extraction",
+        "description": "Extract technical entities from query",
+        "execution_type": TaskExecutionType.AUTOMATIC,
+        "timeout_seconds": 30,
+        "verification_criteria": {},
+    },
     "_search_technical_docs": {
-        "name": "Document Retrieval",
+        "name": "Technical Doc Search",
+        "workflow_task": "Technical Doc Search",  # Maps to workflow task name
         "description": "Search technical documentation for relevant context",
         "execution_type": TaskExecutionType.AUTOMATIC,
         "timeout_seconds": 60,
@@ -54,6 +78,7 @@ PIPELINE_HOOKS = {
     },
     "_traverse_graph": {
         "name": "Graph Traversal",
+        "workflow_task": "Technical Doc Search",  # Part of doc search
         "description": "Navigate knowledge graph to find diagnostic paths",
         "execution_type": TaskExecutionType.AUTOMATIC,
         "timeout_seconds": 30,
@@ -63,6 +88,7 @@ PIPELINE_HOOKS = {
     },
     "_ground_entities": {
         "name": "Entity Validation",
+        "workflow_task": "Entity Extraction",  # Part of entity processing
         "description": "Verify entities against knowledge base",
         "execution_type": TaskExecutionType.AUTOMATIC,
         "timeout_seconds": 30,
@@ -72,6 +98,7 @@ PIPELINE_HOOKS = {
     },
     "_validate_cross_domain": {
         "name": "Cross-Domain Validation",
+        "workflow_task": "Cross-Domain Validation",  # Direct match
         "description": "Check for invalid cross-domain claims",
         "execution_type": TaskExecutionType.AUTOMATIC,
         "timeout_seconds": 20,
@@ -80,7 +107,8 @@ PIPELINE_HOOKS = {
         },
     },
     "_synthesize": {
-        "name": "Response Synthesis",
+        "name": "Synthesis",
+        "workflow_task": "Synthesis",  # Direct match
         "description": "Generate comprehensive response from context",
         "execution_type": TaskExecutionType.AUTOMATIC,
         "timeout_seconds": 120,
@@ -91,6 +119,7 @@ PIPELINE_HOOKS = {
     },
     "_generate_diagram": {
         "name": "Diagram Generation",
+        "workflow_task": "Synthesis",  # Part of synthesis output
         "description": "Generate relevant technical diagrams",
         "execution_type": TaskExecutionType.AUTOMATIC,
         "timeout_seconds": 30,
@@ -98,6 +127,7 @@ PIPELINE_HOOKS = {
     },
     "path_selection": {
         "name": "Path Selection",
+        "workflow_task": "User Verification",
         "description": "User selects diagnostic path to follow",
         "execution_type": TaskExecutionType.USER_ACTION,
         "timeout_seconds": 300,
@@ -105,6 +135,7 @@ PIPELINE_HOOKS = {
     },
     "step_completion": {
         "name": "Step Completion",
+        "workflow_task": "User Verification",
         "description": "User marks diagnostic step as complete",
         "execution_type": TaskExecutionType.USER_ACTION,
         "timeout_seconds": 600,
@@ -112,11 +143,22 @@ PIPELINE_HOOKS = {
     },
     "resolution_verification": {
         "name": "Resolution Verification",
+        "workflow_task": "User Verification",
         "description": "User confirms issue is resolved",
         "execution_type": TaskExecutionType.HYBRID,
         "timeout_seconds": 300,
         "verification_criteria": {},
     },
+}
+
+# Mapping from workflow task names to the primary pipeline hook that completes them
+WORKFLOW_TASK_TO_HOOK = {
+    "Query Analysis": "_analyze_query",
+    "Entity Extraction": "_extract_entities",
+    "Technical Doc Search": "_search_technical_docs",
+    "Cross-Domain Validation": "_validate_cross_domain",
+    "Synthesis": "_synthesize",
+    "User Verification": "resolution_verification",
 }
 
 
@@ -198,6 +240,8 @@ class TroubleshootingTaskTracker:
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
         enabled: bool = True,
+        emitter: Optional["EventEmitter"] = None,
+        request_id: Optional[str] = None,
     ):
         """
         Initialize the task tracker.
@@ -206,14 +250,21 @@ class TroubleshootingTaskTracker:
             session_id: Troubleshooting session ID to track
             user_id: User ID for attribution
             enabled: Whether tracking is enabled
+            emitter: Optional EventEmitter for real-time SSE updates
+            request_id: Request ID for SSE events
         """
         self.session_id = session_id
         self.user_id = user_id
         self.enabled = enabled and session_id is not None
+        self.emitter = emitter
+        self.request_id = request_id or session_id or "unknown"
 
         # In-memory tracking (flushed to DB periodically)
         self._task_contexts: List[TaskContext] = []
         self._current_task: Optional[TaskContext] = None
+
+        # Track which workflow tasks have been completed (for SSE progress)
+        self._completed_workflow_tasks: set = set()
 
         # Pipeline metadata
         self._pipeline_started_at: Optional[float] = None
@@ -222,26 +273,64 @@ class TroubleshootingTaskTracker:
 
         logger.debug(
             f"TroubleshootingTaskTracker initialized: "
-            f"session={session_id}, enabled={self.enabled}"
+            f"session={session_id}, enabled={self.enabled}, has_emitter={emitter is not None}"
         )
 
     # =========================================================================
     # PIPELINE LIFECYCLE
     # =========================================================================
 
-    def start_pipeline(self, metadata: Optional[Dict[str, Any]] = None):
-        """Mark the start of a pipeline run."""
+    async def start_pipeline(self, metadata: Optional[Dict[str, Any]] = None, query: str = ""):
+        """Mark the start of a pipeline run and emit SSE event."""
         self._pipeline_started_at = time.time()
         self._pipeline_metadata = metadata or {}
         self._task_contexts = []
+        self._completed_workflow_tasks = set()
 
         logger.debug(f"Pipeline started for session {self.session_id}")
 
+        # Emit SSE event for real-time tracking
+        if self.emitter and self.session_id:
+            try:
+                # Import locally to avoid circular import
+                from agentic.events import troubleshooting_pipeline_started
+                await self.emitter.emit(troubleshooting_pipeline_started(
+                    request_id=self.request_id,
+                    session_id=self.session_id,
+                    task_total=WORKFLOW_TASK_COUNT,
+                    query=query,
+                    graph_line=self._build_graph_line()
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to emit pipeline started event: {e}")
+
     async def complete_pipeline(self, success: bool = True):
         """
-        Mark pipeline completion and flush all tracked data to database.
+        Mark pipeline completion, emit SSE event, and flush all tracked data to database.
         """
         self._pipeline_completed_at = time.time()
+
+        # Calculate pipeline duration
+        duration_ms = 0
+        if self._pipeline_started_at:
+            duration_ms = int((self._pipeline_completed_at - self._pipeline_started_at) * 1000)
+
+        # Emit pipeline completed event for real-time tracking
+        if self.emitter and self.session_id:
+            try:
+                # Import locally to avoid circular import
+                from agentic.events import troubleshooting_pipeline_completed
+                await self.emitter.emit(troubleshooting_pipeline_completed(
+                    request_id=self.request_id,
+                    session_id=self.session_id,
+                    completed_count=len(self._completed_workflow_tasks),
+                    task_total=WORKFLOW_TASK_COUNT,
+                    success=success,
+                    duration_ms=duration_ms,
+                    graph_line=self._build_graph_line()
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to emit pipeline completed event: {e}")
 
         if not self.enabled:
             return
@@ -279,6 +368,7 @@ class TroubleshootingTaskTracker:
         """
         hook_config = PIPELINE_HOOKS.get(hook_name, {})
         task_name = hook_config.get("name", hook_name)
+        workflow_task_name = hook_config.get("workflow_task", task_name)
 
         ctx = TaskContext(
             hook_name=hook_name,
@@ -290,12 +380,73 @@ class TroubleshootingTaskTracker:
 
         self._current_task = ctx
 
+        # Calculate task index for SSE progress
+        task_index = self._get_workflow_task_index(workflow_task_name)
+
+        # Emit task started event (only if not already started for this workflow task)
+        if self.emitter and self.session_id and workflow_task_name not in self._completed_workflow_tasks:
+            try:
+                # Import locally to avoid circular import
+                from agentic.events import troubleshooting_task_started
+                await self.emitter.emit(troubleshooting_task_started(
+                    request_id=self.request_id,
+                    session_id=self.session_id,
+                    task_name=workflow_task_name,
+                    task_index=task_index,
+                    task_total=WORKFLOW_TASK_COUNT,
+                    graph_line=self._build_graph_line(active_task=workflow_task_name)
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to emit task started event: {e}")
+
         try:
             yield ctx
             ctx.complete()
+
+            # Mark workflow task as completed and emit event
+            if workflow_task_name not in self._completed_workflow_tasks:
+                self._completed_workflow_tasks.add(workflow_task_name)
+
+                if self.emitter and self.session_id:
+                    try:
+                        # Import locally to avoid circular import
+                        from agentic.events import troubleshooting_task_completed
+                        duration_ms = int(ctx.duration_seconds * 1000)
+                        await self.emitter.emit(troubleshooting_task_completed(
+                            request_id=self.request_id,
+                            session_id=self.session_id,
+                            task_name=workflow_task_name,
+                            task_index=task_index,
+                            task_total=WORKFLOW_TASK_COUNT,
+                            duration_ms=duration_ms,
+                            graph_line=self._build_graph_line()
+                        ))
+                    except Exception as e:
+                        logger.warning(f"Failed to emit task completed event: {e}")
+
         except Exception as e:
             ctx.set_error(str(e))
             ctx.complete(verification_passed=False)
+
+            # Emit task failed event
+            if self.emitter and self.session_id:
+                try:
+                    # Import locally to avoid circular import
+                    from agentic.events import troubleshooting_task_failed
+                    duration_ms = int(ctx.duration_seconds * 1000)
+                    await self.emitter.emit(troubleshooting_task_failed(
+                        request_id=self.request_id,
+                        session_id=self.session_id,
+                        task_name=workflow_task_name,
+                        task_index=task_index,
+                        task_total=WORKFLOW_TASK_COUNT,
+                        error=str(e),
+                        duration_ms=duration_ms,
+                        graph_line=self._build_graph_line()
+                    ))
+                except Exception as emit_err:
+                    logger.warning(f"Failed to emit task failed event: {emit_err}")
+
             raise
         finally:
             self._task_contexts.append(ctx)
@@ -419,6 +570,46 @@ class TroubleshootingTaskTracker:
         return passed, details
 
     # =========================================================================
+    # SSE HELPER METHODS
+    # =========================================================================
+
+    # Ordered list of workflow task names for progress tracking
+    WORKFLOW_TASK_ORDER = [
+        "Query Analysis",
+        "Entity Extraction",
+        "Technical Doc Search",
+        "Cross-Domain Validation",
+        "Synthesis",
+        "User Verification",
+    ]
+
+    def _get_workflow_task_index(self, workflow_task_name: str) -> int:
+        """Get the index of a workflow task in the standard order."""
+        try:
+            return self.WORKFLOW_TASK_ORDER.index(workflow_task_name)
+        except ValueError:
+            return -1  # Unknown task
+
+    def _build_graph_line(self, active_task: Optional[str] = None) -> str:
+        """
+        Build an ASCII graph line showing pipeline progress.
+
+        Format: ●─●─●─◎─○─○
+        - ● = completed
+        - ◎ = active/in-progress
+        - ○ = pending
+        """
+        symbols = []
+        for task_name in self.WORKFLOW_TASK_ORDER:
+            if task_name in self._completed_workflow_tasks:
+                symbols.append("●")
+            elif task_name == active_task:
+                symbols.append("◎")
+            else:
+                symbols.append("○")
+        return "─".join(symbols)
+
+    # =========================================================================
     # DATABASE PERSISTENCE
     # =========================================================================
 
@@ -428,21 +619,33 @@ class TroubleshootingTaskTracker:
 
         Creates a new database session to avoid transaction conflicts
         with the main pipeline session.
+
+        Updates both:
+        1. Session metadata with pipeline summary
+        2. Individual TaskExecution records with actual progress
         """
         if not self.session_id or not self._task_contexts:
             return
 
         from core.troubleshooting_service import troubleshooting_service
+        from models.troubleshooting import TaskState
 
         try:
             async for db_session in get_async_db():
-                # Get the troubleshooting session
+                # Get the troubleshooting session with task_executions loaded
                 ts_session = await troubleshooting_service.get_session(
                     db_session, self.session_id
                 )
                 if not ts_session:
                     logger.warning(f"Session not found for flush: {self.session_id}")
                     return
+
+                # Build mapping of workflow task names to TaskExecution records
+                task_exec_by_name: Dict[str, Any] = {}
+                for task_exec in ts_session.task_executions:
+                    if task_exec.task:
+                        task_exec_by_name[task_exec.task.name] = task_exec
+                        logger.debug(f"Mapped task: {task_exec.task.name} -> {task_exec.id}")
 
                 # Update session metadata with pipeline info
                 metadata = ts_session.session_metadata or {}
@@ -456,35 +659,88 @@ class TroubleshootingTaskTracker:
                     ) if self._pipeline_started_at and self._pipeline_completed_at else None,
                 }
 
-                # Add task summaries
+                # Track which workflow tasks have been updated
+                updated_tasks = set()
                 task_summaries = []
+
+                # Update individual TaskExecution records
                 for ctx in self._task_contexts:
                     passed, details = self.verify_task(ctx)
+
+                    # Get the workflow task name this hook maps to
+                    hook_config = PIPELINE_HOOKS.get(ctx.hook_name, {})
+                    workflow_task_name = hook_config.get("workflow_task", ctx.task_name)
+
                     task_summaries.append({
                         "hook": ctx.hook_name,
                         "name": ctx.task_name,
+                        "workflow_task": workflow_task_name,
                         "duration_ms": ctx.metrics.get("latency_ms"),
                         "success": ctx.error is None,
                         "verification_passed": passed,
                         "error": ctx.error,
                     })
-                metadata["tasks"] = task_summaries
 
+                    # Find and update the matching TaskExecution
+                    if workflow_task_name in task_exec_by_name:
+                        task_exec = task_exec_by_name[workflow_task_name]
+
+                        # Only update if not already updated by a previous hook
+                        if workflow_task_name not in updated_tasks:
+                            # Update TaskExecution fields
+                            task_exec.state = TaskState.COMPLETED if ctx.error is None else TaskState.FAILED
+                            task_exec.started_at = datetime.fromtimestamp(
+                                ctx.started_at, tz=timezone.utc
+                            ) if ctx.started_at else None
+                            task_exec.completed_at = datetime.fromtimestamp(
+                                ctx.completed_at, tz=timezone.utc
+                            ) if ctx.completed_at else None
+                            task_exec.input_data = ctx.input_data or {}
+                            task_exec.output_data = ctx.output_data or {}
+                            task_exec.metrics = ctx.metrics or {}
+                            task_exec.verification_passed = passed
+                            task_exec.verification_details = details
+                            task_exec.error_message = ctx.error
+
+                            updated_tasks.add(workflow_task_name)
+                            logger.debug(
+                                f"Updated TaskExecution '{workflow_task_name}': "
+                                f"state={task_exec.state}, duration={ctx.metrics.get('latency_ms')}ms"
+                            )
+                    else:
+                        logger.debug(
+                            f"No matching TaskExecution for workflow_task '{workflow_task_name}' "
+                            f"(hook: {ctx.hook_name})"
+                        )
+
+                metadata["tasks"] = task_summaries
                 ts_session.session_metadata = metadata
-                ts_session.completed_tasks = sum(
-                    1 for ctx in self._task_contexts if ctx.error is None
+
+                # Count completed tasks from actual TaskExecution states
+                completed_count = sum(
+                    1 for te in ts_session.task_executions
+                    if te.state == TaskState.COMPLETED
                 )
+                ts_session.completed_tasks = completed_count
+
+                # Update session state if pipeline completed
+                if pipeline_success and completed_count > 0:
+                    from models.troubleshooting import SessionState
+                    if ts_session.state == SessionState.INITIATED:
+                        ts_session.state = SessionState.IN_PROGRESS
 
                 await db_session.commit()
 
                 logger.info(
                     f"Flushed {len(self._task_contexts)} task records "
-                    f"for session {self.session_id}"
+                    f"for session {self.session_id}, "
+                    f"updated {len(updated_tasks)} TaskExecutions, "
+                    f"completed: {completed_count}/{ts_session.total_tasks}"
                 )
                 break  # Exit the async generator
 
         except Exception as e:
-            logger.error(f"Failed to flush to database: {e}")
+            logger.error(f"Failed to flush to database: {e}", exc_info=True)
 
     # =========================================================================
     # METRICS & REPORTING
@@ -550,16 +806,26 @@ class TroubleshootingTaskTracker:
 def create_tracker(
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
+    emitter: Optional["EventEmitter"] = None,
+    request_id: Optional[str] = None,
 ) -> TroubleshootingTaskTracker:
     """
     Factory function to create a task tracker.
 
     Returns a disabled tracker if session_id is not provided.
+
+    Args:
+        session_id: Troubleshooting session ID
+        user_id: User ID for attribution
+        emitter: Optional EventEmitter for real-time SSE updates
+        request_id: Request ID for SSE event correlation
     """
     return TroubleshootingTaskTracker(
         session_id=session_id,
         user_id=user_id,
         enabled=session_id is not None,
+        emitter=emitter,
+        request_id=request_id,
     )
 
 

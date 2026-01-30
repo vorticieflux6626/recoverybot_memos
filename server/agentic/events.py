@@ -253,6 +253,14 @@ class EventType(str, Enum):
     CROSS_DOMAIN_CLAIM_INVALID = "cross_domain_claim_invalid"
     CROSS_DOMAIN_VALIDATION_COMPLETE = "cross_domain_validation_complete"
 
+    # ========== Troubleshooting Task Tracker Events (Phase 6) ==========
+    # Real-time task progress for troubleshooting sessions
+    TROUBLESHOOTING_TASK_STARTED = "troubleshooting_task_started"
+    TROUBLESHOOTING_TASK_COMPLETED = "troubleshooting_task_completed"
+    TROUBLESHOOTING_TASK_FAILED = "troubleshooting_task_failed"
+    TROUBLESHOOTING_PIPELINE_STARTED = "troubleshooting_pipeline_started"
+    TROUBLESHOOTING_PIPELINE_COMPLETED = "troubleshooting_pipeline_completed"
+
 
 @dataclass
 class SearchEvent:
@@ -294,6 +302,14 @@ class SearchEvent:
 
     # Graph visualization (one-line representation)
     graph_line: Optional[str] = None  # ASCII graph like: "●─○─○─◎" or "[A]→[S]→[V]→[Σ]"
+
+    # Troubleshooting-specific fields
+    session_id: Optional[str] = None  # Troubleshooting session ID
+    task_name: Optional[str] = None  # Name of the troubleshooting task
+    task_index: Optional[int] = None  # Task index (0-based)
+    task_total: Optional[int] = None  # Total number of tasks
+    task_state: Optional[str] = None  # pending, in_progress, completed, failed
+    duration_ms: Optional[int] = None  # Task duration in milliseconds
 
     def to_sse(self) -> str:
         """Convert to Server-Sent Event format"""
@@ -342,6 +358,19 @@ class SearchEvent:
             event_data["enhanced"] = self.enhanced
         if self.graph_line:
             event_data["graph_line"] = self.graph_line
+        # Troubleshooting-specific fields
+        if self.session_id:
+            event_data["session_id"] = self.session_id
+        if self.task_name:
+            event_data["task_name"] = self.task_name
+        if self.task_index is not None:
+            event_data["task_index"] = self.task_index
+        if self.task_total is not None:
+            event_data["task_total"] = self.task_total
+        if self.task_state:
+            event_data["task_state"] = self.task_state
+        if self.duration_ms is not None:
+            event_data["duration_ms"] = self.duration_ms
 
         return f"event: {self.event_type.value}\ndata: {json.dumps(event_data)}\n\n"
 
@@ -2803,4 +2832,123 @@ def contrastive_insight_generated(
             "description": description,
             "impact": impact
         }
+    )
+
+
+# =============================================================================
+# TROUBLESHOOTING TASK TRACKER EVENTS (Phase 6)
+# =============================================================================
+
+def troubleshooting_task_started(
+    request_id: str,
+    session_id: str,
+    task_name: str,
+    task_index: int,
+    task_total: int,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Troubleshooting task started executing"""
+    return SearchEvent(
+        event_type=EventType.TROUBLESHOOTING_TASK_STARTED,
+        request_id=request_id,
+        session_id=session_id,
+        task_name=task_name,
+        task_index=task_index,
+        task_total=task_total,
+        task_state="in_progress",
+        message=f"Started: {task_name} ({task_index + 1}/{task_total})",
+        graph_line=graph_line
+    )
+
+
+def troubleshooting_task_completed(
+    request_id: str,
+    session_id: str,
+    task_name: str,
+    task_index: int,
+    task_total: int,
+    duration_ms: int,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Troubleshooting task completed successfully"""
+    return SearchEvent(
+        event_type=EventType.TROUBLESHOOTING_TASK_COMPLETED,
+        request_id=request_id,
+        session_id=session_id,
+        task_name=task_name,
+        task_index=task_index,
+        task_total=task_total,
+        task_state="completed",
+        duration_ms=duration_ms,
+        message=f"Completed: {task_name} ({duration_ms}ms)",
+        graph_line=graph_line
+    )
+
+
+def troubleshooting_task_failed(
+    request_id: str,
+    session_id: str,
+    task_name: str,
+    task_index: int,
+    task_total: int,
+    error: str,
+    duration_ms: int,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Troubleshooting task failed"""
+    return SearchEvent(
+        event_type=EventType.TROUBLESHOOTING_TASK_FAILED,
+        request_id=request_id,
+        session_id=session_id,
+        task_name=task_name,
+        task_index=task_index,
+        task_total=task_total,
+        task_state="failed",
+        duration_ms=duration_ms,
+        message=f"Failed: {task_name} - {error[:50]}",
+        graph_line=graph_line,
+        data={"error": error}
+    )
+
+
+def troubleshooting_pipeline_started(
+    request_id: str,
+    session_id: str,
+    task_total: int,
+    query: str,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Troubleshooting pipeline started"""
+    return SearchEvent(
+        event_type=EventType.TROUBLESHOOTING_PIPELINE_STARTED,
+        request_id=request_id,
+        session_id=session_id,
+        task_total=task_total,
+        query=query,
+        message=f"Pipeline started: {task_total} tasks",
+        graph_line=graph_line
+    )
+
+
+def troubleshooting_pipeline_completed(
+    request_id: str,
+    session_id: str,
+    completed_count: int,
+    task_total: int,
+    success: bool,
+    duration_ms: int,
+    graph_line: Optional[str] = None
+) -> SearchEvent:
+    """Troubleshooting pipeline completed"""
+    status = "success" if success else "failed"
+    return SearchEvent(
+        event_type=EventType.TROUBLESHOOTING_PIPELINE_COMPLETED,
+        request_id=request_id,
+        session_id=session_id,
+        task_total=task_total,
+        task_state=status,
+        duration_ms=duration_ms,
+        message=f"Pipeline {status}: {completed_count}/{task_total} tasks ({duration_ms}ms)",
+        graph_line=graph_line,
+        data={"completed_count": completed_count, "success": success}
     )
