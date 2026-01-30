@@ -924,6 +924,20 @@ class TroubleshootingService:
         )
         return result.scalar_one_or_none()
 
+    async def get_workflow_name(
+        self,
+        session: AsyncSession,
+        workflow_id: Optional[UUID],
+    ) -> Optional[str]:
+        """Get workflow name by ID (lightweight, no relationships loaded)."""
+        if not workflow_id:
+            return None
+        result = await session.execute(
+            select(TroubleshootingWorkflow.name)
+            .where(TroubleshootingWorkflow.id == workflow_id)
+        )
+        return result.scalar_one_or_none()
+
     async def _find_matching_workflow(
         self,
         session: AsyncSession,

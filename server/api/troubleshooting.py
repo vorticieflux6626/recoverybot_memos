@@ -64,31 +64,56 @@ logger = logging.getLogger(__name__)
 # HELPER FUNCTIONS
 # =============================================================================
 
-def _session_to_response(session, include_tasks: bool = False) -> SessionResponse:
-    """Convert SQLAlchemy session to response model."""
+def _session_to_response(
+    session,
+    include_tasks: bool = False,
+    workflow_name: Optional[str] = None
+) -> SessionResponse:
+    """
+    Convert SQLAlchemy session to response model.
+
+    Args:
+        session: TroubleshootingSession object
+        include_tasks: If True, include task executions (requires selectinload)
+        workflow_name: Pre-loaded workflow name (avoids lazy loading)
+    """
     task_executions = []
-    if include_tasks and session.task_executions:
-        for exec in session.task_executions:
-            task_executions.append(TaskExecutionResponse(
-                id=str(exec.id),
-                task_id=str(exec.task_id) if exec.task_id else "",
-                task_name=exec.task.name if exec.task else "Unknown",
-                execution_type=exec.task.execution_type if exec.task else "automatic",
-                state=exec.state,
-                started_at=exec.started_at,
-                completed_at=exec.completed_at,
-                duration_seconds=(exec.completed_at - exec.started_at).total_seconds()
-                    if exec.completed_at and exec.started_at else None,
-                verification_passed=exec.verification_passed,
-                output_summary=exec.output_data if exec.output_data else None,
-                error_message=exec.error_message,
-            ))
+    if include_tasks:
+        # task_executions must be eagerly loaded with selectinload
+        try:
+            for exec in session.task_executions:
+                # exec.task must also be eagerly loaded
+                task_name = "Unknown"
+                exec_type = "automatic"
+                try:
+                    if exec.task:
+                        task_name = exec.task.name
+                        exec_type = exec.task.execution_type
+                except Exception:
+                    pass  # Task not loaded
+
+                task_executions.append(TaskExecutionResponse(
+                    id=str(exec.id),
+                    task_id=str(exec.task_id) if exec.task_id else "",
+                    task_name=task_name,
+                    execution_type=exec_type,
+                    state=exec.state,
+                    started_at=exec.started_at,
+                    completed_at=exec.completed_at,
+                    duration_seconds=(exec.completed_at - exec.started_at).total_seconds()
+                        if exec.completed_at and exec.started_at else None,
+                    verification_passed=exec.verification_passed,
+                    output_summary=exec.output_data if exec.output_data else None,
+                    error_message=exec.error_message,
+                ))
+        except Exception:
+            pass  # task_executions not loaded
 
     return SessionResponse(
         id=str(session.id),
         user_id=session.user_id,
         workflow_id=str(session.workflow_id) if session.workflow_id else None,
-        workflow_name=session.workflow.name if session.workflow else None,
+        workflow_name=workflow_name,
         original_query=session.original_query,
         detected_error_codes=session.detected_error_codes or [],
         detected_symptoms=session.detected_symptoms or [],
@@ -182,7 +207,9 @@ async def create_session(
     """
     try:
         session = await troubleshooting_service.create_session(db, user_id, request)
-        return _session_to_response(session)
+        # Get workflow name separately to avoid lazy loading
+        workflow_name = await troubleshooting_service.get_workflow_name(db, session.workflow_id)
+        return _session_to_response(session, workflow_name=workflow_name)
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -206,8 +233,15 @@ async def get_session(
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # Build base response
-        base = _session_to_response(session, include_tasks=True)
+        # Build base response (workflow is eagerly loaded by get_session)
+        workflow_name = None
+        try:
+            workflow_name = session.workflow.name if session.workflow else None
+        except Exception:
+            # Fallback if workflow not loaded
+            workflow_name = await troubleshooting_service.get_workflow_name(db, session.workflow_id)
+
+        base = _session_to_response(session, include_tasks=True, workflow_name=workflow_name)
 
         # Add detailed fields
         return SessionDetailResponse(
@@ -247,8 +281,18 @@ async def list_sessions(
             include_completed=include_completed,
         )
 
+        # Build responses (workflow is eagerly loaded by get_user_sessions)
+        session_responses = []
+        for s in sessions:
+            workflow_name = None
+            try:
+                workflow_name = s.workflow.name if s.workflow else None
+            except Exception:
+                pass  # workflow not loaded
+            session_responses.append(_session_to_response(s, workflow_name=workflow_name))
+
         return SessionListResponse(
-            sessions=[_session_to_response(s) for s in sessions],
+            sessions=session_responses,
             total=len(sessions),
             page=1,
             has_more=len(sessions) >= limit,
@@ -273,7 +317,13 @@ async def get_active_session(
         session = await troubleshooting_service.get_active_session(db, user_id)
         if not session:
             return None
-        return _session_to_response(session)
+        # Workflow is loaded via get_user_sessions
+        workflow_name = None
+        try:
+            workflow_name = session.workflow.name if session.workflow else None
+        except Exception:
+            pass
+        return _session_to_response(session, workflow_name=workflow_name)
 
     except Exception as e:
         logger.error(f"Failed to get active session for user {user_id}: {e}")
@@ -334,7 +384,9 @@ async def select_path(
         session = await troubleshooting_service.select_path(
             db, session_id, request.path_id, steps
         )
-        return _session_to_response(session)
+        # Workflow loaded via get_session
+        workflow_name = await troubleshooting_service.get_workflow_name(db, session.workflow_id)
+        return _session_to_response(session, workflow_name=workflow_name)
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -364,7 +416,8 @@ async def complete_step(
             user_notes=user_notes,
             evidence_data=evidence_data,
         )
-        return _session_to_response(session)
+        workflow_name = await troubleshooting_service.get_workflow_name(db, session.workflow_id)
+        return _session_to_response(session, workflow_name=workflow_name)
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -400,7 +453,8 @@ async def resolve_session(
             rating=request.rating,
             feedback=request.feedback,
         )
-        return _session_to_response(session)
+        workflow_name = await troubleshooting_service.get_workflow_name(db, session.workflow_id)
+        return _session_to_response(session, workflow_name=workflow_name)
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
