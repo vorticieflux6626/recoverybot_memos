@@ -2577,10 +2577,16 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     llm_logger=llm_logger
                 )
 
-                await emitter.emit(events.query_analyzed(
+                # Use detailed event with actual analysis results for troubleshooting UI
+                await emitter.emit(events.query_analyzed_detailed(
                     request_id,
-                    query_analysis.requires_search if query_analysis else True,
-                    query_analysis.query_type if query_analysis else "research"
+                    requires_search=query_analysis.requires_search if query_analysis else True,
+                    query_type=query_analysis.query_type if query_analysis else "research",
+                    key_topics=getattr(query_analysis, 'key_topics', []) if query_analysis else [],
+                    entities=getattr(query_analysis, 'entities', []) if query_analysis else [],
+                    diagram_intent=getattr(query_analysis, 'diagram_intent', None) if query_analysis else None,
+                    complexity=getattr(query_analysis, 'complexity', None) if query_analysis else None,
+                    suggested_queries=getattr(query_analysis, 'suggested_queries', []) if query_analysis else []
                 ))
 
                 # ===== OBSERVABILITY: Log query analysis decision =====
@@ -2847,8 +2853,13 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 )
                 search_ms = int((time.time() - search_start) * 1000)
 
-                await emitter.emit(events.search_results(
-                    request_id, len(state.raw_results), state.sources_consulted
+                # Use detailed event with actual search results for troubleshooting UI
+                await emitter.emit(events.search_results_detailed(
+                    request_id,
+                    results=[r.model_dump() if hasattr(r, 'model_dump') else dict(r) for r in state.raw_results[:10]],
+                    sources_count=state.sources_consulted,
+                    executed_queries=state.executed_queries,
+                    engines_used=getattr(state, 'engines_used', [])
                 ))
                 await emitter.emit(graph_node_completed(request_id, "search", True, graph, search_ms))
 
@@ -2996,8 +3007,12 @@ class UniversalOrchestrator(BaseSearchPipeline):
                 )
                 scrape_ms = int((time.time() - scrape_start) * 1000)
 
-                await emitter.emit(events.urls_evaluated(
-                    request_id, len(scraped_content), len(urls_to_scrape)
+                # Use detailed event with scraped/failed URLs for troubleshooting UI
+                await emitter.emit(events.urls_evaluated_detailed(
+                    request_id,
+                    relevant_urls=getattr(state, 'urls_scraped', urls_to_scrape[:len(scraped_content)]),
+                    rejected_urls=getattr(state, 'urls_failed', []),
+                    evaluation_criteria="relevance_score > 0.3"
                 ))
                 await emitter.emit(graph_node_completed(request_id, "scrape", True, graph, scrape_ms))
 
@@ -3110,7 +3125,32 @@ class UniversalOrchestrator(BaseSearchPipeline):
                     # AggregateVerification has verified_count and total_claims attributes
                     verified_count = getattr(verification_result, 'verified_count', 0)
                     total_claims = getattr(verification_result, 'total_claims', len(scraped_content))
-                    await emitter.emit(events.claims_verified(request_id, verified_count, total_claims))
+
+                    # Extract detailed claim info if available
+                    verified_claims = []
+                    unverified_claims = []
+                    conflicting_claims = []
+                    if hasattr(verification_result, 'results'):
+                        for r in verification_result.results[:10]:  # Limit to 10
+                            claim_info = {
+                                "claim": getattr(r, 'claim', str(r))[:200],
+                                "verified": getattr(r, 'verified', False),
+                                "confidence": getattr(r, 'confidence', 0)
+                            }
+                            if getattr(r, 'verified', False):
+                                verified_claims.append(claim_info)
+                            else:
+                                unverified_claims.append(claim_info)
+                            if getattr(r, 'conflicts', []):
+                                conflicting_claims.append(claim_info)
+
+                    # Use detailed event for troubleshooting UI
+                    await emitter.emit(events.claims_verified_detailed(
+                        request_id,
+                        verified_claims=verified_claims,
+                        unverified_claims=unverified_claims,
+                        conflicting_claims=conflicting_claims
+                    ))
 
                 await emitter.emit(graph_node_completed(request_id, "verify", True, graph, verify_ms))
 
@@ -3369,8 +3409,14 @@ class UniversalOrchestrator(BaseSearchPipeline):
             # Use the better of heuristic or simple confidence
             confidence = max(heuristic_conf, simple_conf)
 
-            await emitter.emit(events.synthesis_complete(
-                request_id, len(synthesis) if synthesis else 0, confidence
+            # Use detailed event with actual synthesis for troubleshooting UI
+            await emitter.emit(events.synthesis_complete_detailed(
+                request_id,
+                synthesis=synthesis or "",
+                confidence=confidence,
+                sources_used=[s.get('url', s.get('title', '')) if isinstance(s, dict) else str(s) for s in sources[:10]],
+                key_findings=None,  # Could extract from synthesis if needed
+                model_used=synthesis_model
             ))
             await emitter.emit(graph_node_completed(request_id, "synthesize", True, graph, synthesis_ms))
 

@@ -2952,3 +2952,230 @@ def troubleshooting_pipeline_completed(
         graph_line=graph_line,
         data={"completed_count": completed_count, "success": success}
     )
+
+
+# ==========================================================================
+# DETAILED EVENT HELPERS - Include actual task results for Android UI
+# Phase 6: Task result visibility in troubleshooting UI
+# ==========================================================================
+
+def query_analyzed_detailed(
+    request_id: str,
+    requires_search: bool,
+    query_type: str,
+    key_topics: list = None,
+    entities: list = None,
+    diagram_intent: dict = None,
+    complexity: str = None,
+    suggested_queries: list = None
+) -> SearchEvent:
+    """
+    Query analysis completed with detailed results.
+
+    Includes key topics, extracted entities, diagram intent, and suggested queries
+    for display in the troubleshooting task tracker UI.
+    """
+    return SearchEvent(
+        event_type=EventType.QUERY_ANALYZED,
+        request_id=request_id,
+        message=f"Query analyzed: {query_type} ({complexity or 'standard'})",
+        progress_percent=10,
+        data={
+            "requires_search": requires_search,
+            "query_type": query_type,
+            "key_topics": key_topics or [],
+            "entities": entities or [],
+            "diagram_intent": diagram_intent,
+            "complexity": complexity,
+            "suggested_queries": suggested_queries or []
+        }
+    )
+
+
+def search_results_detailed(
+    request_id: str,
+    results: list,
+    sources_count: int,
+    executed_queries: list = None,
+    engines_used: list = None
+) -> SearchEvent:
+    """
+    Search results with actual result data.
+
+    Includes top results with title, URL, snippet, and relevance scores
+    for display in the troubleshooting task tracker UI.
+
+    Args:
+        request_id: Request identifier
+        results: List of search results (dicts with title, url, snippet, relevance_score)
+        sources_count: Total number of sources consulted
+        executed_queries: List of queries that were executed
+        engines_used: List of search engines used
+    """
+    # Limit results to prevent large payloads (top 10)
+    top_results = results[:10] if results else []
+
+    return SearchEvent(
+        event_type=EventType.SEARCH_RESULTS,
+        request_id=request_id,
+        message=f"Found {len(results)} results from {sources_count} sources",
+        results_count=len(results),
+        sources_count=sources_count,
+        engines=engines_used,
+        data={
+            "results": top_results,
+            "total_results": len(results),
+            "executed_queries": executed_queries or [],
+            "engines_used": engines_used or []
+        }
+    )
+
+
+def urls_evaluated_detailed(
+    request_id: str,
+    relevant_urls: list,
+    rejected_urls: list,
+    evaluation_criteria: str = None
+) -> SearchEvent:
+    """
+    URL evaluation completed with detailed results.
+
+    Includes which URLs were selected and why, for display in
+    the troubleshooting task tracker UI.
+    """
+    relevant_count = len(relevant_urls)
+    total_count = relevant_count + len(rejected_urls)
+
+    return SearchEvent(
+        event_type=EventType.URLS_EVALUATED,
+        request_id=request_id,
+        message=f"Selected {relevant_count}/{total_count} relevant sources",
+        results_count=relevant_count,
+        sources_count=total_count,
+        progress_percent=58,
+        data={
+            "relevant_urls": relevant_urls[:10],  # Limit to 10
+            "rejected_count": len(rejected_urls),
+            "relevant_count": relevant_count,
+            "total_count": total_count,
+            "evaluation_criteria": evaluation_criteria
+        }
+    )
+
+
+def content_scraped_detailed(
+    request_id: str,
+    scraped_urls: list,
+    failed_urls: list,
+    total_content_length: int
+) -> SearchEvent:
+    """
+    Content scraping completed with detailed results.
+
+    Includes which URLs were scraped successfully and which failed.
+    """
+    return SearchEvent(
+        event_type=EventType.URL_SCRAPED,
+        request_id=request_id,
+        message=f"Scraped {len(scraped_urls)} sources ({total_content_length:,} chars)",
+        progress_percent=72,
+        data={
+            "scraped_urls": scraped_urls[:10],  # Limit to 10
+            "failed_urls": failed_urls[:5],
+            "scraped_count": len(scraped_urls),
+            "failed_count": len(failed_urls),
+            "total_content_length": total_content_length
+        }
+    )
+
+
+def claims_verified_detailed(
+    request_id: str,
+    verified_claims: list,
+    unverified_claims: list,
+    conflicting_claims: list = None
+) -> SearchEvent:
+    """
+    Claims verification completed with detailed results.
+
+    Includes which claims were verified, unverified, and any conflicts found.
+    """
+    total = len(verified_claims) + len(unverified_claims)
+
+    return SearchEvent(
+        event_type=EventType.CLAIMS_VERIFIED,
+        request_id=request_id,
+        message=f"Verified {len(verified_claims)}/{total} claims",
+        progress_percent=80,
+        data={
+            "verified_claims": verified_claims[:5],  # Limit to 5
+            "unverified_claims": unverified_claims[:3],
+            "conflicting_claims": conflicting_claims or [],
+            "verified_count": len(verified_claims),
+            "unverified_count": len(unverified_claims),
+            "total_claims": total,
+            "conflict_count": len(conflicting_claims or [])
+        }
+    )
+
+
+def synthesis_complete_detailed(
+    request_id: str,
+    synthesis: str,
+    confidence: float,
+    sources_used: list = None,
+    key_findings: list = None,
+    model_used: str = None
+) -> SearchEvent:
+    """
+    Synthesis completed with actual synthesis text.
+
+    Includes the full synthesis result, sources used, and key findings
+    for display in the troubleshooting task tracker UI.
+    """
+    # Truncate synthesis for SSE if too long (max 8KB)
+    synthesis_preview = synthesis[:8000] if synthesis else ""
+    is_truncated = len(synthesis) > 8000 if synthesis else False
+
+    return SearchEvent(
+        event_type=EventType.SYNTHESIS_COMPLETE,
+        request_id=request_id,
+        message="Synthesis complete",
+        confidence=confidence,
+        progress_percent=95,
+        model_name=model_used,
+        data={
+            "synthesis": synthesis_preview,
+            "synthesis_length": len(synthesis) if synthesis else 0,
+            "is_truncated": is_truncated,
+            "confidence": confidence,
+            "sources_used": sources_used[:10] if sources_used else [],
+            "key_findings": key_findings[:5] if key_findings else [],
+            "model_used": model_used
+        }
+    )
+
+
+def technical_docs_searched_detailed(
+    request_id: str,
+    documents_found: list,
+    entities_matched: list = None,
+    domain: str = None
+) -> SearchEvent:
+    """
+    Technical documentation search completed with detailed results.
+
+    Includes documents found with titles, relevance, and matched entities.
+    """
+    return SearchEvent(
+        event_type=EventType.TECHNICAL_DOCS_SEARCHED,
+        request_id=request_id,
+        message=f"Found {len(documents_found)} technical documents",
+        progress_percent=35,
+        data={
+            "documents": documents_found[:10],  # Limit to 10
+            "document_count": len(documents_found),
+            "entities_matched": entities_matched or [],
+            "domain": domain
+        }
+    )
